@@ -1,0 +1,25 @@
+name: wm_dynamics
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - numpy
+  - scipy
+  - matplotlib
+  - jupyter
+  - jupyterlab
+  - ipykernel
+  - h5py
+  - pandas
+  - scikit-learn
+  - tqdm
+  - seaborn
+  - pip
+  - pip:
+    - torch
+    - mne
+    - nilearn
+    - pydmd
+    - control
+    - cvxpy
