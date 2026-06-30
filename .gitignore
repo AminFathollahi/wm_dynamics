@@ -1,0 +1,43 @@
+# ── Learning materials (study aids, never pushed) ──────────────────────────────
+learning/
+
+# ── Data (always external, symlinked) ──────────────────────────────────────────
+data/
+*.mat
+*.npy
+*.npz
+*.h5
+*.hdf5
+
+# ── Python ─────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+
+# ── Jupyter ─────────────────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ── Outputs ─────────────────────────────────────────────────────────────────────
+figures/
+results/
+*.pdf
+*.png
+*.svg
+!environment.yml
+
+# ── IDE ─────────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*~
+
+# ── OS ──────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db

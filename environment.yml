@@ -1,5 +1,7 @@
 name: wm_dynamics
 channels:
+  - pytorch
+  - nvidia
   - conda-forge
   - defaults
 dependencies:
@@ -15,11 +17,14 @@ dependencies:
   - scikit-learn
   - tqdm
   - seaborn
+  - pytorch
+  - torchvision
+  - torchaudio
+  - pytorch-cuda
   - pip
   - pip:
-    - torch
-    - mne
-    - nilearn
-    - pydmd
-    - control
-    - cvxpy
+      - mne
+      - nilearn
+      - pydmd
+      - control
+      - cvxpy
