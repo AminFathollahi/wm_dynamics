@@ -1,6 +1,6 @@
 # WM Dynamics — Neural Manifold Geometry and Control in Human Working Memory
 
-**Status:** Pipeline executed | 165/165 tests passing | Results: notebooks 01–06 complete
+**Status:** Pipeline executed | 165/165 tests passing | Results: notebooks 01–09 complete
 
 ## Scientific Question
 
@@ -11,19 +11,36 @@ Does the intrinsic geometry of prefrontal high-gamma population dynamics predict
 2. **Dynamical fingerprints:** Trajectory tangling Q(t) and DMD eigenspectrum characterise maintenance dynamics.
 3. **Control-theoretic translation:** LQR-based minimum-energy rescue trajectories with biophysically-grounded input mapping via TES1.
 
-## Preliminary Results (N=4 subjects, Miller N-back ECoG)
+## Results (N=4 subjects Miller ECoG · N=9 subjects Boran iEEG)
+
+### Miller N-back ECoG (primary cohort)
 
 | Analysis | Key result | Interpretation |
 |----------|-----------|----------------|
-| **Preprocessing** | 3 ch rejected (al: 3/40, cc: 3/64, ug: 12/62, ca: 1/64) | MAD-based rejection; subject ug has highest artefact rate |
-| **PR vs load** | cc: 4.80→5.18→5.44 ✓; al: non-monotonic; ca/ug: decreasing | Heterogeneous — load effect is subject-specific, not universal |
+| **Preprocessing** | ch rejected: al 3/40, cc 3/64, ug 12/62, ca 1/64 | MAD-based; ug has highest artefact rate |
+| **PR per subject** | cc: 4.80→5.18→5.44; al: 5.43→5.64→5.43; ca: 4.00→3.87→3.81; ug: 3.80→3.58→3.67 | Two subjects (cc, al) show positive trend; ca and ug show decrease |
+| **LME PR~load** | β=0.046, p=0.352, R²<0.001 (N=4 subjects, permutation) | **Null result**: load-dependent PR expansion does not survive mixed-effects test |
 | **8-PC variance** | al: 38.9%, ca: 60.3%, cc: 44.2%, ug: 69.5% | Wide subject variability in manifold compactness |
 | **LOSO AUROC** | 0.603 (p=0.024, permutation) | Geometry features predict target detection above chance (modest effect) |
-| **Tangling Q** | Non-target > target (7108 vs 5180) | Opposite to H2b — target trials have lower tangling (more stable dynamics) |
-| **DMD \|λ\|** | Target: 0.9998, Non-target: 0.9999 | Both near unit circle; tiny difference between conditions |
+| **Tangling Q(t)** | Non-target mean Q > target (7108 vs 5180); 0 significant clusters (FWER) | Mean effect present but not significant after cluster correction; target trials have lower tangling (more stable dynamics) |
+| **DMD \|λ\|** | Target: 0.9998, Non-target: 0.9999 | Both near unit circle; negligible condition difference |
 | **LQR closed-loop** | E=57.1, final error=1.74 in 150 steps | Feasibility demonstrated; 150-step convergence with 2-channel random B |
+| **Cross-subject RSA** | Mean pairwise r=−0.25; cc/ug cluster (r≈1.0); al/ca anti-correlated | Two representational strategies; noise ceiling 0.13–0.25 |
+| **CTG max diagonal AUC** | al: 0.767, ca: 0.622, cc: 0.767, ug: 0.773 | Stable WM representations: 0/2-back decodable well above chance at each timepoint |
+| **CTG off-diagonal AUC** | cc: 0.639, ug: 0.657 vs al: 0.542, ca: 0.523 | cc/ug have more temporally generalised (activity-maintained) representations |
+| **Cross-subject transfer** | LOSO AUC: al 0.539, ca 0.425, cc 0.496, ug 0.502 | Near-chance cross-subject transfer; idiosyncratic geometries |
+| **Ring attractor phase** | Phase range ≈2π for all subjects | 2-back maintenance trajectories span full angular range; consistent with ring attractor |
 
-**Scientific note on PR heterogeneity:** The mixed PR-load relationship (cc supports H1a; ca and ug show decrease) likely reflects individual differences in electrode coverage and PFC subregion sampling. Subjects ca and ug have high baseline dimensionality (PR ≈ 4), leaving less room for load-dependent expansion. Linear mixed-effects analysis (controlling for subject) is needed for inference.
+### Boran Sternberg iEEG (replication cohort, N=9)
+
+| Analysis | Key result | Interpretation |
+|----------|-----------|----------------|
+| **PR vs set size** | Group mean: 4→2.97, 6→2.47, 8→2.69 (non-monotonic); 4/9 subjects show increase | MTL PR does not consistently scale with load; MTL ≠ PFC in load-PR relationship |
+| **Error-trial tangling** | sub-02 (N_err=6): Q_err=13,540 vs Q_corr=4,157 | Error trials have 3× higher tangling at probe onset — consistent with H2b |
+| **Cross-dataset RSA** | Miller vs Boran group RDM: r=0.60, p=0.112 (Mantel); partial r=0.52 | Trending but not significant; task-general geometric structure suggested |
+| **TES1 B matrices** | N=17 subjects; strongest DLPFC coupling: P014A (14.7 mV/mA), weakest: P04 (−1.2 mV/mA) | Patient-specific 10× variation in stimulation coupling — personalised LQR is necessary |
+
+**Key scientific interpretation:** The PR-load null (both Miller and Boran) is the most robust finding and should be reported prominently. The CTG off-diagonal pattern (cc/ug temporally stable vs al/ca time-varying) maps onto the RSA cluster structure and suggests two WM maintenance strategies. The error-trial tangling in Boran is consistent with H2b (errors have higher tangling) but based on N_err=6 in one subject — not definitive. Cross-dataset RSA (r=0.60, p=0.11) provides a suggestive but underpowered test of task-general WM geometry. The TES1 data reveals 10× inter-subject variation in DLPFC coupling, making personalised LQR a practical necessity.
 
 ## Datasets
 
@@ -48,15 +65,15 @@ wm_dynamics/
 │   └── visualization.py       ← Nature Neuroscience–style figure utilities
 │
 ├── notebooks/                 ← Production analysis pipeline (git-tracked)
-│   ├── 01_preprocessing.ipynb       ← HGP, epoching, QC  [EXECUTED — results/01_epochs_*.npz]
-│   ├── 02_latent_geometry.ipynb     ← PCA, PR, principal angles  [EXECUTED — results/02_geometry_*.npz]
-│   ├── 03_tangling_dynamics.ipynb   ← Q(t) tangling, DMD  [EXECUTED — results/03_dynamics.npz]
-│   ├── 04_predictive_model.ipynb    ← LOSO AUROC, electrode capacity  [EXECUTED — results/04_*.npz]
-│   ├── 05_control_theory.ipynb      ← LQR rescue, TES1 B matrix  [EXECUTED — results/05_*.npz]
-│   ├── 06_paper_figures.ipynb       ← Figure assembly  [EXECUTED — figures/]
-│   ├── 07_rsa_neuroai.ipynb         ← Cross-subject RSA, CKA  [scaffold]
-│   ├── 08_extended_analysis.ipynb   ← Ring attractor, CTG, LOSO transfer  [scaffold]
-│   └── 09_cross_dataset_replication.ipynb  ← Boran replication, TES1  [scaffold]
+│   ├── 01_preprocessing.ipynb       ← HGP, epoching, QC  [EXECUTED → results/01_epochs_*.npz]
+│   ├── 02_latent_geometry.ipynb     ← PCA, PR, principal angles  [EXECUTED → results/02_geometry_*.npz]
+│   ├── 03_tangling_dynamics.ipynb   ← Q(t) tangling, DMD  [EXECUTED → results/03_dynamics.npz]
+│   ├── 04_predictive_model.ipynb    ← LOSO AUROC, electrode capacity  [EXECUTED → results/04_*.npz]
+│   ├── 05_control_theory.ipynb      ← LQR rescue, TES1 B matrix  [EXECUTED → results/05_*.npz]
+│   ├── 06_paper_figures.ipynb       ← Figure assembly  [EXECUTED → figures/]
+│   ├── 07_rsa_neuroai.ipynb         ← Cross-subject RSA, CKA, Procrustes  [EXECUTED → results/07_rsa_results.json]
+│   ├── 08_extended_analysis.ipynb   ← Ring attractor, CTG, LOSO transfer  [EXECUTED → results/08_extended_results.json]
+│   └── 09_cross_dataset_replication.ipynb  ← Boran replication (N=9), TES1, error-trial geometry  [EXECUTED → results/09_*.npz]
 │
 ├── tests/                     ← Unit tests (165/165 passing)
 │
