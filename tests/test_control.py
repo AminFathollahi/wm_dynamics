@@ -14,7 +14,25 @@ from control import (
     minimum_energy_trajectory,
     lqr_simulate,
     energy_accuracy_pareto,
+    unstable_eigenvector,
+    average_controllability,
+    modal_controllability,
+    _normalize_adjacency,
 )
+
+
+class TestUnstableEigenvector:
+    def test_recovers_dominant_growth_direction(self):
+        # Diagonal A: eigenvalue 1.5 dominates 0.5, eigenvector is e0.
+        A = np.diag([1.5, 0.5])
+        v_star, max_re_eig = unstable_eigenvector(A)
+        np.testing.assert_allclose(np.abs(v_star), [1.0, 0.0], atol=1e-8)
+        assert max_re_eig == pytest.approx(1.5)
+
+    def test_unit_norm(self, synthetic_system):
+        A, _ = synthetic_system
+        v_star, _ = unstable_eigenvector(A)
+        assert np.linalg.norm(v_star) == pytest.approx(1.0)
 
 
 class TestControllabilityGramian:
@@ -37,6 +55,51 @@ class TestControllabilityGramian:
         Wc50 = controllability_gramian(A, B, T=50)
         # Gramian at larger T should have larger trace
         assert np.trace(Wc50) >= np.trace(Wc10)
+
+
+class TestAverageModalControllability:
+    def _small_network(self, rng):
+        n = 6
+        W = rng.random((n, n))
+        W[np.arange(n), np.arange(n)] = 0.0
+        return W
+
+    def test_average_controllability_matches_truncated_gramian_trace(self, rng):
+        # Gu et al. 2015's closed form is the infinite-horizon limit of
+        # Tr(Wc) for single-node input B=e_i on the normalized (symmetric)
+        # adjacency; a long-but-finite-horizon Gramian should converge to it.
+        W = self._small_network(rng)
+        A = _normalize_adjacency(W)
+        y_avg = average_controllability(W)
+
+        n = A.shape[0]
+        for i in [0, 2, 5]:
+            e_i = np.zeros((n, 1))
+            e_i[i, 0] = 1.0
+            Wc = controllability_gramian(A, e_i, T=500)
+            assert float(np.trace(Wc)) == pytest.approx(y_avg[i], rel=1e-3)
+
+    def test_modal_controllability_closed_form_identity(self, rng):
+        # phi(i) = sum_k (1 - lambda_k^2) v_k(i)^2 by definition; recompute
+        # directly from eigh and compare to the function's output.
+        W = self._small_network(rng)
+        A = _normalize_adjacency(W)
+        eigvals, eigvecs = np.linalg.eigh(A)
+        expected = (eigvecs**2) @ (1.0 - eigvals**2)
+        np.testing.assert_allclose(modal_controllability(W), expected, atol=1e-10)
+
+    def test_outputs_are_positive_and_finite(self, rng):
+        W = self._small_network(rng)
+        y_avg = average_controllability(W)
+        phi = modal_controllability(W)
+        assert np.all(np.isfinite(y_avg)) and np.all(y_avg > 0)
+        assert np.all(np.isfinite(phi)) and np.all(phi > 0)
+
+    def test_normalize_adjacency_has_subunity_spectral_radius(self, rng):
+        W = self._small_network(rng) * 10.0   # arbitrary scale
+        A = _normalize_adjacency(W)
+        np.testing.assert_allclose(A, A.T)
+        assert np.max(np.abs(np.linalg.eigvalsh(A))) < 1.0
 
 
 class TestIsControllable:

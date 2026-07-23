@@ -22,6 +22,7 @@ from pathlib import Path
 from numpy.typing import NDArray
 
 FIGURES_DIR = Path(__file__).parent.parent / "figures"
+_JITTER_RNG = np.random.default_rng(0)  # deterministic scatter jitter across figure regens
 
 # ── Nature style ────────────────────────────────────────────────────────────────
 
@@ -135,7 +136,7 @@ def fig1_dataset_and_load_effect(
         vals = epochs_z[mask][:, maint_mask, :].mean(axis=(1, 2))
         load_means.append(vals.mean())
         load_sems.append(vals.std() / np.sqrt(len(vals)))
-        jitter = 0.1 * np.random.randn(len(vals))
+        jitter = 0.1 * _JITTER_RNG.standard_normal(len(vals))
         ax_b.scatter(
             np.full(len(vals), cond) + jitter, vals,
             color=PALETTE[["zero_back", "one_back", "two_back"][cond]],
@@ -203,7 +204,7 @@ def fig2_manifold_geometry(
             pc.set_facecolor(PALETTE[key])
             pc.set_alpha(0.6)
         ax.scatter(
-            np.full(len(pr), i) + 0.1 * np.random.randn(len(pr)),
+            np.full(len(pr), i) + 0.1 * _JITTER_RNG.standard_normal(len(pr)),
             pr, s=5, color=PALETTE[key], alpha=0.5, zorder=3
         )
     ax.set_xticks(positions)

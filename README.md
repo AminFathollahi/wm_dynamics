@@ -1,163 +1,119 @@
-# WM Dynamics — Neural Manifold Geometry and Control in Human Working Memory
+# WM Dynamics — A Controllable Geometry of Working Memory
 
-**Status:** Pipeline executed | 165/165 tests passing | Results: notebooks 01–09 complete
+**Status:** Pipeline executed | 341/341 tests passing | Nine datasets | Manuscript on the R1–R5 arc (`PAPER_REPORT.tex`, tracked in Overleaf)
 
 ## Scientific Question
 
-Does the intrinsic geometry of prefrontal high-gamma population dynamics predict working memory (WM) maintenance success and target detection, and can linear control theory guide closed-loop neuromodulation to rescue failing memory circuits?
+Working memory must hold a memorandum stably enough to guide behaviour seconds later, yet flexibly enough to be updated. Does it do so through a stable, persistent code or a dynamic one — and does the population geometry of maintenance define a **control policy** that (i) predicts how stimulation should act and (ii) can steer the maintained state?
 
-**Three-part contribution:**
-1. **Geometric biomarkers:** Participation ratio (PR) and subspace principal angles as load-dependent manifold descriptors.
-2. **Dynamical fingerprints:** Trajectory tangling Q(t) and DMD eigenspectrum characterise maintenance dynamics.
-3. **Control-theoretic translation:** LQR-based minimum-energy rescue trajectories with biophysically-grounded input mapping via TES1.
+We characterize the geometry and dynamics of maintenance, read a control policy off it, test that policy against real stimulation, and stress-test it in a closed-loop simulation.
 
-## Results (N=4 subjects Miller ECoG · N=9 subjects Boran iEEG)
+## The arc (five findings)
 
-### Miller N-back ECoG (primary cohort)
+| | Claim | Key result |
+|---|---|---|
+| **R1** | WM holds a **stable context code** and a **rotating memorandum** | Context CTG generalizes across the delay in all six neural cohorts; within the same neurons the content axis rotates more than the context axis (paired diff 0.102, *p*=0.008) |
+| **R2** | The maintenance manifold is **low-dimensional with single-trial-identifiable dynamics** | PR does not expand with load (pooled slope 0.01, 95% CI [−0.10, 0.12], *p*=0.87); DMD eigenvalues near the unit circle; the trial-averaged mean manufactures a spurious contraction that vanishes under single-trial ensemble estimation |
+| **R3** | The fitted dynamics **specify a control policy, and delay-period stimulation obeys it** | Doubly-robust, geometry-conditioned CATE on macaque DLPFC microstim: effect scales with alignment to the unstable direction v\* (slope +0.14, 95% CI [0.08, 0.20], permutation *p*=2×10⁻⁴; 11 sessions, 15,670 trials) |
+| **R4** | A closed-loop controller **stabilizes the memorandum in silico** | On the 8/13 cohorts where a 20°-mismatched controller stabilizes the true plant, drift is reduced in **8/8**; held-out decodability improves in **4/6** cohorts with an above-chance decoder |
+| **R5** | The stabilization is **robust to noise, moderately to model error, fragile to nonlinearity** | Benefit degrades gracefully with observation noise and coupling mismatch but has a defined operating regime; **5/13** cohorts destabilize under the single 20° draw (ρ(A−BK) > ρ(A)) |
 
-| Analysis | Key result | Interpretation |
-|----------|-----------|----------------|
-| **Preprocessing** | ch rejected: al 3/40, cc 3/64, ug 12/62, ca 1/64 | MAD-based; ug has highest artefact rate |
-| **PR per subject** | cc: 4.80→5.18→5.44; al: 5.43→5.64→5.43; ca: 4.00→3.87→3.81; ug: 3.80→3.58→3.67 | Two subjects (cc, al) show positive trend; ca and ug show decrease |
-| **LME PR~load** | β=0.046, p=0.352, R²<0.001 (N=4 subjects, permutation) | **Null result**: load-dependent PR expansion does not survive mixed-effects test |
-| **8-PC variance** | al: 38.9%, ca: 60.3%, cc: 44.2%, ug: 69.5% | Wide subject variability in manifold compactness |
-| **LOSO AUROC** | 0.603 (p=0.024, permutation) | Geometry features predict target detection above chance (modest effect) |
-| **Tangling Q(t)** | Non-target mean Q > target (7108 vs 5180); 0 significant clusters (FWER) | Mean effect present but not significant after cluster correction; target trials have lower tangling (more stable dynamics) |
-| **DMD \|λ\|** | Target: 0.9998, Non-target: 0.9999 | Both near unit circle; negligible condition difference |
-| **LQR closed-loop** | E=57.1, final error=1.74 in 150 steps | Feasibility demonstrated; 150-step convergence with 2-channel random B |
-| **Cross-subject RSA** | Mean pairwise r=−0.25; cc/ug cluster (r≈1.0); al/ca anti-correlated | Two representational strategies; noise ceiling 0.13–0.25 |
-| **CTG max diagonal AUC** | al: 0.767, ca: 0.622, cc: 0.767, ug: 0.773 | Stable WM representations: 0/2-back decodable well above chance at each timepoint |
-| **CTG off-diagonal AUC** | cc: 0.639, ug: 0.657 vs al: 0.542, ca: 0.523 | cc/ug have more temporally generalised (activity-maintained) representations |
-| **Cross-subject transfer** | LOSO AUC: al 0.539, ca 0.425, cc 0.496, ug 0.502 | Near-chance cross-subject transfer; idiosyncratic geometries |
-| **Ring attractor phase** | Phase range ≈2π for all subjects | 2-back maintenance trajectories span full angular range; consistent with ring attractor |
+**Honesty guardrails baked into the results:** the dynamic-vs-stable stimulation contrast is a *trend*, not significant (0.075 vs 0.056, *p*=0.10); the human encoding-period stimulation cohort (RAM ds005489) is a same-signed scope-bounded **null** (slope +0.01, *p*=0.57); the closed-loop demonstration is **in silico only** and its benefit is real but partial. No claim of enhanced memory — a computational proof-of-concept that the representational state can be steered.
 
-### Boran Sternberg iEEG (replication cohort, N=9)
+## Architecture — three arms, linked only by geometry
 
-| Analysis | Key result | Interpretation |
-|----------|-----------|----------------|
-| **PR vs set size** | Group mean: 4→2.97, 6→2.47, 8→2.69 (non-monotonic); 4/9 subjects show increase | MTL PR does not consistently scale with load; MTL ≠ PFC in load-PR relationship |
-| **Error-trial tangling** | sub-02 (N_err=6): Q_err=13,540 vs Q_corr=4,157 | Error trials have 3× higher tangling at probe onset — consistent with H2b |
-| **Cross-dataset RSA** | Miller vs Boran group RDM: r=0.60, p=0.112 (Mantel); partial r=0.52 | Trending but not significant; task-general geometric structure suggested |
-| **TES1 B matrices** | N=17 subjects; strongest DLPFC coupling: P014A (14.7 mV/mA), weakest: P04 (−1.2 mV/mA) | Patient-specific 10× variation in stimulation coupling — personalised LQR is necessary |
+- **Arm 1 — Observational (7 cohorts):** fit the plant (A, v\*, flow, content/context subspaces) and derive the control policy.
+- **Arm 2 — Interventional (2 stimulation cohorts):** test the policy causally (stimulation effect scales with alignment-to-v\*, doubly-robust CATE).
+- **Arm 3 — In-silico (new):** close the loop on the fitted plant and stress-test it.
 
-**Key scientific interpretation:** The PR-load null (both Miller and Boran) is the most robust finding and should be reported prominently. The CTG off-diagonal pattern (cc/ug temporally stable vs al/ca time-varying) maps onto the RSA cluster structure and suggests two WM maintenance strategies. The error-trial tangling in Boran is consistent with H2b (errors have higher tangling) but based on N_err=6 in one subject — not definitive. Cross-dataset RSA (r=0.60, p=0.11) provides a suggestive but underpowered test of task-general WM geometry. The TES1 data reveals 10× inter-subject variation in DLPFC coupling, making personalised LQR a practical necessity.
+The arms link **only** through the geometric feature map (alignment-to-v\*), never by pooling raw data.
 
-## Datasets
+## Datasets (nine + methods-support)
 
-All data on external USB: `/media/amin/EXTERNAL_USB/SMAF/Research/Representation/Working Memory/data/`
+Seven observational + two electrical-stimulation cohorts. TES1 supplies per-subject **B** matrices (methods-support, not counted as a cohort).
 
-| Dataset | N | Signal | Task | Path |
-|---------|---|--------|------|------|
-| **Miller N-back** | 4 subjects | ECoG 1200 Hz, PFC/parietal | 0/1/2-back verbal N-back | `kai miller/memory_nback/memory_nback/data/{subj}_nback.mat` |
-| **Boran Sternberg** (DANDI 000574) | 9 subjects | iEEG 1398 Hz + EEG + single units | Sternberg set sizes 4/6/8 | `000574/sub-{01-09}/` |
-| **TES1** (Huang et al. 2017 eLife) | 17 subjects | tES-induced voltages | Stimulation mapping 1 mA | `Tes1/HuangLiu2016dataset.zip` |
+| Dataset | N | Signal / Task | Role |
+|---------|---|---------------|------|
+| **Miller N-back** | 4 subj | ECoG 1000 Hz PFC/parietal · 0/1/2-back | observational |
+| **Boran Sternberg** (DANDI 000574) | 9 subj | iEEG + single units · set sizes 4/6/8 | observational |
+| **DANDI 000469 / 001187 / 000673** | single units | Rutishauser-lab Sternberg WM | observational |
+| **CRCNS pfc-3** | units | macaque PFC delayed match | observational |
+| **Soldado-Magraner 2025** | 11 sessions | macaque DLPFC **delay-period microstim** | interventional (causal anchor) |
+| **RAM ds005489** | human iEEG | **encoding-period stimulation** | interventional (scope-null) |
+| **TES1** (Huang et al. 2017, eLife) | 17 subj | tES-induced fields → **B** matrices | methods-support |
+
+Data on external USB: `/media/amin/EXTERNAL_USB/SMAF/Research/Representation/Working Memory/data/`.
 
 ## Repository Structure
 
 ```
 wm_dynamics/
 ├── src/                       ← Production library (git-tracked)
-│   ├── preprocessing.py       ← iEEG: CAR, notch, HGP, epoching (Miller + Boran + TES1)
-│   ├── geometry.py            ← PCA, PR, principal angles, CTG, RSA, geometric_drift
-│   ├── dynamics.py            ← Tangling Q(t), exact DMD, ring attractor phase, local Jacobian
+│   ├── preprocessing.py       ← CAR, notch, high-gamma, epoching (Miller + Boran + TES1)
+│   ├── geometry.py            ← PCA, participation ratio, principal angles, CTG, RSA, drift
+│   ├── dynamics.py            ← Tangling Q(t), exact/ensemble DMD, EDMD/Koopman, SINDy, flow divergence
 │   ├── control.py             ← Controllability, LQR/DARE, minimum-energy control
-│   ├── statistics.py          ← Bootstrap, cluster permutation, AUROC, LOSO, hedges_g, LME
+│   ├── closed_loop.py         ← In-silico closed-loop simulation + robustness sweep (R4/R5)
+│   ├── causal.py              ← Cross-fit nuisances, AIPW ATE/CATE, DR-Learner, DML, E-value (R3)
+│   ├── statistics.py          ← Bootstrap, cluster permutation, AUROC, LOSO, Hedges' g, LME, forest meta
+│   ├── spike_pipeline.py      ← Shared single-unit Sternberg WM pipeline (Rutishauser-lab datasets)
+│   ├── io_utils.py            ← Locked concurrent read-modify-write for results/all_statistics.json
+│   ├── neuroai.py             ← CKA, Procrustes alignment
 │   └── visualization.py       ← Nature Neuroscience–style figure utilities
 │
-├── notebooks/                 ← Production analysis pipeline (git-tracked)
-│   ├── 01_preprocessing.ipynb       ← HGP, epoching, QC  [EXECUTED → results/01_epochs_*.npz]
-│   ├── 02_latent_geometry.ipynb     ← PCA, PR, principal angles  [EXECUTED → results/02_geometry_*.npz]
-│   ├── 03_tangling_dynamics.ipynb   ← Q(t) tangling, DMD  [EXECUTED → results/03_dynamics.npz]
-│   ├── 04_predictive_model.ipynb    ← LOSO AUROC, electrode capacity  [EXECUTED → results/04_*.npz]
-│   ├── 05_control_theory.ipynb      ← LQR rescue, TES1 B matrix  [EXECUTED → results/05_*.npz]
-│   ├── 06_paper_figures.ipynb       ← Figure assembly  [EXECUTED → figures/]
-│   ├── 07_rsa_neuroai.ipynb         ← Cross-subject RSA, CKA, Procrustes  [EXECUTED → results/07_rsa_results.json]
-│   ├── 08_extended_analysis.ipynb   ← Ring attractor, CTG, LOSO transfer  [EXECUTED → results/08_extended_results.json]
-│   └── 09_cross_dataset_replication.ipynb  ← Boran replication (N=9), TES1, error-trial geometry  [EXECUTED → results/09_*.npz]
+├── notebooks/                 ← Exploratory pipeline 01–09 (git-tracked)
+├── scripts/                   ← Per-dataset production pipelines + aggregators (37 scripts)
+│   ├── run_*_pipeline.py       ← One runner per dataset (ID-specific naming)
+│   ├── run_soldado_pipeline.py, run_ram_openloop_pipeline.py  ← causal arm
+│   ├── run_closed_loop_analysis.py                            ← R4/R5
+│   ├── aggregate_*.py          ← Pool across datasets (forest syntheses, dPCA, PR)
+│   └── generate_paper_figures.py                              ← Assemble all paper figures from results/
 │
-├── tests/                     ← Unit tests (165/165 passing)
-│
-├── results/                   ← Saved .npz files (gitignored)
+├── tests/                     ← Unit tests (341 passing; one test file per src module)
+├── results/                   ← Saved .npz / .json artifacts (gitignored) — the source of truth for every number
 ├── figures/                   ← Saved PDF/PNG figures (gitignored)
-│
 ├── learning/                  ← Pedagogical notebooks (gitignored — local only)
-│   ├── CURRICULUM.md          ← Full reading list and learning roadmap
-│   ├── 00_math_foundations/   ← Linear algebra, ODEs, probability, info theory
-│   ├── 01_neural_signals/     ← iEEG/LFP, spectral analysis, spiking
-│   ├── 02_dimensionality_reduction/ ← PCA/SVD, autoencoders/VAEs, RSA
-│   ├── 03_dynamical_systems/  ← Linear dynamics, DMD, LFADS, ring attractors
-│   ├── 04_optimal_control/    ← LQR/DARE, closed-loop BCI
-│   ├── 05_statistics/         ← GLMs, permutation/bootstrap, Bayesian
-│   ├── 06_deep_learning/      ← MLP, CNN, RNN, transformers, CEBRA
-│   └── 07_neuroai/            ← RSA alignment, ANN-brain, normative models
-│
-├── PAPER_DRAFT.md             ← Scientific analysis plan, hypotheses, methods
-├── README.md                  ← This file
-└── environment.yml            ← Conda environment (activate: conda activate nmap)
+├── PAPER_REPORT.tex           ← Manuscript source (gitignored — tracked in Overleaf)
+└── environment.yml            ← Conda environment (activate: conda activate wm_dynamics)
 ```
 
 ## Quickstart
 
 ```bash
-conda activate nmap
+conda activate wm_dynamics
+cd "/home/amin/Research/Representation/Working Memory/wm_dynamics"
 
-# Run tests
-cd /home/amin/Research/Representation/Working\ Memory/wm_dynamics
-python -m pytest tests/ -v   # 165/165 passing
+# Tests
+python -m pytest tests/ -q          # 341 passing
 
-# Execute pipeline (requires external USB data for notebook 01)
-cd notebooks
-jupyter nbconvert --to notebook --execute --inplace \
-  --ExecutePreprocessor.kernel_name=python3 \
-  --ExecutePreprocessor.timeout=600 \
-  01_preprocessing.ipynb    # → results/01_epochs_*.npz
-jupyter nbconvert --to notebook --execute --inplace \
-  --ExecutePreprocessor.kernel_name=python3 \
-  --ExecutePreprocessor.timeout=600 \
-  02_latent_geometry.ipynb  # → results/02_geometry_*.npz
-# ... repeat for 03–06
+# Per-dataset pipelines write to results/ (require external USB data)
+python scripts/run_soldado_pipeline.py        # causal anchor (R3)
+python scripts/run_closed_loop_analysis.py    # in-silico loop + robustness (R4/R5)
+
+# Rebuild every figure from the current artifacts
+python scripts/generate_paper_figures.py
 ```
+
+`scripts/_full_rerun.sh` runs the per-dataset pipelines and then the aggregators so
+`results/forest_syntheses.json` is rebuilt last from fresh inputs.
 
 ## Methods Summary
 
-### Signal Processing
-- Common average reference (CAR) → notch filter (60, 120, 180, 240 Hz) → high-gamma power (70–150 Hz Butterworth → Hilbert envelope² → 50 ms Gaussian σ)
-- Epochs: −200 ms to +1500 ms around stimulus onset; baseline z-score per electrode over [−200, 0 ms]
-- Channel rejection: MAD-based (threshold 3 MAD units; 1.4826 scaling factor)
-
-### Dimensionality Reduction
-- PCA via full SVD on all-trials-pooled maintenance window (300–1400 ms post-onset)
-- Participation ratio: PR = (Σλᵢ)² / Σλᵢ² — intrinsic dimensionality
-- Principal angles between condition subspaces (Björck & Golub 1973)
-- Statistical test: within-subject permutation + linear mixed effects (subject as random intercept)
-
-### Trajectory Dynamics
-- Trajectory tangling: Q(t) = max_{t'} ‖Ż(t)−Ż(t')‖² / (‖Z(t)−Z(t')‖² + ε), ε=1e-3 (Russo et al. 2018)
-- Vectorised implementation (O(T²) via broadcasting, fallback loop for T > 2000)
-- Exact DMD: Tu et al. (2014) algorithm on maintenance window; truncation rank r=6
-- Ring attractor phase: top-2 PCA projection + arctan2
-
-### Control Theory
-- DARE solution via `scipy.linalg.solve_discrete_are`
-- LQR feedback gain K: Q = q·I, R = r·I; Pareto sweep q ∈ [0.01, 100]
-- Minimum-energy control via controllability Gramian inversion (regularised by 1e-10·I)
-- TES1 anatomical B matrix: Gaussian spatial interpolation from MNI coordinates (σ=20 mm)
-- Power estimate: P[µW] = I²[µA²] × Z[kΩ] × 1e-3
-
-### Statistics
-- Temporal cluster permutation test (Maris & Oostenveld 2007) — FWER control
-- Bootstrap CIs: percentile method, B=5000
-- LOSO cross-validation (leave-one-subject-out); AUROC via trapezoidal rule
-- Effect sizes: Cohen's d and Hedge's g (bias-corrected for small samples)
-- Linear mixed effects: within-subject permutation preserving subject structure
+- **Signal processing:** CAR → notch (60/120/180/240 Hz) → high-gamma power (70–150 Hz Butterworth → Hilbert envelope² → 50 ms Gaussian) → epoch → per-electrode baseline z-score; MAD-based channel rejection.
+- **Geometry:** PCA (full SVD) on the maintenance window; participation ratio PR = (Σλ)²/Σλ²; principal angles (Björck & Golub 1973); cross-temporal generalization (CTG) with nested CV and a label-permutation null.
+- **Dynamics:** trajectory tangling Q(t) (Russo et al. 2018); exact and single-trial-ensemble DMD (Tu et al. 2014); flow divergence Σlog|λ|/dt; **dt is derived per cohort from the times vector** (Miller 1000 Hz, Boran 1398 Hz).
+- **Control:** DARE via `scipy.linalg.solve_discrete_are`; LQR gain K; minimum-energy control via controllability Gramian; TES1 anatomical **B** by Gaussian interpolation from MNI coordinates.
+- **Causal (R3):** cross-fit AIPW; geometry-conditioned CATE (`cate_vs_modifier_slope`), DR-Learner, DML partial-linear, permutation inference, E-value sensitivity.
+- **Closed-loop (R4/R5):** simulate a fitted plant with the loop on vs off from matched noise draws; controller designed on a mismatched (A_hat, B_hat), scored on a decoder trained only on real uncontrolled trials, benefit reported with bootstrap CIs. Anti-circularity guardrails: (1) estimated-plant controller, true-plant evaluation; (2) held-out read-out; (3) no near-ceiling decoding.
+- **Statistics:** temporal cluster-permutation (Maris & Oostenveld 2007); percentile bootstrap CIs (B≥5000); LOSO; Cohen's *d* / Hedges' *g*; linear mixed effects; permutation *p*-floor (c+1)/(n+1); Benjamini-Hochberg FDR.
 
 ## Key References
 
-1. Cunningham JP & Yu BM (2014) *Dimensionality reduction for large-scale neural recordings.* **Nat Neurosci** 17:1500.
-2. Russo AA et al. (2018) *Motor cortex embeds muscle-like commands in an untangled population response.* **Neuron** 97:953.
-3. Tu JH et al. (2014) *On dynamic mode decomposition.* **J Comput Dyn** 1(2).
-4. Gu S et al. (2015) *Controllability of structural brain networks.* **Nat Commun** 6:8414.
-5. Maris E & Oostenveld R (2007) *Nonparametric statistical testing of EEG- and MEG-data.* **J Neurosci Meth** 164:177.
-6. Miller KJ et al. (2016) *Spontaneous Decoding of the Timing and Content of Human Object Perception.* **PLoS Biol** 14(2).
-7. Panichello MF & Buschman TJ (2021) *Shared mechanisms underlie the control of working memory and attention.* **Nature** 592:601.
+1. Russo AA et al. (2018) *Motor cortex embeds muscle-like commands in an untangled population response.* **Neuron** 97:953.
+2. Tu JH et al. (2014) *On dynamic mode decomposition.* **J Comput Dyn** 1(2).
+3. Libby A & Buschman TJ (2021) *Rotational dynamics reduce interference between sensory and memory representations.* **Nat Neurosci** 24:715.
+4. Panichello MF & Buschman TJ (2021) *Shared mechanisms underlie the control of working memory and attention.* **Nature** 592:601.
+5. Inagaki HK et al. (2019) *Discrete attractor dynamics underlies persistent activity in the frontal cortex.* **Nature** 566:212.
+6. Ezzyat Y et al. (2018) *Closed-loop stimulation of temporal cortex rescues functional networks and improves memory.* **Nat Commun** 9:365.
+7. Maris E & Oostenveld R (2007) *Nonparametric statistical testing of EEG- and MEG-data.* **J Neurosci Meth** 164:177.
 8. Huang Y et al. (2017) *Measurements and models of electric fields during tES.* **eLife** 6:e18834.

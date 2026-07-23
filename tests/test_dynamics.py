@@ -1,5 +1,6 @@
 """Tests for src/dynamics.py."""
 
+import inspect
 import numpy as np
 import pytest
 import sys
@@ -17,6 +18,16 @@ from dynamics import (
     velocity_autocorrelation,
     ring_attractor_phase,
     local_linear_stability,
+    flow_divergence,
+    ensemble_dmd,
+    dmd_reconstruction_error,
+    koopman_edmd,
+    stimulation_trigger_window,
+    divergence_rank_sweep,
+    mean_trajectory_divergence_rank_sweep,
+    rank_robustness_sign,
+    fit_input_lds,
+    simulate_input_response,
 )
 
 
@@ -223,3 +234,342 @@ class TestLocalLinearStability:
         valid = ~np.isnan(interior)
         if valid.sum() > 5:
             assert interior[valid].mean() < 0
+
+
+class TestFlowDivergence:
+    def test_pure_rotation_gives_near_zero_divergence(self):
+        # Volume-preserving rotation: true divergence is 0, but the naive
+        # trace(A-I)/dt approximation would register spurious contraction.
+        T = 300
+        theta = 0.2
+        t = np.arange(T)
+        Z = np.column_stack([np.cos(theta * t), np.sin(theta * t)])
+        res = flow_divergence(Z, dt=1.0, method="dmd", r=2)
+        assert abs(res["mean_divergence"]) < 0.05
+
+    def test_pure_contraction_matches_analytic_rate(self):
+        T, decay = 200, 0.9
+        rng = np.random.default_rng(0)
+        Z = np.zeros((T, 2))
+        Z[0] = rng.standard_normal(2)
+        for t in range(1, T):
+            Z[t] = decay * Z[t - 1] + 1e-3 * rng.standard_normal(2)
+        res = flow_divergence(Z, dt=1.0, method="dmd", r=2)
+        expected = 2 * np.log(decay)
+        assert res["mean_divergence"] == pytest.approx(expected, abs=0.05)
+
+    def test_expansion_is_positive(self):
+        # Two independent per-axis growth rates, so the state matrix is full
+        # rank (a purely rank-1 trajectory ill-conditions the DMD SVD fit).
+        T = 60
+        growth = np.array([1.05, 1.03])
+        Z = np.zeros((T, 2))
+        Z[0] = [0.1, 0.15]
+        for t in range(1, T):
+            Z[t] = growth * Z[t - 1]
+        res = flow_divergence(Z, dt=1.0, method="dmd", r=2)
+        assert res["mean_divergence"] > 0
+
+
+class TestEnsembleDMD:
+    def test_output_keys(self, rng):
+        N, T, d = 20, 30, 3
+        Z_trials = rng.standard_normal((N, T, d)) * 0.1
+        res = ensemble_dmd(Z_trials, r=3, dt=1.0, n_splits=4, n_null=10, rng=rng)
+        for key in ["A", "eigenvalues", "div_scalar", "r2_insample",
+                    "r2_cv", "r2_null", "n_trials"]:
+            assert key in res
+        assert res["n_trials"] == N
+
+    def test_recovers_contraction_from_noisy_ensemble(self, rng):
+        N, T, decay = 40, 50, 0.9
+        Z_trials = np.zeros((N, T, 2))
+        for n in range(N):
+            x = rng.standard_normal(2)
+            for t in range(T):
+                Z_trials[n, t] = x
+                x = decay * x + 0.01 * rng.standard_normal(2)
+        res = ensemble_dmd(Z_trials, r=2, dt=1.0, n_splits=5, n_null=20, rng=rng)
+        expected = 2 * np.log(decay)
+        assert res["div_scalar"] == pytest.approx(expected, abs=0.05)
+
+    def test_cv_r2_below_insample_or_close(self, rng):
+        # CV R^2 should not wildly exceed in-sample R^2 for a well-specified
+        # linear system with real single-trial variability.
+        N, T, decay = 30, 40, 0.85
+        Z_trials = np.zeros((N, T, 2))
+        for n in range(N):
+            x = rng.standard_normal(2)
+            for t in range(T):
+                Z_trials[n, t] = x
+                x = decay * x + 0.05 * rng.standard_normal(2)
+        res = ensemble_dmd(Z_trials, r=2, dt=1.0, n_splits=5, n_null=10, rng=rng)
+        assert res["r2_cv"] > 0.5
+        assert res["r2_cv"] <= res["r2_insample"] + 0.15
+
+    def test_null_r2_lower_than_real_fit(self, rng):
+        N, T, decay = 30, 40, 0.85
+        Z_trials = np.zeros((N, T, 2))
+        for n in range(N):
+            x = rng.standard_normal(2)
+            for t in range(T):
+                Z_trials[n, t] = x
+                x = decay * x + 0.02 * rng.standard_normal(2)
+        res = ensemble_dmd(Z_trials, r=2, dt=1.0, n_splits=5, n_null=30, rng=rng)
+        assert res["r2_null"] < res["r2_cv"]
+
+
+class TestDMDReconstructionError:
+    def test_output_keys(self, rng):
+        Z = rng.standard_normal((60, 4)) * 0.1
+        res = dmd_reconstruction_error(Z, r=3, dt=1.0)
+        for key in ["relative_error", "mean_rel_error", "r_squared", "A"]:
+            assert key in res
+        assert res["relative_error"].shape == (59,)
+        assert res["A"].shape == (4, 4)
+
+    def test_near_perfect_linear_system_low_error(self, rng):
+        T, decay = 100, 0.9
+        Z = np.zeros((T, 2))
+        Z[0] = rng.standard_normal(2)
+        for t in range(1, T):
+            Z[t] = decay * Z[t - 1]
+        res = dmd_reconstruction_error(Z, r=2, dt=1.0)
+        assert res["mean_rel_error"] < 1e-6
+        assert res["r_squared"] > 0.999
+
+    def test_A_is_real(self, rng):
+        # Rotation + decay: complex-conjugate eigenvalue pair.
+        T, theta, decay = 80, 0.3, 0.95
+        A_true = decay * np.array([[np.cos(theta), -np.sin(theta)],
+                                    [np.sin(theta), np.cos(theta)]])
+        Z = np.zeros((T, 2))
+        Z[0] = rng.standard_normal(2)
+        for t in range(1, T):
+            Z[t] = A_true @ Z[t - 1]
+        res = dmd_reconstruction_error(Z, r=2, dt=1.0)
+        np.testing.assert_allclose(res["A"], A_true, atol=1e-6)
+
+
+class TestKoopmanEDMD:
+    def test_output_keys(self, rng):
+        Z = rng.standard_normal((80, 3)) * 0.1
+        res = koopman_edmd(Z, r=4, dt=1.0, poly_degree=2, delay_embeddings=3)
+        for key in ["eigenvalues", "eigenvalues_ct", "modes", "r_squared_lift",
+                    "r_squared_orig", "lifting_dim"]:
+            assert key in res
+
+    def test_linear_system_high_r_squared(self, rng):
+        # Pure linear dynamics: even the polynomial-lifted EDMD fit should
+        # explain nearly all variance in the original space.
+        T, decay = 150, 0.92
+        Z = np.zeros((T, 2))
+        Z[0] = rng.standard_normal(2)
+        for t in range(1, T):
+            Z[t] = decay * Z[t - 1]
+        res = koopman_edmd(Z, r=2, dt=1.0, poly_degree=1, delay_embeddings=1)
+        assert res["r_squared_orig"] > 0.99
+
+    def test_no_delay_padding_artifact(self, rng):
+        # With delay embedding, the fit should not depend on Z[0] being
+        # arbitrarily repeated as fake history (regression test for a padding bug).
+        T, decay = 100, 0.9
+        Z = np.zeros((T, 2))
+        Z[0] = rng.standard_normal(2)
+        for t in range(1, T):
+            Z[t] = decay * Z[t - 1]
+        res_delay3 = koopman_edmd(Z, r=2, dt=1.0, poly_degree=1, delay_embeddings=3)
+        assert res_delay3["r_squared_orig"] > 0.99
+
+
+class TestDtPropagation:
+    """Regression test: dt must default to a neutral 1.0 sample and every
+    dt-sensitive quantity must actually scale with the dt passed in, not a
+    silently baked-in sampling rate (Round-4 audit item 1a)."""
+
+    @pytest.mark.parametrize("fn", [trial_tangling, trial_dmd, maintenance_eigenspectra,
+                                     dmd_reconstruction_error, koopman_edmd])
+    def test_default_dt_is_neutral(self, fn):
+        sig = inspect.signature(fn)
+        assert sig.parameters["dt"].default == 1.0
+
+    def test_trial_dmd_continuous_eigenvalues_scale_with_dt(self, rng):
+        T, decay = 100, 0.9
+        Z = np.zeros((T, 2))
+        Z[0] = rng.standard_normal(2)
+        for t in range(1, T):
+            Z[t] = decay * Z[t - 1]
+
+        res_a = trial_dmd(Z, r=2, dt=1.0)
+        res_b = trial_dmd(Z, r=2, dt=0.5)
+
+        # eigenvalues_ct = log(lambda) / dt: halving dt must double the
+        # continuous-time rate for the same discrete-time eigenvalues.
+        np.testing.assert_allclose(
+            res_b["eigenvalues_ct"], res_a["eigenvalues_ct"] * 2.0, atol=1e-8
+        )
+
+    def test_ensemble_dmd_divergence_scales_with_dt(self, rng):
+        N, T, decay = 20, 30, 0.85
+        Z_trials = np.zeros((N, T, 2))
+        for n in range(N):
+            x = rng.standard_normal(2)
+            for t in range(T):
+                Z_trials[n, t] = x
+                x = decay * x + 0.01 * rng.standard_normal(2)
+
+        res_a = ensemble_dmd(Z_trials, r=2, dt=1.0, n_splits=3, n_null=2, rng=rng)
+        res_b = ensemble_dmd(Z_trials, r=2, dt=0.5, n_splits=3, n_null=2, rng=rng)
+        np.testing.assert_allclose(res_b["div_scalar"], res_a["div_scalar"] * 2.0, atol=1e-8)
+
+
+class TestDivergenceRankSweep:
+    def test_ranks_clipped_to_dimensionality(self, rng):
+        N, T, d = 15, 25, 4
+        Z_trials = rng.standard_normal((N, T, d)) * 0.1
+        res = divergence_rank_sweep(Z_trials, dt=1.0, ranks=(2, 3, 8, 10), n_null=2, rng=rng)
+        assert max(res["ranks"]) <= d
+        assert len(res["div_scalar"]) == len(res["ranks"])
+
+    def test_mean_trajectory_sweep_matches_full_dmd(self, rng):
+        T, decay = 60, 0.9
+        Z = np.zeros((T, 2))
+        Z[0] = rng.standard_normal(2)
+        for t in range(1, T):
+            Z[t] = decay * Z[t - 1]
+        res = mean_trajectory_divergence_rank_sweep(Z, dt=1.0, ranks=(2,))
+        lam = exact_dmd(Z.T, r=2, dt=1.0)["eigenvalues"]
+        expected = float(np.sum(np.log(np.abs(lam) + 1e-300)))
+        np.testing.assert_allclose(res["div_scalar"][0], expected, atol=1e-6)
+
+
+class TestRankRobustnessSign:
+    def test_all_same_sign_is_robust(self):
+        assert rank_robustness_sign([-1.0, -0.5, -2.0]) is True
+
+    def test_sign_flip_is_not_robust(self):
+        assert rank_robustness_sign([-1.0, 0.5, -2.0]) is False
+
+    def test_zero_is_not_robust(self):
+        assert rank_robustness_sign([-1.0, 0.0, -2.0]) is False
+
+
+class TestStimulationTriggerWindow:
+    def test_output_keys(self, rng):
+        Z = rng.standard_normal((80, 3)) * 0.1
+        times = np.arange(80) * 0.01
+        res = stimulation_trigger_window(Z, times, dt=0.01, n_neighbors=10)
+        for key in ["trigger_onsets", "trigger_offsets", "trigger_times", "divergence"]:
+            assert key in res
+        assert res["divergence"].shape == (80,)
+
+    def test_expanding_trajectory_has_trigger_window(self, rng):
+        T = 60
+        growth = 1.05
+        Z = np.zeros((T, 2))
+        Z[0] = [0.1, 0.15]
+        for t in range(1, T):
+            Z[t] = growth * Z[t - 1] + 1e-4 * rng.standard_normal(2)
+        times = np.arange(T) * 1.0
+        res = stimulation_trigger_window(Z, times, dt=1.0, n_neighbors=10,
+                                          threshold=0.0, min_duration_s=2.0)
+        assert len(res["trigger_onsets"]) >= 1
+        assert len(res["trigger_offsets"]) == len(res["trigger_onsets"])
+
+
+class TestFitInputLDS:
+    def test_recovers_planted_A_B(self, rng):
+        # Plant a stable random (A, B) in a k-dim latent space, embed into a
+        # higher-dim observation space via a random orthonormal C, drive with
+        # a random input sequence, and check fit_input_lds recovers (A, B) up
+        # to the (near-)identical latent basis (C is orthonormal and X's PCA
+        # will recover it exactly since X lives exactly in that k-dim subspace).
+        k, d, T = 3, 6, 400
+        A_true = 0.9 * np.linalg.qr(rng.standard_normal((k, k)))[0]  # stable (orthogonal * 0.9)
+        B_true = rng.standard_normal((k, 2))
+        C_true, _ = np.linalg.qr(rng.standard_normal((d, k)))
+
+        U = rng.standard_normal((T, 2)) * 0.3
+        Z = np.zeros((T, k))
+        Z[0] = rng.standard_normal(k) * 0.1
+        for t in range(T - 1):
+            Z[t + 1] = A_true @ Z[t] + B_true @ U[t]
+        X = Z @ C_true.T  # noiseless embedding
+
+        A_hat, B_hat, C_hat, z_hat = fit_input_lds(X, U, latent_dim=k)
+        assert A_hat.shape == (k, k)
+        assert B_hat.shape == (k, 2)
+        assert C_hat.shape == (d, k)
+        assert z_hat.shape == (T, k)
+
+        # The recovered latent basis can differ from the true one by an
+        # orthogonal rotation (PCA sign/rotation ambiguity within the shared
+        # k-dim subspace); compare in OBSERVATION space instead, where the
+        # rotation cancels: C_hat @ A_hat @ C_hat.T should match C_true @ A_true @ C_true.T,
+        # and likewise for B.
+        A_obs_hat = C_hat @ A_hat @ C_hat.T
+        A_obs_true = C_true @ A_true @ C_true.T
+        np.testing.assert_allclose(A_obs_hat, A_obs_true, atol=1e-2)
+
+        B_obs_hat = C_hat @ B_hat
+        B_obs_true = C_true @ B_true
+        np.testing.assert_allclose(B_obs_hat, B_obs_true, atol=1e-2)
+
+    def test_simulated_response_aligns_with_planted_B(self, rng):
+        # A pure-decay A (no rotation) so the response after one input pulse
+        # points along B; check simulate_input_response's displacement is
+        # cosine-aligned with the planted B direction.
+        k, d, T = 3, 5, 300
+        A_true = 0.85 * np.eye(k)
+        b_dir = rng.standard_normal(k)
+        b_dir /= np.linalg.norm(b_dir)
+        B_true = b_dir[:, None]  # (k, 1) -- single input channel
+        C_true, _ = np.linalg.qr(rng.standard_normal((d, k)))
+
+        U = rng.standard_normal((T, 1)) * 0.3
+        Z = np.zeros((T, k))
+        Z[0] = rng.standard_normal(k) * 0.05
+        for t in range(T - 1):
+            Z[t + 1] = A_true @ Z[t] + B_true @ U[t]
+        X = Z @ C_true.T
+
+        A_hat, B_hat, C_hat, z_hat = fit_input_lds(X, U, latent_dim=k)
+
+        # Unit pulse response, starting from the origin, in the FITTED basis.
+        U_pulse = np.zeros((10, 1))
+        U_pulse[0, 0] = 1.0
+        Z_sim = simulate_input_response(A_hat, B_hat, C_hat, np.zeros(k), U_pulse)
+        assert Z_sim.shape == (11, k)
+        displacement_hat = Z_sim[1] - Z_sim[0]  # ~= B_hat[:, 0]
+
+        # Compare direction in OBSERVATION space (basis-invariant), against
+        # the planted B direction.
+        disp_obs = C_hat @ displacement_hat
+        b_obs_true = C_true @ b_dir
+        cos_sim = float(
+            disp_obs @ b_obs_true / (np.linalg.norm(disp_obs) * np.linalg.norm(b_obs_true) + 1e-12)
+        )
+        assert cos_sim > 0.99
+
+
+def _demo_self_check() -> None:
+    """Standalone sanity check (assert-based) — run directly if pytest is
+    unavailable: recovers a planted (A, B) input-LDS and confirms the
+    simulated response aligns with the planted input direction."""
+    rng = np.random.default_rng(0)
+    k, T = 2, 200
+    A_true = np.array([[0.9, 0.0], [0.0, 0.8]])
+    B_true = np.array([[1.0], [0.0]])
+    U = rng.standard_normal((T, 1)) * 0.2
+    Z = np.zeros((T, k))
+    for t in range(T - 1):
+        Z[t + 1] = A_true @ Z[t] + B_true @ U[t]
+    A_hat, B_hat, C_hat, z_hat = fit_input_lds(Z, U, latent_dim=k)
+    Z_sim = simulate_input_response(A_hat, B_hat, C_hat, np.zeros(k), np.array([[1.0]]))
+    disp = Z_sim[1] - Z_sim[0]
+    assert np.linalg.norm(disp - B_hat[:, 0]) < 1e-8
+    print("fit_input_lds/simulate_input_response self-check OK")
+
+
+if __name__ == "__main__":
+    _demo_self_check()

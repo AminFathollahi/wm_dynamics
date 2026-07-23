@@ -63,6 +63,76 @@ def controllability_gramian(
     return Wc
 
 
+def unstable_eigenvector(A: NDArray) -> tuple[NDArray, float]:
+    """Direction of fastest growth (or slowest decay): eigenvector of A's
+    eigenvalue with the largest real part.
+
+    For a discrete-time operator A, this is the direction a perturbation
+    grows fastest along — the steering axis v* a control policy read off
+    fitted dynamics naturally targets (used by run_divergence_analysis.py
+    and src/closed_loop.py).
+
+    Returns
+    -------
+    v_star     : (n,) real, unit-norm
+    max_re_eig : float — Re(eigenvalue) of the selected mode
+    """
+    eigs, vecs = np.linalg.eig(A)
+    idx = int(np.argmax(eigs.real))
+    v = vecs[:, idx].real
+    v_star = v / (np.linalg.norm(v) + 1e-12)
+    return v_star, float(eigs[idx].real)
+
+
+def _normalize_adjacency(W: NDArray) -> NDArray:
+    """Symmetrize and rescale a weighted adjacency matrix to spectral radius
+    < 1 (Gu et al. 2015 Nat Commun, Methods): required for the closed-form
+    average/modal controllability below, which assumes a stable, symmetric
+    (orthogonally diagonalizable) system matrix."""
+    Ws = (W + W.T) / 2.0
+    s_max = np.linalg.svd(Ws, compute_uv=False)[0]
+    return Ws / (1.0 + s_max)
+
+
+def average_controllability(W: NDArray) -> NDArray:
+    """Average controllability of every node (Gu et al. 2015 Nat Commun, Eq
+    1): ease of steering the network with average input energy, in closed
+    form from the eigendecomposition of the normalized (symmetric) adjacency:
+
+        y_avg(i) = sum_k v_k(i)^2 / (1 - lambda_k^2)
+
+    Large y_avg(i): node i can, on average, reach many states cheaply.
+
+    Returns
+    -------
+    (n,) per-node average controllability
+    """
+    A = _normalize_adjacency(W)
+    eigvals, eigvecs = np.linalg.eigh(A)
+    denom = np.clip(1.0 - eigvals**2, 1e-12, None)
+    return (eigvecs**2) @ (1.0 / denom)
+
+
+def modal_controllability(W: NDArray) -> NDArray:
+    """Modal controllability of every node (Gu et al. 2015 Nat Commun, Eq 2):
+    ability to steer the network into its hardest-to-reach (weakly-coupled)
+    modes, in closed form from the same eigendecomposition:
+
+        phi(i) = sum_k (1 - lambda_k^2) * v_k(i)^2
+
+    Small phi(i): node i loads mostly onto near-unity (slow) eigenmodes and
+    is a comparatively weak driver of the network's hard-to-reach states.
+
+    Returns
+    -------
+    (n,) per-node modal controllability
+    """
+    A = _normalize_adjacency(W)
+    eigvals, eigvecs = np.linalg.eigh(A)
+    weight = 1.0 - eigvals**2
+    return (eigvecs**2) @ weight
+
+
 def is_controllable(A: NDArray, B: NDArray) -> bool:
     """Check full-rank controllability matrix [B, AB, A²B, ..., A^{n-1}B]."""
     n = A.shape[0]
@@ -103,7 +173,8 @@ def dare_solve(
     else:
         # Value iteration (slower but dependency-free)
         P = Q.copy().astype(float)
-        for _ in range(10000):
+        n_iter = 10000
+        for i in range(n_iter):
             P_new = (
                 A.T @ P @ A
                 - A.T @ P @ B @ np.linalg.solve(R + B.T @ P @ B, B.T @ P @ A)
@@ -113,6 +184,13 @@ def dare_solve(
                 P = P_new
                 break
             P = P_new
+        else:
+            import warnings
+            warnings.warn(
+                f"dare_solve: value iteration did not converge in {n_iter} iterations "
+                f"(final delta={np.max(np.abs(P_new - P)):.2e}); P may be inaccurate.",
+                RuntimeWarning,
+            )
 
     K = np.linalg.solve(R + B.T @ P @ B, B.T @ P @ A)
     return P, K

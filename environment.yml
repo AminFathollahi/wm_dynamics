@@ -28,3 +28,4 @@ dependencies:
       - pydmd
       - control
       - cvxpy
+      - pysindy

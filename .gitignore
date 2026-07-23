@@ -24,6 +24,23 @@ build/
 .ipynb_checkpoints/
 *.ipynb_checkpoints
 
+# ── Paper draft (LaTeX source, drafts, bib — tracked in Overleaf/external) ─────
+PAPER_DRAFT.md
+PAPER_REPORT.md
+PAPER_REPORT.tex
+PAPER_REPORT.aux
+PAPER_REPORT.bbl
+PAPER_REPORT.blg
+PAPER_REPORT.log
+PAPER_REPORT.out
+references.bib
+*.bib
+*.aux
+*.blg
+*.bbl
+*.log
+*.out
+
 # ── Outputs ─────────────────────────────────────────────────────────────────────
 figures/
 results/

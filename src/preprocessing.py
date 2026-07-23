@@ -2,14 +2,19 @@
 preprocessing.py — multi-dataset iEEG signal processing pipeline.
 
 Datasets supported:
-  1. Kai Miller N-back iEEG (Miller et al. 2007, 2016)
-       4 subjects (al, ca, cc, ug); ECoG; 1200 Hz; 0/1/2-back verbal N-back
+  1. Kai Miller N-back ECoG (Miller 2019 Nat Hum Behav library, "memory_nback")
+       4 subjects (al, ca, cc, ug); ECoG; 1000 Hz (Synamps2, scalp/mastoid ref,
+       0.15-200 Hz instrument bandpass -- Miller 2019 Methods, "Recordings");
+       0/1/2-back house-repetition detection (NOT verbal -- stimuli are house
+       pictures; see the dataset's own README_memory_nback_dataset_notes.docx).
        MAT format. Functions: load_subject, load_miller_nback, compute_hgp
 
-  2. DANDI 000574 — Boran et al. (2025) Sternberg WM
+  2. DANDI 000574 — Boran et al. (2020) Sternberg WM
        9 subjects; iEEG + EEG + LFP + single units (MTL: hippocampus, amygdala,
        temporal cortex); NWB format; Sternberg set sizes 4/6/8
-       References: Boran et al. 2025; Sarnthein lab Zurich
+       References: Boran, Fedele, Steiner, Hilfiker, Stieglitz, Grunwald &
+       Sarnthein (2020) Sci Data 7:30, doi:10.1038/s41597-020-0364-3; Sarnthein
+       lab Zurich
        Functions: load_boran_nwb, compute_boran_hgp
 
   3. TES1 — Huang et al. (2017) eLife transcranial electrical stimulation
@@ -27,8 +32,9 @@ Signal processing methods:
 
 from __future__ import annotations
 
-import io
+import re
 import zipfile
+from collections import defaultdict
 import numpy as np
 import scipy.signal as sig
 import scipy.io as sio
@@ -44,7 +50,8 @@ BORAN_DATA_DIR = _EXT_DATA / "000574"
 TES1_ZIP_PATH = _EXT_DATA / "Tes1" / "HuangLiu2016dataset.zip"
 
 SUBJECTS = ["al", "ca", "cc", "ug"]
-SRATE = 1200  # Hz  (Miller)
+SRATE = 1000  # Hz (Miller) -- confirmed from Miller 2019 Nat Hum Behav Methods
+              # ("Electrical potentials were sampled at 1000 Hz"), NOT 1200 Hz.
 BORAN_SRATE_IEEG = 1398  # Hz (DANDI 000574 iEEG)
 BORAN_SRATE_LFP = 22370  # Hz (DANDI 000574 raw LFP)
 
@@ -64,8 +71,8 @@ def load_subject(subj: str, data_dir: Path = DATA_DIR) -> dict:
     Returns
     -------
     dict with keys:
-      data    : (T, C) float64 — ECoG voltage, pre-filtered 1-300 Hz
-      stim    : (T,)  uint8  — letter identity (0=ISI, 1-40=letter)
+      data    : (T, C) float64 — ECoG voltage, instrument-bandpassed 0.15-200 Hz
+      stim    : (T,)  uint8  — house-picture identity (0=ISI, 1-40=house)
       task    : (T,)  int8   — condition (-1=rest, 0/1/2=N-back load)
       target  : (T,)  uint8  — trial type (0=ISI, 1=non-target, 2=target)
       srate   : int          — sampling rate in Hz
@@ -131,6 +138,97 @@ def common_average_reference(data: np.ndarray) -> np.ndarray:
     return data - data.mean(axis=1, keepdims=True)
 
 
+def line_noise_notch(
+    data: np.ndarray, srate: float, fundamental: float = 50.0, n_harmonics: int = 3,
+) -> np.ndarray:
+    """Notch out mains frequency + harmonics (e.g. 50/100/150 Hz for EU sites).
+
+    Round-8 7A fix: the Boran (Zurich, 50 Hz mains) high-gamma path (70-150 Hz)
+    previously had no notch at all, so the 2nd/3rd mains harmonics (100, 150 Hz)
+    fell inside the HGP band uncorrected. Miller (US, 60 Hz) already goes
+    through preprocess(), which does notch -- this covers the Boran gap.
+
+    Parameters
+    ----------
+    fundamental : mains frequency (50 EU, 60 US) -- verify per site, don't hard-code blindly.
+    n_harmonics : number of harmonics to notch, including the fundamental.
+    """
+    for h in range(1, n_harmonics + 1):
+        f = fundamental * h
+        if f < srate / 2:
+            data = notch_filter(data, f, srate)
+    return data
+
+
+def shank_bipolar_index_pairs(
+    labels: list[str],
+) -> tuple[list[tuple[int, int, str]], list[int]]:
+    """Parse electrode labels into adjacent-contact bipolar (idx0, idx1, pair_label)
+    triples plus a list of orphan channel indices (no adjacent contact to pair with).
+
+    Electrode labels are parsed as <shank letters><contact number>, e.g.
+    'AHL3' -> shank 'AHL', contact 3 (matches DANDI 000574's naming). Shared by
+    bipolar_reference_by_shank (for the signal) and any per-channel metadata
+    (e.g. MNI coords) that needs the identical channel reduction.
+    """
+    shank_pat = re.compile(r"^([A-Za-z]+)(\d+)$")
+    shanks: dict[str, list[tuple[int, int]]] = defaultdict(list)
+    orphans: list[int] = []
+    for i, lab in enumerate(labels):
+        m = shank_pat.match(lab)
+        if m:
+            shanks[m.group(1)].append((int(m.group(2)), i))
+        else:
+            orphans.append(i)
+
+    pairs: list[tuple[int, int, str]] = []
+    for shank, contacts in shanks.items():
+        contacts.sort()
+        if len(contacts) < 2:
+            orphans.extend(i for _, i in contacts)
+            continue
+        for (n0, i0), (n1, i1) in zip(contacts[:-1], contacts[1:]):
+            pairs.append((i0, i1, f"{shank}{n0}-{shank}{n1}"))
+    return pairs, orphans
+
+
+def bipolar_reference_by_shank(
+    data: np.ndarray, labels: list[str],
+) -> tuple[np.ndarray, list[str]]:
+    """Bipolar (sequential adjacent-contact) re-reference for depth/sEEG shanks.
+
+    Round-8 7B fix: Boran depth electrodes were only ever CAR'd across ALL
+    channels (mixing shanks/regions), not bipolar -- bipolar-along-shank is
+    the sEEG field standard (shared-reference / volume-conduction artifacts
+    are far better removed by differencing adjacent contacts a few mm apart
+    than by a whole-head average). Channels that don't parse (e.g. scalp EEG
+    'F3', 'Cz') or belong to a single-contact shank fall back to a
+    common-average reference among themselves.
+
+    Parameters
+    ----------
+    data   : (T, C)
+    labels : length-C electrode labels
+
+    Returns
+    -------
+    data_bp   : (T, C_bp) -- C_bp < C (each shank loses its last contact)
+    labels_bp : list[str], e.g. 'AHL3-AHL4' for bipolar pairs, '<label>_CAR' for orphans
+    """
+    pairs, orphans = shank_bipolar_index_pairs(labels)
+    out_cols = [data[:, i0] - data[:, i1] for i0, i1, _ in pairs]
+    out_labels = [lab for _, _, lab in pairs]
+
+    if orphans:
+        sub = data[:, orphans]
+        car = sub - sub.mean(axis=1, keepdims=True)
+        for j, i in enumerate(orphans):
+            out_cols.append(car[:, j])
+            out_labels.append(f"{labels[i]}_CAR")
+
+    return np.stack(out_cols, axis=1), out_labels
+
+
 def reject_bad_channels(
     data: np.ndarray, threshold_mad: float = 3.0
 ) -> np.ndarray:
@@ -162,8 +260,8 @@ def preprocess(
 ) -> np.ndarray:
     """Full preprocessing pipeline: CAR → notch (line noise + harmonics).
 
-    The Miller dataset is pre-filtered 1-300 Hz; only CAR and line-noise
-    removal are needed.
+    The Miller dataset has only an instrument-imposed 0.15-200 Hz bandpass;
+    CAR and line-noise removal are what this function adds.
 
     Parameters
     ----------
@@ -204,7 +302,7 @@ def high_gamma_power(
 
     Parameters
     ----------
-    smooth_ms : Gaussian σ in milliseconds (50 ms = 60 samples at 1200 Hz)
+    smooth_ms : Gaussian σ in milliseconds (50 ms = 50 samples at 1000 Hz)
 
     Returns
     -------
@@ -256,7 +354,7 @@ def epoch_data(
       times   : (n_times,) s, relative to onset
       task_id : (N,) int
       tgt_id  : (N,) int
-      stim_id : (N,) int — letter identity at onset
+      stim_id : (N,) int — house-picture identity at onset
       onsets  : (N,) int — sample indices of stimulus onset
     """
     pre = int(pre_ms * srate / 1000)
@@ -435,57 +533,54 @@ def load_boran_nwb(
     """
     import h5py
 
-    f = h5py.File(str(nwb_path), "r")
+    with h5py.File(str(nwb_path), "r") as f:
+        sig_key = f"ecephys.{signal}"
+        raw_data = f["acquisition"][sig_key]["data"][:]       # (T_total, C)
+        timestamps = f["acquisition"][sig_key]["timestamps"][:]  # (T_total,)
+        srate = 1.0 / np.diff(timestamps).mean()
 
-    sig_key = f"ecephys.{signal}"
-    raw_data = f["acquisition"][sig_key]["data"][:]       # (T_total, C)
-    timestamps = f["acquisition"][sig_key]["timestamps"][:]  # (T_total,)
-    srate = 1.0 / np.diff(timestamps).mean()
+        # Electrode metadata
+        elec = f["general/extracellular_ephys/electrodes"]
+        elec_labels = [x.decode() for x in elec["label"][:]]
+        elec_locs = [x.decode() for x in elec["location"][:]]
+        elec_group = [x.decode() for x in elec["group_name"][:]]
 
-    # Electrode metadata
-    elec = f["general/extracellular_ephys/electrodes"]
-    elec_labels = [x.decode() for x in elec["label"][:]]
-    elec_locs = [x.decode() for x in elec["location"][:]]
-    elec_group = [x.decode() for x in elec["group_name"][:]]
+        # Select electrodes for this signal type
+        grp_name = "ieeg" if signal in ("ieeg", "lfp") else "eeg"
+        ch_mask = np.array([g == grp_name for g in elec_group])
+        if signal == "lfp":
+            ch_mask = np.ones(len(elec_group), dtype=bool)
 
-    # Select electrodes for this signal type
-    grp_name = "ieeg" if signal in ("ieeg", "lfp") else "eeg"
-    ch_mask = np.array([g == grp_name for g in elec_group])
-    if signal == "lfp":
-        ch_mask = np.ones(len(elec_group), dtype=bool)
+        # Trials
+        trials = f["intervals/trials"]
+        trial_starts = trials["start_time"][:]    # probe - 6s (fixation start)
+        set_sizes = trials["set_size"][:]
+        correct = trials["correct"][:].astype(bool)
+        artifact = trials["artifact"][:].astype(bool)
 
-    # Trials
-    trials = f["intervals/trials"]
-    trial_starts = trials["start_time"][:]    # probe - 6s (fixation start)
-    set_sizes = trials["set_size"][:]
-    correct = trials["correct"][:].astype(bool)
-    artifact = trials["artifact"][:].astype(bool)
+        # Probe time = trial_start + 6.0 s (fixation [-6,-5] + encoding [-5,-3] + maint [-3,0])
+        probe_times = trial_starts + 6.0
 
-    # Probe time = trial_start + 6.0 s (fixation [-6,-5] + encoding [-5,-3] + maint [-3,0])
-    probe_times = trial_starts + 6.0
+        t_pre, t_post = epoch_win
+        pre_samp = int(abs(t_pre) * srate)
+        post_samp = int(t_post * srate)
+        n_samp = pre_samp + post_samp
 
-    t_pre, t_post = epoch_win
-    pre_samp = int(abs(t_pre) * srate)
-    post_samp = int(t_post * srate)
-    n_samp = pre_samp + post_samp
+        times = np.linspace(t_pre, t_post, n_samp)
 
-    times = np.linspace(t_pre, t_post, n_samp)
-
-    epochs_list = []
-    valid_mask = []
-    for pt in probe_times:
-        center_idx = np.searchsorted(timestamps, pt)
-        i0 = center_idx - pre_samp
-        i1 = center_idx + post_samp
-        if i0 < 0 or i1 > raw_data.shape[0]:
-            valid_mask.append(False)
-            epochs_list.append(np.zeros((raw_data.shape[1], n_samp), dtype=np.float32))
-        else:
-            epoch = raw_data[i0:i1, :].T.astype(np.float32)  # (C, T)
-            epochs_list.append(epoch)
-            valid_mask.append(True)
-
-    f.close()
+        epochs_list = []
+        valid_mask = []
+        for pt in probe_times:
+            center_idx = np.searchsorted(timestamps, pt)
+            i0 = center_idx - pre_samp
+            i1 = center_idx + post_samp
+            if i0 < 0 or i1 > raw_data.shape[0]:
+                valid_mask.append(False)
+                epochs_list.append(np.zeros((raw_data.shape[1], n_samp), dtype=np.float32))
+            else:
+                epoch = raw_data[i0:i1, :].T.astype(np.float32)  # (C, T)
+                epochs_list.append(epoch)
+                valid_mask.append(True)
 
     epochs_arr = np.stack(epochs_list, axis=0)  # (N, C, T)
     valid_mask = np.array(valid_mask)
@@ -583,13 +678,7 @@ def load_tes1_stimulation(
       mni_coords   : (N_elec, 3) float — MNI x,y,z in mm (NaN if unlocalized)
       voltage_mV   : (N_elec,) float — induced voltage per mA (NaN if rejected)
     """
-    z = zipfile.ZipFile(str(zip_path), "r")
-    txt_files = [
-        n for n in z.namelist()
-        if n.endswith(".txt") and "README" not in n
-    ]
-
-    def _parse_file(fname: str, subj_id: str) -> dict:
+    def _parse_file(z: zipfile.ZipFile, fname: str, subj_id: str) -> dict:
         with z.open(fname) as fh:
             lines = fh.read().decode("utf-8", errors="replace").strip().split("\n")
         names, coords, volts = [], [], []
@@ -621,25 +710,28 @@ def load_tes1_stimulation(
             "voltage_mV": np.array(volts, dtype=float),
         }
 
-    if subject is not None:
-        target = f"HuangLiu2016dataset/{subject}.txt"
-        result = _parse_file(target, subject)
-        z.close()
-        return result
+    with zipfile.ZipFile(str(zip_path), "r") as z:
+        txt_files = [
+            n for n in z.namelist()
+            if n.endswith(".txt") and "README" not in n
+        ]
 
-    results = []
-    for fname in txt_files:
-        subj_id = fname.split("/")[-1].replace(".txt", "")
-        results.append(_parse_file(fname, subj_id))
-    z.close()
-    return results
+        if subject is not None:
+            target = f"HuangLiu2016dataset/{subject}.txt"
+            return _parse_file(z, target, subject)
+
+        results = []
+        for fname in txt_files:
+            subj_id = fname.split("/")[-1].replace(".txt", "")
+            results.append(_parse_file(z, fname, subj_id))
+        return results
 
 
 def build_tes1_input_matrix(
     tes1_data: dict,
     target_mni: np.ndarray,
     n_sources: int = 1,
-    sigma_mm: float = 10.0,
+    sigma_mm: float = 20.0,
 ) -> np.ndarray:
     """Build the LQR input matrix B from TES1 stimulation field data.
 
@@ -650,6 +742,15 @@ def build_tes1_input_matrix(
     This gives the B matrix in: x_{t+1} = Ax_t + Bu_t
     where u_t is the stimulation current vector (amps) and B maps current to
     the neural state change (via induced voltage field).
+
+    Huang et al. 2017 (eLife 6:e18834) report no spatial-smoothness constant
+    for the field and, if anything, argue AGAINST transporting one subject's
+    field onto another's anatomy without a subject-specific model (their
+    cross-subject prediction is significantly worse than subject-specific
+    FEM, p=1e-7). sigma_mm is therefore a coarse, literature-unconstrained
+    smoothing choice, not a calibrated physical scale -- treat B as a rough
+    proxy, not a validated field estimate. Matches the value used to
+    generate the manuscript's actual TES1 results (scripts/run_tes1_analysis.py).
 
     Parameters
     ----------
@@ -670,14 +771,222 @@ def build_tes1_input_matrix(
     src_mni = src_mni[valid]
     src_volt = src_volt[valid]
 
+    if n_sources != 1:
+        raise NotImplementedError(
+            "TES1 provides a single stimulation field; B supports n_sources=1 only. "
+            "Distinct source columns would need per-montage field maps, which this "
+            "dataset does not contain (the prior code silently left extra columns zero)."
+        )
+
     N_target = target_mni.shape[0]
     B = np.zeros((N_target, n_sources))
 
-    for col in range(min(n_sources, 1)):
-        for i, tgt in enumerate(target_mni):
-            dists = np.linalg.norm(src_mni - tgt, axis=1)
-            weights = np.exp(-dists**2 / (2 * sigma_mm**2))
-            weights /= weights.sum() + 1e-10
-            B[i, col] = np.dot(weights, src_volt)
+    for i, tgt in enumerate(target_mni):
+        dists = np.linalg.norm(src_mni - tgt, axis=1)
+        weights = np.exp(-dists**2 / (2 * sigma_mm**2))
+        weights /= weights.sum() + 1e-10
+        B[i, 0] = np.dot(weights, src_volt)
 
     return B
+
+
+# ── Multi-band feature extraction ──────────────────────────────────────────────
+
+BAND_DEFINITIONS = {
+    "theta":  (4.0,  8.0),
+    "alpha":  (8.0,  13.0),
+    "beta":   (13.0, 30.0),
+    "gamma":  (30.0, 70.0),
+    "hgp":    (70.0, 150.0),
+}
+
+
+def band_power(
+    data: np.ndarray,
+    band: str | tuple[float, float],
+    srate: float = SRATE,
+    smooth_ms: float = 200.0,
+) -> np.ndarray:
+    """Instantaneous band power via Hilbert envelope, Gaussian-smoothed.
+
+    For low-frequency bands (theta, alpha, beta), a longer smoothing window
+    (200 ms default) is appropriate because instantaneous power estimates are
+    noisy at low frequencies.  HGP uses the existing high_gamma_power function.
+
+    Parameters
+    ----------
+    data      : (T, C) — continuous iEEG signal
+    band      : name key from BAND_DEFINITIONS or (lo, hi) tuple in Hz
+    srate     : sampling rate (Hz)
+    smooth_ms : Gaussian σ (ms)
+
+    Returns
+    -------
+    power : (T, C) — instantaneous band power, smoothed
+    """
+    if isinstance(band, str):
+        lo, hi = BAND_DEFINITIONS[band]
+    else:
+        lo, hi = band
+
+    filtered = bandpass_filter(data, lo, hi, srate)
+    analytic = sig.hilbert(filtered, axis=0)
+    power = np.abs(analytic) ** 2
+
+    smooth_s = int(smooth_ms * srate / 1000)
+    if smooth_s > 1:
+        kernel = sig.windows.gaussian(smooth_s * 6 + 1, std=smooth_s)
+        kernel /= kernel.sum()
+        power = np.apply_along_axis(
+            lambda x: np.convolve(x, kernel, mode="same"), 0, power
+        )
+    return power
+
+
+def multiband_features(
+    data: np.ndarray,
+    srate: float = SRATE,
+    bands: list[str] | None = None,
+    smooth_ms_map: dict[str, float] | None = None,
+) -> dict[str, np.ndarray]:
+    """Extract band-specific power features for all WM-relevant frequency bands.
+
+    Theta-HGP decomposition enables:
+    - Band-specific CTG (which band carries a time-stable WM code?)
+    - PAC (phase-amplitude coupling between theta and HGP)
+    - Multi-band manifold (richer attractor geometry)
+
+    Parameters
+    ----------
+    bands        : list of band names; defaults to all BAND_DEFINITIONS keys
+    smooth_ms_map: per-band smoothing (ms); defaults: theta/alpha/beta 200ms, gamma/hgp 50ms
+
+    Returns
+    -------
+    dict mapping band name → (T, C) power array
+    """
+    if bands is None:
+        bands = list(BAND_DEFINITIONS.keys())
+    default_smooth = {"theta": 200.0, "alpha": 200.0, "beta": 200.0,
+                      "gamma": 100.0, "hgp": 50.0}
+    if smooth_ms_map is not None:
+        default_smooth.update(smooth_ms_map)
+
+    return {band: band_power(data, band, srate, default_smooth.get(band, 100.0))
+            for band in bands}
+
+
+def phase_amplitude_coupling(
+    data: np.ndarray,
+    phase_band: str | tuple[float, float] = "theta",
+    amplitude_band: str | tuple[float, float] = "hgp",
+    srate: float = SRATE,
+    n_phase_bins: int = 18,
+) -> np.ndarray:
+    """Modulation index (MI) PAC: theta phase × HGP amplitude coupling.
+
+    Uses the Tort et al. (2010) modulation index: for each channel, compute
+    the distribution of HGP amplitude across theta phase bins.  MI measures
+    how non-uniform this distribution is (KL divergence from uniform).
+
+    High MI → theta phase organises HGP bursts → multiplexed WM maintenance.
+
+    Parameters
+    ----------
+    data            : (T, C) — continuous iEEG
+    phase_band      : frequency band for the phase signal
+    amplitude_band  : frequency band for the amplitude signal
+    n_phase_bins    : number of phase bins (default 18 = 20° each)
+
+    Returns
+    -------
+    mi : (C,) — modulation index per channel
+    """
+    lo_ph, hi_ph = (BAND_DEFINITIONS[phase_band] if isinstance(phase_band, str)
+                    else phase_band)
+    lo_amp, hi_amp = (BAND_DEFINITIONS[amplitude_band] if isinstance(amplitude_band, str)
+                      else amplitude_band)
+
+    phase_signal = np.angle(sig.hilbert(bandpass_filter(data, lo_ph, hi_ph, srate), axis=0))
+    amp_signal   = np.abs(sig.hilbert(bandpass_filter(data, lo_amp, hi_amp, srate), axis=0))
+
+    bins = np.linspace(-np.pi, np.pi, n_phase_bins + 1)
+    n_channels = data.shape[1]
+    mi = np.zeros(n_channels)
+
+    for c in range(n_channels):
+        amp_per_bin = np.zeros(n_phase_bins)
+        for b in range(n_phase_bins):
+            in_bin = (phase_signal[:, c] >= bins[b]) & (phase_signal[:, c] < bins[b + 1])
+            if in_bin.sum() > 0:
+                amp_per_bin[b] = amp_signal[in_bin, c].mean()
+        total = amp_per_bin.sum()
+        if total > 0:
+            p = amp_per_bin / total
+            uniform = np.ones(n_phase_bins) / n_phase_bins
+            mi[c] = float(np.sum(p * np.log(p / uniform + 1e-10)) / np.log(n_phase_bins))
+
+    return mi
+
+
+def time_resolved_pac(
+    data: np.ndarray,
+    phase_band: str | tuple[float, float] = "theta",
+    amplitude_band: str | tuple[float, float] = "hgp",
+    srate: float = SRATE,
+    window_ms: float = 400.0,
+    step_ms: float = 50.0,
+    n_phase_bins: int = 18,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Time-resolved PAC modulation index in sliding windows (trPAC).
+
+    Tort et al. (2010) MI computed in overlapping windows.  During WM
+    maintenance, theta-HGP trPAC should be elevated above baseline and above
+    chance — directly testing the Lisman-Jensen (2005) theta-gamma WM model.
+
+    Parameters
+    ----------
+    data        : (T, C) — continuous iEEG (FULL recording, not epoched)
+    window_ms   : analysis window width in ms
+    step_ms     : step between windows in ms
+
+    Returns
+    -------
+    mi_t   : (n_windows, C) — PAC modulation index per window per channel
+    t_cent : (n_windows,)   — centre time of each window in samples
+    bins   : (n_phase_bins,) — phase bin centres (radians)
+    """
+    lo_ph, hi_ph = (BAND_DEFINITIONS[phase_band] if isinstance(phase_band, str)
+                    else phase_band)
+    lo_amp, hi_amp = (BAND_DEFINITIONS[amplitude_band] if isinstance(amplitude_band, str)
+                      else amplitude_band)
+
+    phase_sig = np.angle(sig.hilbert(bandpass_filter(data, lo_ph, hi_ph, srate), axis=0))
+    amp_sig   = np.abs(sig.hilbert(bandpass_filter(data, lo_amp, hi_amp, srate), axis=0))
+
+    win_s   = int(window_ms * srate / 1000)
+    step_s  = int(step_ms * srate / 1000)
+    T, C    = data.shape
+    starts  = np.arange(0, T - win_s, step_s)
+    bins    = np.linspace(-np.pi, np.pi, n_phase_bins + 1)
+    bin_ctrs = (bins[:-1] + bins[1:]) / 2
+    mi_t    = np.zeros((len(starts), C))
+
+    for wi, t0 in enumerate(starts):
+        ph_win  = phase_sig[t0:t0 + win_s]
+        amp_win = amp_sig[t0:t0 + win_s]
+        for c in range(C):
+            amp_per_bin = np.zeros(n_phase_bins)
+            for b in range(n_phase_bins):
+                mask_b = (ph_win[:, c] >= bins[b]) & (ph_win[:, c] < bins[b + 1])
+                if mask_b.sum() > 0:
+                    amp_per_bin[b] = amp_win[mask_b, c].mean()
+            total = amp_per_bin.sum()
+            if total > 0:
+                p = amp_per_bin / total
+                uniform = np.ones(n_phase_bins) / n_phase_bins
+                mi_t[wi, c] = float(np.sum(p * np.log(p / uniform + 1e-10)) /
+                                    np.log(n_phase_bins))
+
+    t_cent = starts + win_s // 2
+    return mi_t, t_cent, bin_ctrs

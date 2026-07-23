@@ -20,6 +20,8 @@ from preprocessing import (
     boran_baseline_normalize,
     load_tes1_stimulation,
     build_tes1_input_matrix,
+    line_noise_notch,
+    bipolar_reference_by_shank,
 )
 
 TES1_ZIP = Path(
@@ -94,6 +96,41 @@ class TestCAR:
     def test_shape_preserved(self, rng):
         x = rng.standard_normal((500, 16))
         assert common_average_reference(x).shape == x.shape
+
+
+class TestLineNoiseNotch:
+    def test_attenuates_fundamental_and_harmonics(self):
+        t = np.arange(SRATE * 5) / SRATE
+        noise = (np.sin(2 * np.pi * 50 * t) + np.sin(2 * np.pi * 100 * t)
+                 + np.sin(2 * np.pi * 150 * t))
+        out = line_noise_notch(noise, SRATE, fundamental=50.0, n_harmonics=3)
+        centre = out[SRATE:-SRATE]
+        assert np.max(np.abs(centre)) < 0.15
+
+    def test_skips_harmonics_above_nyquist(self):
+        # SRATE=1200 -> nyquist=600; fundamental=50 with 20 harmonics would hit
+        # 1000 Hz > nyquist, must not raise / must silently skip those.
+        x = np.random.default_rng(0).standard_normal(SRATE * 2)
+        out = line_noise_notch(x, SRATE, fundamental=50.0, n_harmonics=20)
+        assert out.shape == x.shape
+
+
+class TestBipolarReferenceByShank:
+    def test_pairs_adjacent_contacts_within_shank(self, rng):
+        labels = ["AHL1", "AHL2", "AHL3", "AL1", "AL2"]
+        data = rng.standard_normal((100, 5))
+        bp, bp_labels = bipolar_reference_by_shank(data, labels)
+        assert bp.shape == (100, 3)  # (3-1)+(2-1) pairs
+        assert bp_labels == ["AHL1-AHL2", "AHL2-AHL3", "AL1-AL2"]
+        np.testing.assert_allclose(bp[:, 0], data[:, 0] - data[:, 1])
+
+    def test_orphans_fall_back_to_car(self, rng):
+        labels = ["F3", "Cz", "AHL1"]  # AHL1 is a single-contact shank -> orphan too
+        data = rng.standard_normal((50, 3))
+        bp, bp_labels = bipolar_reference_by_shank(data, labels)
+        assert bp.shape == (50, 3)
+        assert all(l.endswith("_CAR") for l in bp_labels)
+        np.testing.assert_allclose(bp.mean(axis=1), np.zeros(50), atol=1e-10)
 
 
 class TestRejectBadChannels:
