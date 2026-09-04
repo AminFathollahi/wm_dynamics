@@ -1,0 +1,1477 @@
+{
+  "dirty_inventory": [
+    "M .gitignore",
+    " M DATASET_ANALYSIS_MATRIX.md",
+    " M environment.yml",
+    " M scripts/aggregate_forest_syntheses.py",
+    "RM scripts/build_apples_to_apples_leaderboard.py -> scripts/build_causal_targeting_leaderboard.py",
+    " M scripts/generate_paper_figures.py",
+    " M scripts/run_000574_units_pipeline.py",
+    " M scripts/run_amplification_check.py",
+    " M scripts/run_amplification_robustness.py",
+    " M scripts/run_axis_rotation_analysis.py",
+    " M scripts/run_behavior_ctg.py",
+    " M scripts/run_behavior_geometry_link.py",
+    " M scripts/run_boran_pipeline.py",
+    " M scripts/run_closed_loop_analysis.py",
+    " M scripts/run_closed_loop_behavior_flip.py",
+    " M scripts/run_decoder_confidence_timecourse_000469.py",
+    " M scripts/run_dim_robustness.py",
+    " M scripts/run_divergence_analysis.py",
+    " M scripts/run_dmd_extension_gap_cohorts.py",
+    " M scripts/run_dmd_rank_selection.py",
+    " M scripts/run_dpca_analysis.py",
+    " M scripts/run_full_trial_content_decoding_000469.py",
+    " M scripts/run_geometry_graded_behavior.py",
+    " M scripts/run_manifold_constraint.py",
+    " M scripts/run_manifold_constraint_robustness.py",
+    " M scripts/run_multiband_analysis.py",
+    " M scripts/run_multiitem_recall_decoding_000469.py",
+    " M scripts/run_ondemand_streak_diagnostic.py",
+    " M scripts/run_pac_donor_diagnostic.py",
+    " M scripts/run_pr_equivalence.py",
+    " M scripts/run_ram_openloop_pipeline.py",
+    " M scripts/run_ram_within_subject_feasibility.py",
+    " M scripts/run_ram_within_subject_test.py",
+    " M scripts/run_rl_policy_arm.py",
+    " M scripts/run_soldado_digital_twin.py",
+    " M scripts/run_soldado_headline_robustness.py",
+    " M scripts/run_soldado_pipeline.py",
+    " M scripts/run_stim_location_analysis.py",
+    " M scripts/run_target_transfer.py",
+    " M scripts/run_targeting_benchmark.py",
+    " M scripts/run_targeting_heterogeneity.py",
+    " M scripts/run_vstar_split_half_stability.py",
+    " M scripts/run_wolff_impulse_pipeline.py",
+    " M src/causal.py",
+    " M src/control.py",
+    " M src/dynamics.py",
+    " M src/geometry.py",
+    " M src/preprocessing.py",
+    " M src/spike_pipeline.py",
+    " M src/statistics.py",
+    "RM tests/test_apples_to_apples_leaderboard.py -> tests/test_build_causal_targeting_leaderboard.py",
+    " M tests/test_control.py",
+    "?? PI_AUDIT_LITERATURE_REVIEW.md",
+    "?? config/",
+    "?? scripts/audit_dataset_identity.py",
+    "?? scripts/freeze_legacy_state.py",
+    "?? scripts/run_alagapan_phase_omega.py",
+    "?? scripts/run_alagapan_stimulation_geometry.py",
+    "?? scripts/run_dfine_nonlinear_dynamics_check.py",
+    "?? scripts/run_dim_addendum.py",
+    "?? scripts/run_dpad_dynamics_dissociation.py",
+    "?? scripts/run_falsification_battery.py",
+    "?? scripts/run_haslacher_phase_omega.py",
+    "?? scripts/run_haslacher_stimulation_geometry.py",
+    "?? scripts/run_koopman_omega_check.py",
+    "?? scripts/run_nomad_cross_session_alignment.py",
+    "?? scripts/run_nonlinearity_onestep.py",
+    "?? scripts/run_ram_closedloop_pipeline.py",
+    "?? scripts/run_rotation_phase_cate.py",
+    "?? scripts/run_rotation_phase_content.py",
+    "?? scripts/run_rotation_power_bound.py",
+    "?? scripts/run_rotation_speed_axis.py",
+    "?? scripts/run_tphate_embedding.py",
+    "?? scripts/run_vstar_eigen_audit.py",
+    "?? scripts/run_vstar_fit_selection_factorial.py",
+    "?? scripts/run_vstar_identifiability.py",
+    "?? scripts/run_vstar_phase_sensitivity.py",
+    "?? scripts/run_vstar_subspace_stability.py",
+    "?? scripts/validate_evidence_ledger.py",
+    "?? src/provenance.py",
+    "?? tests/test_nonlinear_dynamics_methods.py",
+    "?? tests/test_provenance.py"
+  ],
+  "environment": {
+    "executable": "/home/amin/miniconda3/envs/wm_dynamics/bin/python",
+    "platform": "Linux-7.0.0-28-generic-x86_64-with-glibc2.39",
+    "python": "3.11.6 | packaged by conda-forge | (main, Oct  3 2023, 10:40:35) [GCC 12.3.0]",
+    "pythonhashseed": "<unset>"
+  },
+  "file_hashes": {
+    "DATASET_ANALYSIS_MATRIX.md": "203629cdd7e35c9f8540a8c0c41ee1e90e2451f308c8148395b289e2d49a3bce",
+    "PAPER_REPORT.tex": "65414413e45a6369628509de0f99ae9a729dacd33ab267586803c64731875fb1",
+    "README.md": "39639c2239d3e1130f6fe7b8fe1ac52a2fb01d4f32cfc32ca64d3d83b025b8e2",
+    "environment.yml": "0e6fde1abbe8ede3c6729fa3d69cef39de67e81089d8475c0cc9a4116e2474dd"
+  },
+  "git_commit": "33a3dc73065fe2cf3aa1355a6ba9728e91ee0aba",
+  "legacy_results": {
+    "causal_soldado": {
+      "dynamic_vs_stable_replication": {
+        "ci_lower": 0.010251989111842818,
+        "ci_upper": 0.06994108060416454,
+        "mean_abs_dynamic_pct_change": 0.11402111639463398,
+        "mean_abs_stable_pct_change": 0.07272552712682198,
+        "mean_diff": 0.04129558926781201,
+        "n_sessions": 8,
+        "p_value": 0.027597240275972403
+      },
+      "gate": {
+        "ate": 0.02748921618849064,
+        "intercept": 0.007850742316977001,
+        "n": 5880,
+        "p_value": 0.2451509698060388,
+        "slope": 0.04768235392264062,
+        "slope_ci_hi": 0.1276380546703377,
+        "slope_ci_lo": -0.03443698686332789
+      },
+      "gate_verdict": "FAIL/WEAK",
+      "n_sessions_used": 11,
+      "per_session": {
+        "Sa210311_s224": {
+          "cond_features": {},
+          "dynamic_vs_stable": null,
+          "max_real_eig": 0.8741148710250854,
+          "n_control_trials": 215,
+          "n_pc": 8,
+          "session": "Sa210311_s224",
+          "var_explained": 0.3037666082382202
+        },
+        "Wa220801_s549": {
+          "cond_features": {
+            "1": {
+              "align_s_m2": 0.5982057615034543,
+              "align_s_m3": 0.8257505701420055,
+              "alignment_to_vstar": 0.10042331744398691,
+              "amplification_alignment": 0.12154237724338293,
+              "anat_avg_ctrl": 1.0568785057781855,
+              "anat_modal_ctrl": 0.9469954640375259,
+              "channel_random_alignment": 0.47641165231540733,
+              "gramian_trace": 0.045300409423105335,
+              "input_norm": 0.05803831911638131,
+              "min_energy_dir_alignment": 0.6608009255928792,
+              "outside_frac": 0.9983143565182409,
+              "random_alignment": 0.2999648380564379,
+              "stable_alignment": 0.0492323969353496,
+              "stim_channels": [
+                6
+              ],
+              "topm_pca_alignment_m2": 0.7026918905340896,
+              "topm_pca_alignment_m3": 0.7298318157474347,
+              "within_frac": 0.05803832102954374
+            },
+            "2": {
+              "align_s_m2": 0.8321572052668419,
+              "align_s_m3": 0.9663823456419677,
+              "alignment_to_vstar": 0.6389306544855271,
+              "amplification_alignment": 0.0779301702798844,
+              "anat_avg_ctrl": 1.0568785057781855,
+              "anat_modal_ctrl": 0.9469954640375259,
+              "channel_random_alignment": 0.39123388580271445,
+              "gramian_trace": 0.027456980288009473,
+              "input_norm": 0.06527024835542267,
+              "min_energy_dir_alignment": 0.8664450079702252,
+              "outside_frac": 0.9978676238921179,
+              "random_alignment": 0.3372930684790768,
+              "stable_alignment": 0.055731064414514704,
+              "stim_channels": [
+                31
+              ],
+              "topm_pca_alignment_m2": 0.8614950292792968,
+              "topm_pca_alignment_m3": 0.8681903548018349,
+              "within_frac": 0.06527024751173513
+            }
+          },
+          "dynamic_vs_stable": {
+            "abs_dynamic_minus_abs_stable": -0.0150158293788062,
+            "dynamic_pct_change": -0.016315028025815453,
+            "stable_pct_change": -0.03133085740462165
+          },
+          "max_real_eig": 1.00509512424469,
+          "n_control_trials": 167,
+          "n_pc": 8,
+          "session": "Wa220801_s549",
+          "var_explained": 0.38229531049728394
+        },
+        "Wa220802_s550": {
+          "cond_features": {
+            "1": {
+              "align_s_m2": 0.7574897171460979,
+              "align_s_m3": 0.7923843191884531,
+              "alignment_to_vstar": 0.1699005527206448,
+              "amplification_alignment": 0.2711806455119512,
+              "anat_avg_ctrl": 1.0568785057781855,
+              "anat_modal_ctrl": 0.9469954640375259,
+              "channel_random_alignment": 0.33432206786302415,
+              "gramian_trace": 0.00864373860730067,
+              "input_norm": 0.03002671165962052,
+              "min_energy_dir_alignment": 0.1815954918297724,
+              "outside_frac": 0.9995490967141004,
+              "random_alignment": 0.31195562269548216,
+              "stable_alignment": 0.1674960005712383,
+              "stim_channels": [
+                48
+              ],
+              "topm_pca_alignment_m2": 0.20657325975067384,
+              "topm_pca_alignment_m3": 0.510423366855204,
+              "within_frac": 0.030026712932085527
+            }
+          },
+          "dynamic_vs_stable": {
+            "abs_dynamic_minus_abs_stable": 0.002089031770180827,
+            "dynamic_pct_change": 0.06815152709620302,
+            "stable_pct_change": 0.0660624953260222
+          },
+          "max_real_eig": 0.8962010741233826,
+          "n_control_trials": 306,
+          "n_pc": 8,
+          "session": "Wa220802_s550",
+          "var_explained": 0.39705824851989746
+        },
+        "Wa220803_s551": {
+          "cond_features": {},
+          "dynamic_vs_stable": null,
+          "max_real_eig": 0.8444104790687561,
+          "n_control_trials": 288,
+          "n_pc": 8,
+          "session": "Wa220803_s551",
+          "var_explained": 0.4128530025482178
+        },
+        "Wa220804_s552": {
+          "cond_features": {
+            "1": {
+              "align_s_m2": 0.745358215116071,
+              "align_s_m3": 0.7625157384768564,
+              "alignment_to_vstar": 0.7381840997437806,
+              "amplification_alignment": 0.4219711945787376,
+              "anat_avg_ctrl": 1.0568785057781855,
+              "anat_modal_ctrl": 0.9469954640375259,
+              "channel_random_alignment": 0.2920691049431026,
+              "gramian_trace": 0.0012110294234132075,
+              "input_norm": 0.012459252558717234,
+              "min_energy_dir_alignment": 0.7742060686102624,
+              "outside_frac": 0.9999223804845694,
+              "random_alignment": 0.3154916720167804,
+              "stable_alignment": 0.2306899171159118,
+              "stim_channels": [
+                19
+              ],
+              "topm_pca_alignment_m2": 0.7051997820682467,
+              "topm_pca_alignment_m3": 0.7070395860714288,
+              "within_frac": 0.012459252804225544
+            },
+            "2": {
+              "align_s_m2": 0.7967401337104675,
+              "align_s_m3": 0.8529510419983478,
+              "alignment_to_vstar": 0.7095825026427873,
+              "amplification_alignment": 0.08827462441332297,
+              "anat_avg_ctrl": 1.0568785057781855,
+              "anat_modal_ctrl": 0.9469954640375259,
+              "channel_random_alignment": 0.41876238305423474,
+              "gramian_trace": 0.0016416696080435768,
+              "input_norm": 0.027011594968130978,
+              "min_energy_dir_alignment": 0.9531729906394595,
+              "outside_frac": 0.9996351202730437,
+              "random_alignment": 0.3063824740063626,
+              "stable_alignment": 0.5028813705533273,
+              "stim_channels": [
+                61
+              ],
+              "topm_pca_alignment_m2": 0.9095155542194693,
+              "topm_pca_alignment_m3": 0.9258083990652627,
+              "within_frac": 0.027011594551654305
+            },
+            "3": {
+              "align_s_m2": 0.4385088206566341,
+              "align_s_m3": 0.6739558618526984,
+              "alignment_to_vstar": 0.2789491828251109,
+              "amplification_alignment": 0.11085066884570607,
+              "anat_avg_ctrl": 1.0568785057781855,
+              "anat_modal_ctrl": 0.9469954640375259,
+              "channel_random_alignment": 0.3215967386563092,
+              "gramian_trace": 0.056365708500466766,
+              "input_norm": 0.08430477240903084,
+              "min_energy_dir_alignment": 0.532337533049718,
+              "outside_frac": 0.9964400156443805,
+              "random_alignment": 0.18614163464997316,
+              "stable_alignment": 0.47947056872421356,
+              "stim_channels": [
+                80
+              ],
+              "topm_pca_alignment_m2": 0.40248843540305024,
+              "topm_pca_alignment_m3": 0.4281723310743795,
+              "within_frac": 0.08430477430837419
+            }
+          },
+          "dynamic_vs_stable": {
+            "abs_dynamic_minus_abs_stable": 0.06694000976363748,
+            "dynamic_pct_change": 0.11580083734820966,
+            "stable_pct_change": 0.04886082758457218
+          },
+          "max_real_eig": 0.9302213191986084,
+          "n_control_trials": 379,
+          "n_pc": 8,
+          "session": "Wa220804_s552",
+          "var_explained": 0.3397934138774872
+        },
+        "Wa220805_s553": {
+          "cond_features": {
+            "1": {
+              "align_s_m2": 0.2808504170827342,
+              "align_s_m3": 0.4397540258217398,
+              "alignment_to_vstar": 0.27989648978736714,
+              "amplification_alignment": 0.2919860949570266,
+              "anat_avg_ctrl": 1.0568785057781855,
+              "anat_modal_ctrl": 0.9469954640375259,
+              "channel_random_alignment": 0.2701152874137979,
+              "gramian_trace": 0.0017049730257492697,
+              "input_norm": 0.017477836130838646,
+              "min_energy_dir_alignment": 0.456301071306434,
+              "outside_frac": 0.9998472509342814,
+              "random_alignment": 0.255748749135866,
+              "stable_alignment": 0.40683585604238054,
+              "stim_channels": [
+                22
+              ],
+              "topm_pca_alignment_m2": 0.6439861361099198,
+              "topm_pca_alignment_m3": 0.6459759003788731,
+              "within_frac": 0.017477835467798918
+            },
+            "2": {
+              "align_s_m2": 0.6703373853638394,
+              "align_s_m3": 0.7239310867597436,
+              "alignment_to_vstar": 0.23244309049981265,
+              "amplification_alignment": 0.06703323504338184,
+              "anat_avg_ctrl": 1.0568785057781855,
+              "anat_modal_ctrl": 0.9469954640375259,
+              "channel_random_alignment": 0.454045880699353,
+              "gramian_trace": 0.004287769926082409,
+              "input_norm": 0.0468527111695367,
+              "min_energy_dir_alignment": 0.9747139235148647,
+              "outside_frac": 0.9989018088381324,
+              "random_alignment": 0.30419613466887585,
+              "stable_alignment": 0.3312558543847461,
+              "stim_channels": [
+                51
+              ],
+              "topm_pca_alignment_m2": 0.6960756268844225,
+              "topm_pca_alignment_m3": 0.8333476762785186,
+              "within_frac": 0.046852711483468486
+            }
+          },
+          "dynamic_vs_stable": {
+            "abs_dynamic_minus_abs_stable": -0.022578787316350338,
+            "dynamic_pct_change": 0.10817921833402246,
+            "stable_pct_change": 0.1307580056503728
+          },
+          "max_real_eig": 0.9677533507347107,
+          "n_control_trials": 140,
+          "n_pc": 8,
+          "session": "Wa220805_s553",
+          "var_explained": 0.33152881264686584
+        },
+        "Wa220808_s554": {
+          "cond_features": {
+            "3": {
+              "align_s_m2": 0.6618934781257988,
+              "align_s_m3": 0.6814863372995381,
+              "alignment_to_vstar": 0.2702644621691388,
+              "amplification_alignment": 0.04358619247008805,
+              "anat_avg_ctrl": 1.0568785057781855,
+              "anat_modal_ctrl": 0.9469954640375259,
+              "channel_random_alignment": 0.2651396212822775,
+              "gramian_trace": 0.04202501009438383,
+              "input_norm": 0.13830917537438328,
+              "min_energy_dir_alignment": 0.9345340611441688,
+              "outside_frac": 0.9903891024881724,
+              "random_alignment": 0.3447638560663119,
+              "stable_alignment": 0.4766535330646698,
+              "stim_channels": [
+                91
+              ],
+              "topm_pca_alignment_m2": 0.2534571623259388,
+              "topm_pca_alignment_m3": 0.32695922001637134,
+              "within_frac": 0.1383091776746391
+            }
+          },
+          "dynamic_vs_stable": {
+            "abs_dynamic_minus_abs_stable": 0.06990461440641135,
+            "dynamic_pct_change": 0.25174637670544103,
+            "stable_pct_change": 0.18184176229902968
+          },
+          "max_real_eig": 0.8696243166923523,
+          "n_control_trials": 318,
+          "n_pc": 8,
+          "session": "Wa220808_s554",
+          "var_explained": 0.32937562465667725
+        },
+        "Wa220809_s555": {
+          "cond_features": {
+            "1": {
+              "align_s_m2": 0.8452225576063441,
+              "align_s_m3": 0.9750905611534796,
+              "alignment_to_vstar": 0.3813082404062666,
+              "amplification_alignment": 0.6302745723355874,
+              "anat_avg_ctrl": 1.0568785057781855,
+              "anat_modal_ctrl": 0.9469954640375259,
+              "channel_random_alignment": 0.33961566365405277,
+              "gramian_trace": 0.0019060720533904856,
+              "input_norm": 0.011064537256881262,
+              "min_energy_dir_alignment": 0.43982911209896364,
+              "outside_frac": 0.9999387861294223,
+              "random_alignment": 0.37908808935865934,
+              "stable_alignment": 0.02542105385628617,
+              "stim_channels": [
+                22
+              ],
+              "topm_pca_alignment_m2": 0.4053604874334055,
+              "topm_pca_alignment_m3": 0.5517861681866761,
+              "within_frac": 0.01106453670415199
+            },
+            "2": {
+              "align_s_m2": 0.5375229121932263,
+              "align_s_m3": 0.8017423787142269,
+              "alignment_to_vstar": 0.2857062960352518,
+              "amplification_alignment": 0.1280772074456195,
+              "anat_avg_ctrl": 1.0568785057781855,
+              "anat_modal_ctrl": 0.9469954640375259,
+              "channel_random_alignment": 0.35658440185749524,
+              "gramian_trace": 0.06043490554935631,
+              "input_norm": 0.12180227152650835,
+              "min_energy_dir_alignment": 0.619253507288419,
+              "outside_frac": 0.9925543839840609,
+              "random_alignment": 0.24661988336975246,
+              "stable_alignment": 0.27933223545790387,
+              "stim_channels": [
+                51
+              ],
+              "topm_pca_alignment_m2": 0.44026837478409386,
+              "topm_pca_alignment_m3": 0.4652467242082022,
+              "within_frac": 0.12180226688317705
+            }
+          },
+          "dynamic_vs_stable": {
+            "abs_dynamic_minus_abs_stable": 0.059577086433540684,
+            "dynamic_pct_change": 0.06063968770173026,
+            "stable_pct_change": 0.0010626012681895756
+          },
+          "max_real_eig": 0.8934540152549744,
+          "n_control_trials": 139,
+          "n_pc": 8,
+          "session": "Wa220809_s555",
+          "var_explained": 0.369387149810791
+        },
+        "Wa220810_s556": {
+          "cond_features": {
+            "3": {
+              "align_s_m2": 0.582230309509834,
+              "align_s_m3": 0.934920925013877,
+              "alignment_to_vstar": 0.09393605050816808,
+              "amplification_alignment": 0.3821683376626537,
+              "anat_avg_ctrl": 1.0568785057781855,
+              "anat_modal_ctrl": 0.9469954640375259,
+              "channel_random_alignment": 0.36896250600357594,
+              "gramian_trace": 0.016264424097894595,
+              "input_norm": 0.042115081930061894,
+              "min_energy_dir_alignment": 0.03379686417031513,
+              "outside_frac": 0.9991127663703298,
+              "random_alignment": 0.21649090932846754,
+              "stable_alignment": 0.17423271915533495,
+              "stim_channels": [
+                91
+              ],
+              "topm_pca_alignment_m2": 0.2760042060619016,
+              "topm_pca_alignment_m3": 0.27600546920192653,
+              "within_frac": 0.04211508180480444
+            }
+          },
+          "dynamic_vs_stable": {
+            "abs_dynamic_minus_abs_stable": 0.10338374621148452,
+            "dynamic_pct_change": 0.1775275420634167,
+            "stable_pct_change": 0.07414379585193218
+          },
+          "max_real_eig": 0.880235493183136,
+          "n_control_trials": 239,
+          "n_pc": 8,
+          "session": "Wa220810_s556",
+          "var_explained": 0.38636136054992676
+        },
+        "Wa220811_s557": {
+          "cond_features": {},
+          "dynamic_vs_stable": null,
+          "max_real_eig": 0.8520196676254272,
+          "n_control_trials": 221,
+          "n_pc": 8,
+          "session": "Wa220811_s557",
+          "var_explained": 0.34160277247428894
+        },
+        "Wa220812_s558": {
+          "cond_features": {
+            "2": {
+              "align_s_m2": 0.8822926371190666,
+              "align_s_m3": 0.9910788777950972,
+              "alignment_to_vstar": 0.811894305118219,
+              "amplification_alignment": 0.10740757890577053,
+              "anat_avg_ctrl": 1.0568785057781855,
+              "anat_modal_ctrl": 0.9469954640375259,
+              "channel_random_alignment": 0.30137245341993746,
+              "gramian_trace": 0.01240562911371749,
+              "input_norm": 0.03518578185345543,
+              "min_energy_dir_alignment": 0.8213152588126151,
+              "outside_frac": 0.9993807886390409,
+              "random_alignment": 0.256279811996866,
+              "stable_alignment": 0.07276343980706437,
+              "stim_channels": [
+                52
+              ],
+              "topm_pca_alignment_m2": 0.7615137512978725,
+              "topm_pca_alignment_m3": 0.7754130000186417,
+              "within_frac": 0.03518578066374016
+            }
+          },
+          "dynamic_vs_stable": {
+            "abs_dynamic_minus_abs_stable": 0.06606484225239774,
+            "dynamic_pct_change": 0.11380871388223324,
+            "stable_pct_change": 0.047743871629835496
+          },
+          "max_real_eig": 0.8806234002113342,
+          "n_control_trials": 299,
+          "n_pc": 8,
+          "session": "Wa220812_s558",
+          "var_explained": 0.3713437020778656
+        }
+      },
+      "pooled_n": 5880
+    },
+    "closed_loop": {
+      "boran_sub-01": {
+        "decodability_lift": -0.21125714285714284,
+        "decodability_lift_ci": [
+          -0.3061457142857143,
+          -0.10738666666666671
+        ],
+        "decodability_off": 0.3803809523809524,
+        "decodability_off_ci": [
+          0.31890666666666667,
+          0.4432933333333332
+        ],
+        "decodability_on": 0.16912380952380954,
+        "decodability_on_ci": [
+          0.09948571428571429,
+          0.23881952380952381
+        ],
+        "decoder_cv_acc": 0.5755405909387757,
+        "decoder_valid": true,
+        "destabilized": true,
+        "drift_off": 8.462880918585702,
+        "drift_off_ci": [
+          7.332492324723515,
+          9.669596229674251
+        ],
+        "drift_on": 4158.576942554542,
+        "drift_on_ci": [
+          4154.01808018711,
+          4163.1745715591005
+        ],
+        "drift_reduction": -4150.114061635956,
+        "drift_reduction_ci": [
+          -4154.604932852057,
+          -4145.121143571299
+        ],
+        "dynamic_best_tes1_idx": 8,
+        "horizon": 524,
+        "horizon_real": 4193,
+        "horizon_stability_cap": 523.9402829616971,
+        "obs_noise": 0.06915837050454048,
+        "ondemand": {
+          "continuous_control_energy": 522.897912753977,
+          "control_energy": 439.52900612404216,
+          "decodability_lift": -0.19902857142857144,
+          "decodability_lift_ci": [
+            -0.2721933333333333,
+            -0.11228523809523802
+          ],
+          "destabilized": true,
+          "drift_reduction": -3504.0786755767795,
+          "drift_reduction_ci": [
+            -3786.4663038012777,
+            -3219.3115919710126
+          ],
+          "duty_cycle": 0.8408206106870229,
+          "rho_closed": 4.357525484537523
+        },
+        "proc_noise": 0.03457918525227024,
+        "rho_closed": 4.357525484537523,
+        "rho_open": 1.00574226735191,
+        "state_scale": 0.6915837050454047
+      },
+      "boran_sub-02": {
+        "decodability_lift": -0.0705531914893617,
+        "decodability_lift_ci": [
+          -0.09332553191489361,
+          -0.04991063829787235
+        ],
+        "decodability_off": 0.0705531914893617,
+        "decodability_off_ci": [
+          0.04927659574468086,
+          0.09293723404255318
+        ],
+        "decodability_on": 0.0,
+        "decodability_on_ci": [
+          0.0,
+          0.0
+        ],
+        "decoder_cv_acc": 0.5080977481768457,
+        "decoder_valid": false,
+        "destabilized": false,
+        "drift_off": 2.0458459793557493,
+        "drift_off_ci": [
+          1.8502318140261524,
+          2.259729831075253
+        ],
+        "drift_on": 1.2802651176506807,
+        "drift_on_ci": [
+          1.2192699743346467,
+          1.3453448778224146
+        ],
+        "drift_reduction": 0.7655808617050686,
+        "drift_reduction_ci": [
+          0.58250830082719,
+          0.9658918506202446
+        ],
+        "dynamic_best_tes1_idx": 11,
+        "horizon": 234,
+        "horizon_real": 4193,
+        "horizon_stability_cap": 233.0422835925811,
+        "obs_noise": 0.053631194416722906,
+        "ondemand": {
+          "continuous_control_energy": 16.200781226608363,
+          "control_energy": 16.077309810214885,
+          "decodability_lift": -0.08076595744680852,
+          "decodability_lift_ci": [
+            -0.10273297872340423,
+            -0.058764893617021266
+          ],
+          "destabilized": false,
+          "drift_reduction": 0.7229877264585136,
+          "drift_reduction_ci": [
+            0.534167337126787,
+            0.9249065574924705
+          ],
+          "duty_cycle": 1.0,
+          "rho_closed": 0.9998748511749581
+        },
+        "proc_noise": 0.026815597208361453,
+        "rho_closed": 0.9998748511749581,
+        "rho_open": 1.0129564166679683,
+        "state_scale": 0.536311944167229
+      },
+      "boran_sub-03": {
+        "decodability_lift": -0.028920704845814937,
+        "decodability_lift_ci": [
+          -0.10933865638766521,
+          0.0501046255506609
+        ],
+        "decodability_off": 0.3655506607929515,
+        "decodability_off_ci": [
+          0.290273127753304,
+          0.43958094713656387
+        ],
+        "decodability_on": 0.33662995594713657,
+        "decodability_on_ci": [
+          0.289261563876652,
+          0.3829983480176211
+        ],
+        "decoder_cv_acc": 0.5733295364030441,
+        "decoder_valid": true,
+        "destabilized": false,
+        "drift_off": 16.974701584585816,
+        "drift_off_ci": [
+          15.101005654684643,
+          18.90045178486203
+        ],
+        "drift_on": 6.976620738129039,
+        "drift_on_ci": [
+          6.552960604002349,
+          7.3818175286682175
+        ],
+        "drift_reduction": 9.998080846456777,
+        "drift_reduction_ci": [
+          8.17682531665685,
+          12.02488052757526
+        ],
+        "dynamic_best_tes1_idx": 12,
+        "horizon": 453,
+        "horizon_real": 4193,
+        "horizon_stability_cap": 452.71644757388873,
+        "obs_noise": 0.1236398433715371,
+        "ondemand": {
+          "continuous_control_energy": 249.69209522016791,
+          "control_energy": 9.593036920116894,
+          "decodability_lift": 0.6441189427312772,
+          "decodability_lift_ci": [
+            0.5782560572687225,
+            0.7094509911894273
+          ],
+          "destabilized": false,
+          "drift_reduction": -33.73255413913094,
+          "drift_reduction_ci": [
+            -37.97173337375295,
+            -29.293334455418627
+          ],
+          "duty_cycle": 0.04055187637969095,
+          "rho_closed": 0.9997690094233305
+        },
+        "proc_noise": 0.06181992168576855,
+        "rho_closed": 0.9997690094233305,
+        "rho_open": 1.0066486693947287,
+        "state_scale": 1.236398433715371
+      },
+      "boran_sub-04": {
+        "decodability_lift": 0.07385593220338983,
+        "decodability_lift_ci": [
+          0.02308262711864409,
+          0.12462076271186437
+        ],
+        "decodability_off": 0.07432203389830509,
+        "decodability_off_ci": [
+          0.0440677966101695,
+          0.10983580508474576
+        ],
+        "decodability_on": 0.14817796610169492,
+        "decodability_on_ci": [
+          0.10821716101694916,
+          0.19063771186440684
+        ],
+        "decoder_cv_acc": 0.6359415269266926,
+        "decoder_valid": true,
+        "destabilized": false,
+        "drift_off": 1.9962121956333334,
+        "drift_off_ci": [
+          1.8364757566812442,
+          2.1701475996269517
+        ],
+        "drift_on": 1.4519571116378465,
+        "drift_on_ci": [
+          1.3923955243732606,
+          1.5166549900165789
+        ],
+        "drift_reduction": 0.5442550839954869,
+        "drift_reduction_ci": [
+          0.38223375157780015,
+          0.7409052895553675
+        ],
+        "dynamic_best_tes1_idx": 11,
+        "horizon": 235,
+        "horizon_real": 4193,
+        "horizon_stability_cap": 234.02162640521817,
+        "obs_noise": 0.0630144322077965,
+        "ondemand": {
+          "continuous_control_energy": 9.721685080553655,
+          "control_energy": 7.261576150620353,
+          "decodability_lift": 0.19936440677966105,
+          "decodability_lift_ci": [
+            0.13773834745762717,
+            0.26555402542372875
+          ],
+          "destabilized": false,
+          "drift_reduction": 0.20955155442641615,
+          "drift_reduction_ci": [
+            -0.055095852866466496,
+            0.4697286610825323
+          ],
+          "duty_cycle": 0.7506808510638298,
+          "rho_closed": 0.999975805776868
+        },
+        "proc_noise": 0.03150721610389825,
+        "rho_closed": 0.999975805776868,
+        "rho_open": 1.0129018478764211,
+        "state_scale": 0.6301443220779649
+      },
+      "boran_sub-05": {
+        "decodability_lift": -0.013560885608856089,
+        "decodability_lift_ci": [
+          -0.031034132841328416,
+          0.0029446494464944557
+        ],
+        "decodability_off": 0.025166051660516605,
+        "decodability_off_ci": [
+          0.013006457564575647,
+          0.03970664206642067
+        ],
+        "decodability_on": 0.011605166051660516,
+        "decodability_on_ci": [
+          0.0036143911439114407,
+          0.023250461254612543
+        ],
+        "decoder_cv_acc": 0.5081263186778419,
+        "decoder_valid": false,
+        "destabilized": true,
+        "drift_off": 4.265143249358889,
+        "drift_off_ci": [
+          3.7224236195854083,
+          4.858424854503297
+        ],
+        "drift_on": 5.484062808749405,
+        "drift_on_ci": [
+          4.980402113421776,
+          6.0506447024733685
+        ],
+        "drift_reduction": -1.2189195593905158,
+        "drift_reduction_ci": [
+          -1.8850677288378446,
+          -0.5513921965470759
+        ],
+        "dynamic_best_tes1_idx": 10,
+        "horizon": 541,
+        "horizon_real": 4193,
+        "horizon_stability_cap": 540.8441720317493,
+        "obs_noise": 0.03856027562570264,
+        "ondemand": {
+          "continuous_control_energy": 537.830301753946,
+          "control_energy": 527.8734169418341,
+          "decodability_lift": -0.013505535055350557,
+          "decodability_lift_ci": [
+            -0.03186577490774906,
+            0.005482472324723245
+          ],
+          "destabilized": true,
+          "drift_reduction": -0.9030160761523058,
+          "drift_reduction_ci": [
+            -1.673413770794212,
+            -0.17269244271937356
+          ],
+          "duty_cycle": 0.981090573012939,
+          "rho_closed": 71.55506727483578
+        },
+        "proc_noise": 0.01928013781285132,
+        "rho_closed": 71.55506727483578,
+        "rho_open": 1.0055622966599396,
+        "state_scale": 0.3856027562570264
+      },
+      "boran_sub-06": {
+        "decodability_lift": 0.0,
+        "decodability_lift_ci": [
+          0.0,
+          0.0
+        ],
+        "decodability_off": 0.0,
+        "decodability_off_ci": [
+          0.0,
+          0.0
+        ],
+        "decodability_on": 0.0,
+        "decodability_on_ci": [
+          0.0,
+          0.0
+        ],
+        "decoder_cv_acc": 0.5081806411183223,
+        "decoder_valid": false,
+        "destabilized": true,
+        "drift_off": 1.0584542941278368,
+        "drift_off_ci": [
+          0.9466589956434556,
+          1.1764145129104198
+        ],
+        "drift_on": 4.809862881206598,
+        "drift_on_ci": [
+          4.804795235352173,
+          4.814770831587216
+        ],
+        "drift_reduction": -3.7514085870787612,
+        "drift_reduction_ci": [
+          -3.861132046525638,
+          -3.635038993503005
+        ],
+        "dynamic_best_tes1_idx": 16,
+        "horizon": 271,
+        "horizon_real": 4193,
+        "horizon_stability_cap": 270.4186079555621,
+        "obs_noise": 0.020312321685077985,
+        "ondemand": {
+          "continuous_control_energy": 268.2250643236208,
+          "control_energy": 268.46242808002245,
+          "decodability_lift": 3.676470588235294e-05,
+          "decodability_lift_ci": [
+            0.0,
+            0.00011029411764705881
+          ],
+          "destabilized": true,
+          "drift_reduction": -3.727161524198343,
+          "drift_reduction_ci": [
+            -3.8538268909892164,
+            -3.5856222980423764
+          ],
+          "duty_cycle": 1.0,
+          "rho_closed": 1.684658614818834
+        },
+        "proc_noise": 0.010156160842538993,
+        "rho_closed": 1.684658614818834,
+        "rho_open": 1.0111556767411858,
+        "state_scale": 0.20312321685077983
+      },
+      "boran_sub-07": {
+        "decodability_lift": 0.3918055555555556,
+        "decodability_lift_ci": [
+          0.3552754629629629,
+          0.42416782407407416
+        ],
+        "decodability_off": 0.0875925925925926,
+        "decodability_off_ci": [
+          0.056384259259259266,
+          0.12051388888888888
+        ],
+        "decodability_on": 0.4793981481481482,
+        "decodability_on_ci": [
+          0.4716655092592594,
+          0.4857881944444445
+        ],
+        "decoder_cv_acc": 0.5277704445733532,
+        "decoder_valid": false,
+        "destabilized": true,
+        "drift_off": 1.4741455759370858,
+        "drift_off_ci": [
+          1.3346720477620357,
+          1.6255656173144046
+        ],
+        "drift_on": 3.786054582948942,
+        "drift_on_ci": [
+          3.7721913250366312,
+          3.800995546567963
+        ],
+        "drift_reduction": -2.311909007011856,
+        "drift_reduction_ci": [
+          -2.4536587693395058,
+          -2.169654535953035
+        ],
+        "dynamic_best_tes1_idx": 3,
+        "horizon": 215,
+        "horizon_real": 4193,
+        "horizon_stability_cap": 214.96545867558294,
+        "obs_noise": 0.0388109301552703,
+        "ondemand": {
+          "continuous_control_energy": 210.88186963365132,
+          "control_energy": 1.0904570099096846,
+          "decodability_lift": 0.9190740740740742,
+          "decodability_lift_ci": [
+            0.8906828703703703,
+            0.942693287037037
+          ],
+          "destabilized": true,
+          "drift_reduction": -15.140342032012713,
+          "drift_reduction_ci": [
+            -16.290234596322986,
+            -14.000735181003193
+          ],
+          "duty_cycle": 0.022325581395348838,
+          "rho_closed": 1.7301166628453863
+        },
+        "proc_noise": 0.01940546507763515,
+        "rho_closed": 1.7301166628453863,
+        "rho_open": 1.0140535662623182,
+        "state_scale": 0.38810930155270296
+      },
+      "boran_sub-08": {
+        "decodability_lift": 0.038468899521531104,
+        "decodability_lift_ci": [
+          0.016686602870813406,
+          0.06315789473684211
+        ],
+        "decodability_off": 0.0034928229665071777,
+        "decodability_off_ci": [
+          0.0005263157894736842,
+          0.008141148325358845
+        ],
+        "decodability_on": 0.04196172248803828,
+        "decodability_on_ci": [
+          0.0209078947368421,
+          0.0661255980861244
+        ],
+        "decoder_cv_acc": 0.5233471405756757,
+        "decoder_valid": false,
+        "destabilized": false,
+        "drift_off": 2.8223167545073897,
+        "drift_off_ci": [
+          2.5627520362547798,
+          3.0783187084522488
+        ],
+        "drift_on": 1.8301466123093357,
+        "drift_on_ci": [
+          1.749225348874597,
+          1.9154214934260794
+        ],
+        "drift_reduction": 0.992170142198054,
+        "drift_reduction_ci": [
+          0.7412814938249515,
+          1.256986325945541
+        ],
+        "dynamic_best_tes1_idx": 16,
+        "horizon": 208,
+        "horizon_real": 4193,
+        "horizon_stability_cap": 207.69384202406565,
+        "obs_noise": 0.093996012583788,
+        "ondemand": {
+          "continuous_control_energy": 22.684578250756264,
+          "control_energy": 21.039120173982433,
+          "decodability_lift": 0.05641148325358851,
+          "decodability_lift_ci": [
+            0.03033253588516747,
+            0.08196172248803826
+          ],
+          "destabilized": false,
+          "drift_reduction": 0.8926511104996802,
+          "drift_reduction_ci": [
+            0.6414780362006438,
+            1.1473960813547173
+          ],
+          "duty_cycle": 0.9407692307692308,
+          "rho_closed": 1.000294382401283
+        },
+        "proc_noise": 0.046998006291894,
+        "rho_closed": 1.000294382401283,
+        "rho_open": 1.0145491612770023,
+        "state_scale": 0.9399601258378799
+      },
+      "boran_sub-09": {
+        "decodability_lift": 0.45895833333333325,
+        "decodability_lift_ci": [
+          0.43808333333333327,
+          0.47558645833333324
+        ],
+        "decodability_off": 0.014541666666666666,
+        "decodability_off_ci": [
+          0.001875,
+          0.030587499999999993
+        ],
+        "decodability_on": 0.4734999999999999,
+        "decodability_on_ci": [
+          0.45861354166666657,
+          0.48530104166666665
+        ],
+        "decoder_cv_acc": 0.5412335029680451,
+        "decoder_valid": true,
+        "destabilized": true,
+        "drift_off": 1.105789704710345,
+        "drift_off_ci": [
+          1.0129041272381791,
+          1.2080954794461174
+        ],
+        "drift_on": 2.4348322883578,
+        "drift_on_ci": [
+          2.4315516241370454,
+          2.438337517776218
+        ],
+        "drift_reduction": -1.3290425836474549,
+        "drift_reduction_ci": [
+          -1.4247416960651231,
+          -1.2237003318289168
+        ],
+        "dynamic_best_tes1_idx": 8,
+        "horizon": 239,
+        "horizon_real": 4193,
+        "horizon_stability_cap": 238.82857880408045,
+        "obs_noise": 0.01780183874372606,
+        "ondemand": {
+          "continuous_control_energy": 236.36824769283336,
+          "control_energy": 1.773860941167259,
+          "decodability_lift": 0.9705833333333335,
+          "decodability_lift_ci": [
+            0.9585406249999998,
+            0.9807916666666667
+          ],
+          "destabilized": true,
+          "drift_reduction": -13.689644734879709,
+          "drift_reduction_ci": [
+            -14.274135961239804,
+            -13.00495306535869
+          ],
+          "duty_cycle": 0.01715481171548117,
+          "rho_closed": 1.5681099576173914
+        },
+        "proc_noise": 0.00890091937186303,
+        "rho_closed": 1.5681099576173914,
+        "rho_open": 1.0126405354121195,
+        "state_scale": 0.1780183874372606
+      },
+      "miller_al": {
+        "decodability_lift": 0.03300909090909088,
+        "decodability_lift_ci": [
+          -0.020101136363636425,
+          0.08556568181818185
+        ],
+        "decodability_off": 0.4619636363636364,
+        "decodability_off_ci": [
+          0.40174863636363634,
+          0.5243375
+        ],
+        "decodability_on": 0.4949727272727273,
+        "decodability_on_ci": [
+          0.45781613636363644,
+          0.5344209090909092
+        ],
+        "decoder_cv_acc": 0.6307181818181818,
+        "decoder_valid": true,
+        "destabilized": false,
+        "drift_off": 9.19772444754645,
+        "drift_off_ci": [
+          8.550676233159171,
+          9.815920170611777
+        ],
+        "drift_on": 3.804931355066538,
+        "drift_on_ci": [
+          3.6714829747389084,
+          3.9297913116354786
+        ],
+        "drift_reduction": 5.392793092479913,
+        "drift_reduction_ci": [
+          4.790392788094884,
+          6.022117053225101
+        ],
+        "dynamic_best_tes1_idx": 12,
+        "horizon": 1099,
+        "horizon_real": 1099,
+        "horizon_stability_cap": 1362.6971435546875,
+        "obs_noise": 0.09345683322677613,
+        "ondemand": {
+          "continuous_control_energy": 208.25628199527452,
+          "control_energy": 91.57167157245185,
+          "decodability_lift": 0.12935454545454544,
+          "decodability_lift_ci": [
+            0.07562613636363635,
+            0.18591272727272742
+          ],
+          "destabilized": false,
+          "drift_reduction": 4.251549866918336,
+          "drift_reduction_ci": [
+            3.5362980942012663,
+            4.92566661282217
+          ],
+          "duty_cycle": 0.4110009099181074,
+          "rho_closed": 0.9993185004664421
+        },
+        "proc_noise": 0.046728416613388064,
+        "rho_closed": 0.9993185004664421,
+        "rho_open": 1.0022039746151565,
+        "state_scale": 0.9345683322677613
+      },
+      "miller_ca": {
+        "decodability_lift": -0.1567728674203494,
+        "decodability_lift_ci": [
+          -0.20556012332990753,
+          -0.11155498458376174
+        ],
+        "decodability_off": 0.6045220966084275,
+        "decodability_off_ci": [
+          0.5514116135662898,
+          0.6579848406988693
+        ],
+        "decodability_on": 0.4477492291880781,
+        "decodability_on_ci": [
+          0.4195159301130524,
+          0.4770336587872559
+        ],
+        "decoder_cv_acc": 0.5903090909090909,
+        "decoder_valid": true,
+        "destabilized": false,
+        "drift_off": 15.582815754903354,
+        "drift_off_ci": [
+          14.664237009576903,
+          16.6426198101317
+        ],
+        "drift_on": 10.668916419484658,
+        "drift_on_ci": [
+          10.041371565378187,
+          11.312278950088087
+        ],
+        "drift_reduction": 4.913899335418696,
+        "drift_reduction_ci": [
+          3.852426913681805,
+          5.922783158343086
+        ],
+        "dynamic_best_tes1_idx": 12,
+        "horizon": 972,
+        "horizon_real": 1099,
+        "horizon_stability_cap": 971.57958984375,
+        "obs_noise": 0.07562044130096436,
+        "ondemand": {
+          "continuous_control_energy": 351.3439626880188,
+          "control_energy": 351.3403500628326,
+          "decodability_lift": -0.035889003083247606,
+          "decodability_lift_ci": [
+            -0.09188617677286745,
+            0.015761305241521004
+          ],
+          "destabilized": false,
+          "drift_reduction": -545.4088890820924,
+          "drift_reduction_ci": [
+            -586.4616043845007,
+            -504.5545965582174
+          ],
+          "duty_cycle": 0.39269547325102877,
+          "rho_closed": 0.99842909200611
+        },
+        "proc_noise": 0.03781022065048218,
+        "rho_closed": 0.99842909200611,
+        "rho_open": 1.0030924300292845,
+        "state_scale": 0.7562044130096436
+      },
+      "miller_cc": {
+        "decodability_lift": 0.0075727272727272865,
+        "decodability_lift_ci": [
+          -0.05788659090909087,
+          0.0721845454545455
+        ],
+        "decodability_off": 0.3986545454545455,
+        "decodability_off_ci": [
+          0.33064886363636364,
+          0.4630004545454545
+        ],
+        "decodability_on": 0.40622727272727277,
+        "decodability_on_ci": [
+          0.3470972727272727,
+          0.4605652272727272
+        ],
+        "decoder_cv_acc": 0.6707227272727273,
+        "decoder_valid": true,
+        "destabilized": false,
+        "drift_off": 32.742962592636715,
+        "drift_off_ci": [
+          28.87176549069892,
+          36.793271053155074
+        ],
+        "drift_on": 16.522139505506487,
+        "drift_on_ci": [
+          15.64654671980082,
+          17.53984614134577
+        ],
+        "drift_reduction": 16.220823087130228,
+        "drift_reduction_ci": [
+          12.722177049386485,
+          19.97810714437767
+        ],
+        "dynamic_best_tes1_idx": 5,
+        "horizon": 1099,
+        "horizon_real": 1099,
+        "horizon_stability_cap": 1454.1561279296875,
+        "obs_noise": 0.23889487252960206,
+        "ondemand": {
+          "continuous_control_energy": 63.71904056478289,
+          "control_energy": 38.589350320645686,
+          "decodability_lift": -0.008472727272727243,
+          "decodability_lift_ci": [
+            -0.06439999999999996,
+            0.04580727272727278
+          ],
+          "destabilized": false,
+          "drift_reduction": 13.625825791109559,
+          "drift_reduction_ci": [
+            10.144020369028365,
+            17.33507321696163
+          ],
+          "duty_cycle": 0.59803457688808,
+          "rho_closed": 1.0002675869457711
+        },
+        "proc_noise": 0.11944743626480103,
+        "rho_closed": 1.0002675869457711,
+        "rho_open": 1.0020652166860378,
+        "state_scale": 2.3889487252960206
+      },
+      "miller_ug": {
+        "decodability_lift": 0.1293272727272728,
+        "decodability_lift_ci": [
+          0.06857568181818167,
+          0.19847568181818173
+        ],
+        "decodability_off": 0.3699363636363636,
+        "decodability_off_ci": [
+          0.3064925,
+          0.43406613636363645
+        ],
+        "decodability_on": 0.4992636363636364,
+        "decodability_on_ci": [
+          0.4970179545454545,
+          0.5015454545454545
+        ],
+        "decoder_cv_acc": 0.6484272727272727,
+        "decoder_valid": true,
+        "destabilized": true,
+        "drift_off": 12.078863877138119,
+        "drift_off_ci": [
+          11.122471003857695,
+          13.047226626574128
+        ],
+        "drift_on": 2421.851077738587,
+        "drift_on_ci": [
+          2419.247772357125,
+          2424.4317158964122
+        ],
+        "drift_reduction": -2409.7722138614486,
+        "drift_reduction_ci": [
+          -2412.2548140372055,
+          -2407.0017480237107
+        ],
+        "dynamic_best_tes1_idx": 12,
+        "horizon": 1099,
+        "horizon_real": 1099,
+        "horizon_stability_cap": 1462.8446044921875,
+        "obs_noise": 0.12372801767120362,
+        "ondemand": {
+          "continuous_control_energy": 1096.730633926507,
+          "control_energy": 525.0843692304546,
+          "decodability_lift": 0.2012181818181818,
+          "decodability_lift_ci": [
+            0.14009250000000006,
+            0.25941113636363644
+          ],
+          "destabilized": true,
+          "drift_reduction": -1388.989364567062,
+          "drift_reduction_ci": [
+            -1476.3434269339925,
+            -1298.137598053916
+          ],
+          "duty_cycle": 0.47970882620564154,
+          "rho_closed": 2.3710258237572646
+        },
+        "proc_noise": 0.06186400883560181,
+        "rho_closed": 2.3710258237572646,
+        "rho_open": 1.0020529309564374,
+        "state_scale": 1.237280176712036
+      },
+      "pooled": {
+        "continuous": {
+          "decodability_lift_mean_ci": [
+            -0.01425116437619127,
+            -0.09103462954311872,
+            0.04513123653468909
+          ],
+          "drift_reduction_mean_ci": [
+            5.546800349912033,
+            1.9883620659282535,
+            9.893418520055702
+          ],
+          "n_decod_pool": 5,
+          "n_decod_positive": 3,
+          "n_drift_pool": 7,
+          "n_drift_positive": 7
+        },
+        "excluded_degenerate_decoder": [
+          "boran_sub-02",
+          "boran_sub-08"
+        ],
+        "excluded_destabilized": [
+          "miller_ug",
+          "boran_sub-01",
+          "boran_sub-05",
+          "boran_sub-06",
+          "boran_sub-07",
+          "boran_sub-09"
+        ],
+        "n_total": 13,
+        "ondemand": {
+          "decodability_lift_mean_ci": [
+            0.18569523292190176,
+            0.008126216948519149,
+            0.42464970154015313
+          ],
+          "drift_reduction_mean_ci": [
+            -79.91983959597296,
+            -237.7516708665104,
+            4.962068446150549
+          ],
+          "mean_control_energy_ratio_to_continuous": 0.6786459405094584,
+          "mean_duty_cycle": 0.5905332740385667,
+          "n_decod_pool": 5,
+          "n_decod_positive": 3,
+          "n_drift_pool": 7,
+          "n_drift_positive": 5,
+          "sensitivity_excl_worst": {
+            "drift_reduction_mean_ci": [
+              -2.3383313482864065,
+              -15.973984980924731,
+              7.175113689550813
+            ],
+            "excluded_cohort": "miller_ca",
+            "n_drift_pool": 6,
+            "n_drift_positive": 5
+          }
+        }
+      }
+    },
+    "present": true,
+    "sha256": "d3e03e0d3462da283d866a11511573fbb0e6eb76b9425516e0fe8f4328133c03",
+    "top_level_keys": [
+      "autocorrelation_control",
+      "axis_rotation_boran",
+      "axis_rotation_boran_units",
+      "axis_rotation_dandi000469",
+      "axis_rotation_dandi000673",
+      "axis_rotation_dandi001187",
+      "axis_rotation_miller",
+      "axis_rotation_pfc3",
+      "axis_rotation_spiking_vs_lfp_boran",
+      "axis_rotation_vs_dmd_frequency_dandi000469",
+      "axis_rotation_within_subject_dandi000469",
+      "behavior_ctg",
+      "behavior_geometry_link",
+      "boran_code_stability_by_outcome",
+      "boran_correct_error_drift",
+      "boran_ctg",
+      "causal_benchmark",
+      "causal_ram",
+      "causal_ram_closedloop",
+      "causal_soldado",
+      "closed_loop",
+      "closed_loop_behavior_flip",
+      "closed_loop_robustness",
+      "content_ctg_pooled",
+      "context_code_cross_dataset_rsa",
+      "context_confidence_timecourse",
+      "contraction_behavior_analysis_000469",
+      "contraction_behavior_link_000469",
+      "cross_decoding_orthogonality_000469",
+      "ctg",
+      "ctg_by_load_pair",
+      "dandi000469_correct_error_drift",
+      "dandi000469_ctg",
+      "dandi000574_units_correct_error_drift",
+      "dandi000574_units_ctg",
+      "dandi000673_correct_error_drift",
+      "dandi000673_ctg",
+      "dandi001187_correct_error_drift",
+      "dandi001187_ctg",
+      "decoder_confidence_timecourse_000469",
+      "dfine_nonlinear_dynamics_check",
+      "dim_robustness",
+      "divergence",
+      "divergence_rank_robustness",
+      "divergence_spiking_vs_lfp_boran",
+      "dmd_koopman_sindy",
+      "dmd_lambda",
+      "dmd_rank_selection",
+      "dpad_dynamics_dissociation",
+      "dpca_caveat",
+      "dpca_dandi000469",
+      "dpca_miller",
+      "dpca_paired_tests",
+      "dpca_pfc3",
+      "full_trial_content_decoding_000469",
+      "item_identity_load_generalization_000469",
+      "latent_dim_selection",
+      "lme_pr_boran",
+      "lme_pr_miller",
+      "loso_auroc",
+      "manifold_rescue",
+      "miller_ctg_corrected",
+      "miller_trial_count_confound",
+      "multiitem_ctg_000469",
+      "multiitem_recall_decoding_000469",
+      "nomad_cross_session_alignment",
+      "ondemand_streak_diagnostic",
+      "pfc3_content_ctg",
+      "pr_equivalence",
+      "pr_lme_by_dataset",
+      "rayleigh",
+      "rutishauser_000469_content_context",
+      "stim_location",
+      "tangling_cluster_test",
+      "targeting_benchmark_boran",
+      "tau_vs_loso",
+      "tes1_lqr",
+      "wolff_impulse_ctg"
+    ]
+  },
+  "manifest_schema_version": "1.0.0",
+  "purpose": "Read-only legacy snapshot before correction; not current evidence.",
+  "tracked_file_count": 111
+}

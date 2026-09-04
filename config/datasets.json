@@ -1,0 +1,193 @@
+{
+  "schema_version": "1.1.0",
+  "local_data_root_env": "WM_DYNAMICS_DATA_ROOT",
+  "canonical_view_rule": "Primary inference includes each canonical patient-session-task once; release-specific unit/LFP views are linked sensitivity analyses and never independent cohorts.",
+  "registry_note": "Widened 2026-08-04 (the anatomical census) from 13 to 16 entries: 'wolff_eeg_impulse', 'kai_miller_nback' and 'pfc3' were staged and analysed by existing scripts but were never registered here, so they were invisible to any rule reading dataset identity from this file. All three are required census subjects even though an earlier '13, no exceptions' count was written against the pre-widening file. This is a disclosed scope WIDENING, not narrowing. 'label_convention' is the per-dataset key the region-vocabulary parser dispatch reads -- declared here, never sniffed at runtime.",
+  "datasets": {
+    "dandi_000469": {
+      "local_path": "000469",
+      "doi": "10.48324/dandi.000469",
+      "view_relationship": "independent, confirmed by all-pairs trial-content fingerprint audit 2026-08-03 (results/patient_identity_audit.json); zero cross-release overlap found",
+      "constructs": ["Sternberg representation"],
+      "simultaneous_population": true,
+      "primary_eligible": true,
+      "label_convention": "nwb_structure_hemisphere_suffix",
+      "modality": "single_unit"
+    },
+    "dandi_001187": {
+      "local_path": "001187",
+      "doi": "10.48324/dandi.001187/0.240904.2347",
+      "view_relationship": "linked release view with dandi_000673 for 31 verified shared patients / 37 shared recording sessions (corrected 2026-08-03 from a prior 16/19 undercount; see provenance/dataset_overlap_report.json)",
+      "constructs": ["Sternberg representation", "task/load context"],
+      "simultaneous_population": true,
+      "primary_eligible": true,
+      "label_convention": "nwb_structure_hemisphere_suffix",
+      "modality": "single_unit"
+    },
+    "dandi_000673": {
+      "local_path": "000673",
+      "doi": "10.48324/dandi.000673/0.250122.0110",
+      "view_relationship": "linked release view with dandi_001187 for 31 verified shared patients / 37 shared recording sessions (corrected 2026-08-03 from a prior 16/19 undercount; see provenance/dataset_overlap_report.json)",
+      "constructs": ["Sternberg representation", "task/load context", "PAC replication"],
+      "simultaneous_population": true,
+      "primary_eligible": false,
+      "label_convention": "nwb_structure_hemisphere_suffix",
+      "modality": "single_unit"
+    },
+    "dandi_000574": {
+      "local_path": "000574",
+      "doi": "10.48324/dandi.000574",
+      "view_relationship": "independent, confirmed by all-pairs trial-content fingerprint audit 2026-08-03 (results/patient_identity_audit.json); zero cross-release overlap found; multimodal single-unit+scalp-EEG+iEEG view referred to elsewhere in this codebase as 'Boran' (Boran et al. 2020, Sci Data) -- same corpus, not a separate dataset",
+      "constructs": ["Sternberg task context", "multimodal sensitivity"],
+      "simultaneous_population": true,
+      "primary_eligible": true,
+      "label_convention": "nwb_boran_brainnetome_hybrid",
+      "modality": "multimodal"
+    },
+    "panichello_2024": {
+      "doi": "10.5061/dryad.kkwh70sct",
+      "local_path": "Panichello_2024",
+      "view_relationship": "independent macaque lPFC release",
+      "constructs": ["spatial working-memory content", "intermittent coding"],
+      "simultaneous_population": true,
+      "primary_eligible": false,
+      "label_convention": "monkey_cluster_area_inferred",
+      "label_convention_note": "Sessions resolve to three monkey clusters by session-count/date grouping, not per-channel anatomy: 2021 (10 sessions, monkey A, area 8); 2022 (8 sessions, monkey H, area 8 and 9/46, undetermined which); 2024 (7 sessions, monkey J, area 9/46). Mapping is inferred from deposited session metadata, not depositor-confirmed; see results/corpus_staging_audit.json panichello_2024 entry for evidence and caveat.",
+      "modality": "single_unit"
+    },
+    "watters_2026": {
+      "doi": "10.64898/2026.01.27.702062",
+      "local_path": "Watters/data_for_modeling",
+      "view_relationship": "independent processed macaque frontal-cortex release",
+      "constructs": ["multi-object working memory", "gain versus slot versus switching"],
+      "simultaneous_population": true,
+      "primary_eligible": false,
+      "label_convention": "no_anatomy_available",
+      "modality": "single_and_multi_unit",
+      "modality_note": "Was recorded as single_unit only, which undercounted what is staged: the shared per-trial spike cache carries 5228 multi-unit cluster files against 2857 well-isolated single-unit files across probes and sessions (results/watters_state_geometry.json quality-tier comparison), and both tiers are analysed."
+    },
+    "inagaki_alm5": {
+      "doi": "10.25378/janelia.7489253",
+      "local_path": "Inagaki/SiliconProbeData/SiliconProbeData",
+      "view_relationship": "independent mouse ALM perturbation release",
+      "constructs": ["perturbation recovery method validation"],
+      "simultaneous_population": true,
+      "primary_eligible": false,
+      "label_convention": "single_structure_by_design",
+      "declared_structure": "anterior_lateral_motor_cortex",
+      "modality": "single_unit"
+    },
+    "macaque_pfc_microstimulation": {
+      "doi": "10.1523/JNEUROSCI.1742-24.2025",
+      "local_path": "Soldado-Magraner/PFC_uStim_data/data",
+      "view_relationship": "independent macaque dlPFC microstimulation release",
+      "constructs": [
+        "working-memory delay microstimulation",
+        "perturbation recovery"
+      ],
+      "simultaneous_population": true,
+      "primary_eligible": false,
+      "label_convention": "single_structure_by_design",
+      "declared_structure": "prefrontal_cortex",
+      "modality": "single_unit"
+    },
+    "haslacher_clam_tacs": {
+      "doi": "10.1016/j.brs.2024.07.007",
+      "local_path": "Working-memory-CLAM-tACS/Data",
+      "view_relationship": "independent human scalp-EEG phase-locked stimulation release",
+      "constructs": [
+        "visual working memory",
+        "phase-locked closed-loop stimulation"
+      ],
+      "simultaneous_population": true,
+      "primary_eligible": false,
+      "label_convention": "no_anatomy_available",
+      "modality": "scalp_eeg"
+    },
+    "alagapan_phase_stimulation": {
+      "doi": "10.1016/j.celrep.2019.10.072",
+      "local_path": "alagapan, cell_reports",
+      "view_relationship": "independent human iEEG multi-site stimulation release",
+      "constructs": [
+        "working-memory retention",
+        "encoding stimulation aftereffects"
+      ],
+      "simultaneous_population": true,
+      "primary_eligible": false,
+      "label_convention": "mni_coordinates_only",
+      "modality": "depth_lfp"
+    },
+    "ram_ds005489_openloop": {
+      "local_path": "ds005489-download",
+      "doi": "10.18112/openneuro.ds005489.v1.0.0",
+      "view_relationship": "independent human intracranial episodic-encoding stimulation release",
+      "constructs": [
+        "episodic encoding stimulation",
+        "memory outcome"
+      ],
+      "simultaneous_population": true,
+      "primary_eligible": false,
+      "label_convention": "bids_desikan_killiany_ind_region",
+      "modality": "depth_lfp"
+    },
+    "ram_ds005557_closedloop": {
+      "local_path": "ds005557-download",
+      "doi": "10.18112/openneuro.ds005557.v1.0.0",
+      "view_relationship": "independent human intracranial episodic-encoding closed-loop stimulation release",
+      "constructs": [
+        "episodic encoding closed-loop stimulation",
+        "memory outcome"
+      ],
+      "simultaneous_population": true,
+      "primary_eligible": false,
+      "label_convention": "bids_desikan_killiany_ind_region",
+      "modality": "depth_lfp"
+    },
+    "ds004752": {
+      "local_path": "ds004752",
+      "doi": "10.18112/openneuro.ds004752.v1.0.1",
+      "view_relationship": "shares 9 of 15 patients (sub-01..sub-09) with the staged dandi_000574 (Boran) release, confirmed by exact age/sex/pathology triple match against DANDI 000574 NWB subject metadata (results/cross_modality_calibration.json patient_overlap); sub-10..sub-15 are ds004752-only patients not in dandi_000574. Same lab (Sarnthein, Zurich), same verbal Sternberg task. Treated as a linked cross-modality view of the shared 9 patients, not an independent cohort, for any pooled patient count.",
+      "constructs": [
+        "cross-modality confinement-rate calibration",
+        "iEEG depth, LCMV-beamformed cortical virtual sensors, scalp EEG"
+      ],
+      "simultaneous_population": true,
+      "primary_eligible": false,
+      "label_convention": "bids_brainnetome_anatomical_location",
+      "modality": "multimodal"
+    },
+    "pfc3": {
+      "doi": "10.6080/K0ZW1HVD",
+      "local_path": "PFC-3/extracted/data",
+      "view_relationship": "independent macaque prefrontal-cortex pseudo-population release (CRCNS pfc-3; Meyer, Qi, Stanford & Constantinidis 2011; Qi, Meyer, Stanford & Constantinidis 2011)",
+      "constructs": ["visual working memory", "pre/post-training comparison"],
+      "simultaneous_population": false,
+      "primary_eligible": false,
+      "label_convention": "single_structure_by_design",
+      "declared_structure": "prefrontal_cortex",
+      "modality": "single_unit"
+    },
+    "wolff_eeg_impulse": {
+      "doi": null,
+      "doi_status": "not verified this round -- do not quote a DOI for this dataset until Crossref-checked; the staged directory is named for Wolff et al.'s 'Dynamic hidden states' EEG impulse-response experiments but no data-repository DOI was confirmed against the source archive",
+      "local_path": "Wolff/data",
+      "view_relationship": "independent human scalp-EEG impulse-response release (Wolff et al., 'Dynamic hidden states' EEG impulse-response experiments)",
+      "constructs": ["content-specific latent-state reactivation", "impulse-response identification"],
+      "simultaneous_population": true,
+      "primary_eligible": false,
+      "label_convention": "no_anatomy_available",
+      "modality": "scalp_eeg"
+    },
+    "kai_miller_nback": {
+      "doi": null,
+      "doi_status": "not verified this round -- do not quote a DOI for this dataset until Crossref/repository-checked",
+      "local_path": "kai miller/memory_nback/memory_nback",
+      "view_relationship": "independent human ECoG n-back release (Kai J. Miller memory_nback)",
+      "constructs": ["n-back task/load context", "cortical generality"],
+      "simultaneous_population": true,
+      "primary_eligible": false,
+      "label_convention": "mni_coordinates_only",
+      "modality": "ecog"
+    }
+  }
+}

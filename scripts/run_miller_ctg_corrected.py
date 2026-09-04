@@ -33,6 +33,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from geometry import (ctg_label_permutation_null, ctg_nested_cv, temporal_stability_tau,
                       latent_trajectories, marginalize_condition_time)
 from statistics import fdr_bh, stable_seed
+from provenance import _json_safe
 
 RESULTS = ROOT / "results"
 SUBJECTS = ["al", "ca", "cc", "ug"]
@@ -185,7 +186,7 @@ def main():
               f"(al full-N offdiag_effect={summary['al']['maintenance']['offdiag_effect']:.4f})")
 
     with open(RESULTS / "miller_ctg_corrected.json", "w") as f:
-        json.dump({"per_subject": summary, "trial_count_confound": subsample_results}, f, indent=2)
+        json.dump(_json_safe({"per_subject": summary, "trial_count_confound": subsample_results}), f, indent=2, allow_nan=False)
 
     stats_path = RESULTS / "all_statistics.json"
     with open(stats_path) as f:
@@ -209,7 +210,7 @@ def main():
         for subj, v in summary.items()
     }
     with open(stats_path, "w") as f:
-        json.dump(stats, f, indent=2)
+        json.dump(_json_safe(stats), f, indent=2, allow_nan=False)
     print("\nSaved results/miller_ctg_corrected.json, updated all_statistics.json")
 
 

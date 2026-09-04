@@ -58,3 +58,16 @@ def test_concurrent_writers_do_not_lose_updates(tmp_path):
     result = json.loads(target.read_text())
     for k in range(4):
         assert result[f"counter_{k}"] == n_iters
+
+
+def test_non_finite_floats_are_written_as_null(tmp_path):
+    target = tmp_path / "stats.json"
+    with locked_json_update(target) as stats:
+        stats["nan_value"] = float("nan")
+        stats["inf_value"] = float("inf")
+        stats["neg_inf_value"] = float("-inf")
+        stats["finite_value"] = 1.5
+    raw = target.read_text()
+    assert "NaN" not in raw and "Infinity" not in raw
+    result = json.loads(raw)
+    assert result == {"nan_value": None, "inf_value": None, "neg_inf_value": None, "finite_value": 1.5}

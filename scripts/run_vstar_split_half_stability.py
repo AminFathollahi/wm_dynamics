@@ -1,29 +1,30 @@
 #!/usr/bin/env python3
-"""Round-12 PART 21 -- is the PART 18 transfer null biological idiosyncrasy or
-estimation noise?
+"""Is the cross-session v* transfer null (run_target_transfer.py) biological
+idiosyncrasy or estimation noise?
 
-WHY: PART 18 found cross-session v* transfer is null (own-session slope
-survives, transfer slope does not) on the 10 chronic Wa sessions. The paper
-hedges that it cannot separate genuine session-to-session biological change
-from per-session estimation noise. This script resolves that hedge (if the
-data allow) by comparing:
+WHY: run_target_transfer.py found cross-session v* transfer is null
+(own-session slope survives, transfer slope does not) on the 10 chronic Wa
+sessions. The paper hedges that it cannot separate genuine session-to-session
+biological change from per-session estimation noise. This script resolves
+that hedge (if the data allow) by comparing:
   - WITHIN-session split-half v* stability (interleaved even/odd control
     trials, PCA basis V held fixed per session) -- an estimation-noise floor.
-  - ACROSS-session v* similarity (same full-session v*_chan geometry PART 18
-    uses for its transfer target) -- the null distribution "how similar is v*
-    between different sessions."
+  - ACROSS-session v* similarity (same full-session v*_chan geometry
+    run_target_transfer.py uses for its transfer target) -- the null
+    distribution "how similar is v* between different sessions."
 
 If within >> across: v* is stably estimable within a session but genuinely
 differs across sessions (biological idiosyncrasy, affirms the transfer null).
 If within ~= across (both low): v* estimation is noise-limited at this data
 volume (the transfer null is at least partly noise) -- the per-session-refit
-prescription is unchanged either way (K7: do not reopen the transfer null).
+prescription is unchanged either way (the transfer null itself is settled and
+is not reopened here).
 
-Reuses (DRY, no reimplementation): run_soldado_pipeline.load_soldado_session/
+Reuses (DRY, no reimplementation): run_macaque_pfc_microstimulation_pipeline.load_macaque_pfc_microstimulation_session/
 crop_trial/SESSIONS/N_PC/DMD_RANK/N_BINS/BIN_S, src/geometry.pca_decompose,
-src/dynamics.dmd_reconstruction_error, src/control.unstable_eigenvector, and
+src/dynamics.dmd_reconstruction_error, src/control.dominant_eigenmode, and
 run_target_transfer._fit_session_v_and_V for the full-session v*_chan (the
-identical geometry PART 18's transfer target uses).
+identical geometry run_target_transfer.py's transfer target uses).
 
 Run:
     /home/amin/miniconda3/envs/wm_dynamics/bin/python scripts/run_vstar_split_half_stability.py
@@ -44,17 +45,17 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from geometry import pca_decompose
 from dynamics import dmd_reconstruction_error
-from control import unstable_eigenvector
+from control import dominant_eigenmode
 
 sys.path.insert(0, str(ROOT / "scripts"))
-from run_soldado_pipeline import (
-    load_soldado_session, crop_trial, SESSIONS, N_PC, DMD_RANK, N_BINS, BIN_S,
+from run_macaque_pfc_microstimulation_pipeline import (
+    load_macaque_pfc_microstimulation_session, crop_trial, SESSIONS, N_PC, DMD_RANK, N_BINS, BIN_S,
 )
 from run_target_transfer import _fit_session_v_and_V
 
 RESULTS = ROOT / "results"
 WA_SESSIONS = [s for s in SESSIONS if s.startswith("Wa")]
-MIN_HALF = 10  # same min-data rule build_session_features/17A use to accept an A fit
+MIN_HALF = 10  # same min-data rule build_session_features uses to accept an A fit
 MIN_QUALIFIED = 5
 
 
@@ -77,11 +78,11 @@ def _self_check() -> None:
 
 
 def _split_half_fit(prefix: str) -> dict | None:
-    """21A gate + 21B fit: interleaved even/odd split-half v* in channel space,
+    """Feasibility gate + fit: interleaved even/odd split-half v* in channel space,
     with the session's PCA basis V and centering mean held FIXED (fit once on
     the full session's control epochs), isolating variability in the DYNAMICS
     operator A, not the subspace."""
-    corr = load_soldado_session(prefix, correct=True)
+    corr = load_macaque_pfc_microstimulation_session(prefix, correct=True)
     if corr is None or corr["control_idx"] is None:
         return None
     control_idx = corr["control_idx"]
@@ -112,7 +113,7 @@ def _split_half_fit(prefix: str) -> dict | None:
         Z_h_mean = ((Z_h.reshape(-1, C) - mean_fixed) @ V).reshape(
             Z_h.shape[0], N_BINS, k).mean(0)
         dmd = dmd_reconstruction_error(Z_h_mean, r=r_use, dt=BIN_S)
-        v_star_half, _ = unstable_eigenvector(dmd["A"])
+        v_star_half = dominant_eigenmode(dmd["A"]).v_star
         v_chan = V @ v_star_half
         assert abs(np.linalg.norm(v_chan) - 1.0) < 1e-6, f"{prefix}/{name}: v*_chan not unit-norm"
         v_chan_half[name] = v_chan
@@ -127,7 +128,7 @@ def _split_half_fit(prefix: str) -> dict | None:
 def main() -> None:
     _self_check()
 
-    print("\n21A feasibility gate: interleaved-half fit (>=%d control epochs/half) "
+    print("\nFeasibility gate: interleaved-half fit (>=%d control epochs/half) "
           "on the 10 chronic Wa (shared 96-ch) sessions ..." % MIN_HALF)
     per_session = {}
     for s in WA_SESSIONS:
@@ -152,34 +153,62 @@ def main() -> None:
             "n_sessions_qualified": len(qualified),
             "reason": f"only {len(qualified)} Wa sessions qualify for interleaved "
                       f"split-half fitting (need >= {MIN_QUALIFIED}); cannot separate "
-                      "biological idiosyncrasy from estimation noise this round -- "
+                      "biological idiosyncrasy from estimation noise here -- "
                       "the existing transfer-null hedge stands unchanged.",
             "per_session": per_session,
         }
         with open(RESULTS / "vstar_split_half_stability.json", "w") as f:
             json.dump(out, f, indent=2, default=lambda o: float(o) if isinstance(o, np.floating) else o)
-        print("UNDERPOWERED -- wrote status only, stopping before 21B/21C.")
+        print("UNDERPOWERED -- wrote status only, stopping before the stability comparison.")
         return
 
-    # 21C: across-session baseline, identical geometry to PART 18's transfer
-    # target (full-session v*_chan via run_target_transfer._fit_session_v_and_V).
-    print("\n21C: fitting full-session v*_chan for the across-session baseline ...")
+    # Across-session baseline, identical geometry to run_target_transfer.py's
+    # transfer target (full-session v*_chan via run_target_transfer._fit_session_v_and_V).
+    print("\nFitting full-session v*_chan for the across-session baseline ...")
     full_v_chan = {}
+    full_chan_ids = {}
     for s in qualified:
         fit = _fit_session_v_and_V(s)
         if fit is None:
             print(f"  {s}: SKIP (full-session fit failed)")
             continue
         full_v_chan[s] = fit["V"] @ fit["v_star"]
+        full_chan_ids[s] = tuple(sorted(fit["channel_ids"].tolist()))
 
     pair_sessions = [s for s in qualified if s in full_v_chan]
+    ref_chan_ids = full_chan_ids[pair_sessions[0]] if pair_sessions else None
+    basis_shared = bool(pair_sessions) and all(full_chan_ids[s] == ref_chan_ids for s in pair_sessions)
+    print(f"  channel-basis check across {len(pair_sessions)} qualified sessions: basis_shared={basis_shared}")
+
+    within_vals = np.array([per_session[s]["within_split_half_cos"] for s in qualified])
+
+    if not basis_shared:
+        within_median = float(np.median(within_vals))
+        out = {
+            "status": "within_only",
+            "reason": "post shorted-channel exclusion each Wa session drops a different subset of "
+                      "electrodes, so full-session v*_chan vectors no longer share a common channel "
+                      "basis -- the across-session cosine is not computable. Within-session "
+                      "split-half stability, which does not require a shared basis, is "
+                      "reported on its own.",
+            "n_sessions_qualified": len(qualified),
+            "sessions_qualified": qualified,
+            "per_session": per_session,
+            "within_split_half_cos": within_vals.tolist(),
+            "within_median": within_median,
+        }
+        with open(RESULTS / "vstar_split_half_stability.json", "w") as f:
+            json.dump(out, f, indent=2, default=lambda o: float(o) if isinstance(o, np.floating) else o)
+        print(f"\nwithin_median (split-half, n={len(within_vals)} sessions) = {within_median:.4f}")
+        print("Across-session baseline INFEASIBLE (non-shared channel basis) -- wrote within-only status.")
+        return
+
     across_pairs = {}
     for a, b in combinations(pair_sessions, 2):
         c = abs(float(np.dot(full_v_chan[a], full_v_chan[b])))
         assert 0.0 <= c <= 1.0 + 1e-9, f"pairwise cos out of [0,1]: {a},{b}={c}"
         across_pairs[f"{a}__{b}"] = c
 
-    within_vals = np.array([per_session[s]["within_split_half_cos"] for s in qualified])
     across_vals = np.array(list(across_pairs.values()))
     within_median = float(np.median(within_vals))
     across_median = float(np.median(across_vals))
@@ -193,14 +222,14 @@ def main() -> None:
         verdict = (f"Within-session split-half stability (median |cos|={within_median:.3f}) is "
                    f"high and clearly exceeds the across-session baseline (median "
                    f"|cos|={across_median:.3f}) -- v* is STABLY estimable within a session but "
-                   "GENUINELY differs across sessions: the PART 18 transfer null reflects "
+                   "GENUINELY differs across sessions: the cross-session transfer null reflects "
                    "biological idiosyncrasy, not estimation noise. Affirms the "
                    "session-static-but-session-idiosyncratic conclusion and the "
                    "re-fit-per-session prescription.")
     else:
         verdict = (f"Within-session split-half stability (median |cos|={within_median:.3f}) is "
                    f"comparable to the across-session baseline (median |cos|={across_median:.3f}) "
-                   "-- v* estimation is noise-limited at this data volume, so the PART 18 "
+                   "-- v* estimation is noise-limited at this data volume, so the cross-session "
                    "transfer null is at least partly estimation noise rather than purely "
                    "biological drift. The clinical conclusion is unchanged either way "
                    "(per-session re-fit): the transfer null itself is NOT reopened as a positive.")

@@ -9,6 +9,7 @@ Outputs: figures/fig{1-9}_main.pdf, figures/figS{1-10}_supp.pdf
 
 import sys
 import json
+import argparse
 import warnings
 import numpy as np
 import matplotlib
@@ -156,10 +157,13 @@ def make_figure1():
     """Fig 1 -- the closed-loop schematic (Inagaki Fig 1 style: flat, small-
     multiple, iconographic line-art; no data-driven panels, no dataset poster
     -- the per-dataset cohort table lives in Table 1). Panels: (a) the WM
-    task as a labeled epoch timeline; (b) the two coexisting codes as a
-    state-space cartoon (stable context axis vs. rotating memorandum axis);
-    (c) the closed-loop control cycle (read -> fit dynamics -> when/where/how
-    -> stimulate -> re-read)."""
+    task as a labeled epoch timeline; (b) the two coexisting DECODING codes
+    as a state-space cartoon (stable context decoding axis vs. rotating
+    memorandum decoding axis) -- explicitly an axis-rotation/read-out claim,
+    not a DMD dynamics-mode rotation claim, which is a separate, dissociated
+    measurement (axis-rotation vs. DMD-rotation Spearman rho=-0.28, p=0.25,
+    N=18, results/rotation_speed_axis.json); (c) the closed-loop control cycle
+    (read -> fit dynamics -> when/where/how -> stimulate -> re-read)."""
     from matplotlib.patches import FancyArrowPatch, Circle, FancyBboxPatch
     from matplotlib.path import Path as MPath
 
@@ -193,17 +197,21 @@ def make_figure1():
     ax_a.text(5.0, 0.15, "time", ha="center", fontsize=6.5, style="italic", color=gray)
     panel_label(ax_a, "a", x=-0.06, y=1.08)
 
-    # ── (b) State-space cartoon: fixed context axis vs. rotating content axis ──
+    # ── (b) State-space cartoon: fixed context decoding axis vs. rotating
+    # memorandum DECODING axis. This is a read-out/decoding-axis rotation
+    # claim only (axis-rotation index) -- NOT a DMD/dynamics-mode rotation
+    # claim, which is a dissociated, null measurement (Spearman rho=-0.28,
+    # p=0.25, N=18 between the two; results/rotation_speed_axis.json).
     ax_b = fig.add_subplot(gs[0, 1])
     ax_b.axis("off")
     ax_b.set_xlim(-1.3, 1.3); ax_b.set_ylim(-1.3, 1.3)
     ax_b.set_aspect("equal")
-    # stable context axis: fixed line through the origin with endpoint dots
+    # stable context decoding axis: fixed line through the origin with endpoint dots
     ax_b.plot([-1.0, 1.0], [-0.15, 0.15], color=navy, lw=1.8, solid_capstyle="round")
     ax_b.plot([-1.0, 1.0], [-0.15, 0.15], "o", color=navy, ms=3.5)
-    ax_b.text(1.05, 0.20, "context\n(fixed axis)", fontsize=6.3, color=navy,
+    ax_b.text(1.05, 0.20, "context\n(fixed decoding axis)", fontsize=6.3, color=navy,
               ha="left", va="center", fontweight="bold")
-    # rotating memorandum axis: curved arrow sweeping through several angles
+    # rotating memorandum decoding axis: curved arrow sweeping through several angles
     theta = np.linspace(0.35, 2.4, 60)
     r = 0.85
     ax_b.plot(r * np.cos(theta), r * np.sin(theta), color=darkred, lw=1.6,
@@ -215,11 +223,11 @@ def make_figure1():
     ax_b.plot([0, r * np.cos(theta[0])], [0, r * np.sin(theta[0])], color=darkred,
              lw=1.2, alpha=0.5)
     ax_b.text(r * np.cos(theta[30]) + 0.15, r * np.sin(theta[30]) + 0.15,
-             "memorandum\n(rotating)", fontsize=6.3, color=darkred, ha="left",
+             "memorandum\n(rotating decoding axis)", fontsize=6.3, color=darkred, ha="left",
              va="center", fontweight="bold")
     ax_b.plot(0, 0, "o", color="black", ms=2.5)
-    ax_b.text(5.0 / 10 - 1.3, -1.22, "population state space", fontsize=6.3,
-             style="italic", color=gray, ha="left")
+    ax_b.text(5.0 / 10 - 1.3, -1.22, "population state space (decoding-axis\nrotation, not DMD-mode rotation)",
+             fontsize=5.6, style="italic", color=gray, ha="left")
     panel_label(ax_b, "b", x=-0.06, y=1.08)
 
     # ── (c) Closed-loop control cycle ───────────────────────────────────────
@@ -828,13 +836,12 @@ def make_figure4(stats_data):
                   va="center", transform=ax_h.transAxes, fontsize=6)
         ax_h.axis("off")
 
-    # ── I: Soldado CATE-vs-alignment gate — the actual pseudo-outcome scatter
-    # + fitted slope, with the permutation null shown as an inset histogram
-    # (not a schematic: results/causal_soldado_gate_detail.npz holds the real
-    # AIPW pseudo-outcome, modifier, and null-slope draws from the pipeline).
+    # ── I: Legacy macaque PFC microstimulation alignment-score contrast with its permutation null.
+    # The public release cannot recover the randomized blocks, so this panel is
+    # descriptive even though the retained artifact contains an AIPW score.
     ax_i = fig.add_subplot(gs_causal[0])
-    gate_path = RESULTS / "causal_soldado_gate_detail.npz"
-    gate = stats_data["causal_soldado"]["gate"]
+    gate_path = RESULTS / "causal_macaque_pfc_microstimulation_gate_detail.npz"
+    gate = stats_data["causal_macaque_pfc_microstimulation"]["gate"]
     if gate_path.exists():
         gd = np.load(gate_path)
         phi, m, null = gd["phi"], gd["modifier"], gd["null"]
@@ -844,8 +851,8 @@ def make_figure4(stats_data):
         ax_i.plot(m_line, gate["intercept"] + gate["slope"] * m_line,
                   color="k", lw=1.3, zorder=3)
         ax_i.set_xlabel("Alignment to $v^*$", fontsize=6.5)
-        ax_i.set_ylabel("AIPW pseudo-outcome", fontsize=6.5)
-        ax_i.set_title(f"I  Soldado CATE gate ($N$={gate['n']:,})\n"
+        ax_i.set_ylabel("legacy DR pseudo-outcome", fontsize=6.5)
+        ax_i.set_title(f"I  macaque PFC microstimulation descriptive score ($N$={gate['n']:,})\n"
                        f"slope={gate['slope']:.3f} [{gate['slope_ci_lo']:.2f},"
                        f" {gate['slope_ci_hi']:.2f}], $p$={gate['p_value']:.4f}",
                        loc="left", fontsize=5.8, fontweight="bold")
@@ -856,10 +863,10 @@ def make_figure4(stats_data):
         axins.set_title("perm. null", fontsize=4.3, pad=1)
     panel_label(ax_i, "I")
 
-    # ── J: dynamic vs. stable subspace perturbation (Soldado, paired sessions)
+    # ── J: dynamic vs. stable subspace perturbation (macaque PFC microstimulation, paired sessions)
     ax_j = fig.add_subplot(gs_causal[1])
-    dvs = stats_data["causal_soldado"]["dynamic_vs_stable_replication"]
-    per_sess = stats_data["causal_soldado"]["per_session"]
+    dvs = stats_data["causal_macaque_pfc_microstimulation"]["dynamic_vs_stable_replication"]
+    per_sess = stats_data["causal_macaque_pfc_microstimulation"]["per_session"]
     dyn_vals = [abs(v["dynamic_vs_stable"]["dynamic_pct_change"]) for v in per_sess.values()
                 if v.get("dynamic_vs_stable") is not None]
     stab_vals = [abs(v["dynamic_vs_stable"]["stable_pct_change"]) for v in per_sess.values()
@@ -873,13 +880,13 @@ def make_figure4(stats_data):
     ax_j.set_xticks([0, 1]); ax_j.set_xticklabels(["Stable", "Dynamic"], fontsize=6)
     ax_j.set_ylabel("|% change| under stim", fontsize=6.5)
     ax_j.set_title(f"J  Stim perturbs dynamic $>$ stable\n"
-                   f"subspace ($N$={dvs['n_sessions']}, trend $p$={dvs['p_value']:.3f})",
+                   f"subspace ($N$={dvs['n_sessions']}, $p$={dvs['p_value']:.3f})",
                    loc="left", fontsize=5.8, fontweight="bold")
 
     # ── K: RAM (ds005489) — same-signed null replication at encoding
     ax_k = fig.add_subplot(gs_causal[2])
     ram = stats_data["causal_ram"]["result"]
-    labels = ["Soldado\n(delay, macaque)", "RAM ds005489\n(encoding, human)"]
+    labels = ["macaque PFC microstimulation\n(delay, macaque)", "RAM ds005489\n(encoding, human)"]
     slopes = [gate["slope"], ram["slope"]]
     lo = [gate["slope_ci_lo"], ram["slope_ci_lo"]]
     hi = [gate["slope_ci_hi"], ram["slope_ci_hi"]]
@@ -892,7 +899,7 @@ def make_figure4(stats_data):
     ax_k.axvline(0, color="k", lw=0.7, ls="--")
     ax_k.set_yticks(y_pos); ax_k.set_yticklabels(labels, fontsize=5.8)
     ax_k.set_ylim(-0.7, 1.7)
-    ax_k.set_xlabel("CATE-vs-alignment slope", fontsize=6.5)
+    ax_k.set_xlabel("alignment-association slope", fontsize=6.5)
     for y, s, p in zip(y_pos, slopes, ps):
         ax_k.text(s, y + 0.25, f"p={p:.3f}" if p >= 0.001 else "p<0.001",
                  ha="center", fontsize=5, color="k")
@@ -900,9 +907,7 @@ def make_figure4(stats_data):
                    loc="left", fontsize=5.8, fontweight="bold")
     panel_label(ax_k, "K")
 
-    # ── L: the benchmark leaderboard — v* adjudicated against every
-    # competing theory of the causally-relevant controllable direction, on
-    # the SAME cross-fit pseudo-outcome (results/causal_benchmark.json).
+    # ── L: Retained targeting-score ranking on the same descriptive outcome.
     ax_l = fig.add_subplot(gs_causal[3])
     bench = stats_data.get("causal_benchmark")
     if bench is not None:
@@ -915,14 +920,14 @@ def make_figure4(stats_data):
                     "stable_alignment": "Stable dir.", "input_norm": "Coupling dose",
                     "anat_avg_ctrl": "Avg. ctrl. (struct.)", "anat_modal_ctrl": "Modal ctrl. (struct.)"}
         rows_l = [bench["leaderboard"][n] for n in lb_names]
-        # Round-8 Part 9/10 (K2/K3/K4): the arena-level winner is argmax(slope) WITHIN this
-        # Soldado-only 8-arm list, never the stale/mixed top-level bench["winner"] (which
-        # can resolve to an arm not even in lb_names, e.g. macrosignal_pac -- scored on a
-        # different dataset entirely; see results/causal_benchmark.json primary_leaderboard,
-        # now itself the Soldado-8 arena per K4).
-        soldado_winner = max(lb_names, key=lambda n: bench["leaderboard"][n]["slope"])
+        # The arena-level winner is argmax(slope) WITHIN this macaque PFC microstimulation-only 8-arm
+        # list, never the stale/mixed top-level bench["winner"] (which can
+        # resolve to an arm not even in lb_names, e.g. macrosignal_pac -- scored
+        # on a different dataset entirely; see results/causal_benchmark.json
+        # primary_leaderboard).
+        macaque_pfc_microstimulation_winner = max(lb_names, key=lambda n: bench["leaderboard"][n]["slope"])
         y_l = np.arange(len(lb_names))[::-1]
-        cols_l = ["#59A14F" if (n == soldado_winner) else "#4E79A7" for n in lb_names]
+        cols_l = ["#59A14F" if (n == macaque_pfc_microstimulation_winner) else "#4E79A7" for n in lb_names]
         for y, row, c in zip(y_l, rows_l, cols_l):
             ax_l.plot([row["slope_ci_lo"], row["slope_ci_hi"]], [y, y], color=c, lw=1.3, zorder=2)
             ax_l.scatter([row["slope"]], [y], color=c, s=20, zorder=3)
@@ -930,18 +935,17 @@ def make_figure4(stats_data):
         ax_l.set_yticks(y_l)
         ax_l.set_yticklabels([lb_labels[n] for n in lb_names], fontsize=5.3)
         ax_l.set_xlabel("Marginal DR slope (per SD)", fontsize=6.3)
-        ax_l.set_title(f"L  Benchmark: only $v^*$ predicts\nstim. effect (winner={lb_labels[soldado_winner]})",
+        ax_l.set_title(f"L  Legacy score ranking; design no-go\npoint winner={lb_labels[macaque_pfc_microstimulation_winner]}",
                        loc="left", fontsize=5.8, fontweight="bold")
     else:
         ax_l.set_title("L  Benchmark leaderboard", loc="left", fontsize=6, fontweight="bold")
-        ax_l.text(0.5, 0.5, "Run run_soldado_pipeline.py", ha="center", va="center",
+        ax_l.text(0.5, 0.5, "Run run_macaque_pfc_microstimulation_pipeline.py", ha="center", va="center",
                  transform=ax_l.transAxes, fontsize=6)
         ax_l.axis("off")
     panel_label(ax_l, "L")
 
-    fig.suptitle("Figure 4 — Dynamical geometry (ring-like phase encoding, near-unit-circle\n"
-                 "DMD, stimulation-timing divergence) and the benchmark: among competing control\n"
-                 "models, only the unstable-mode geometry predicts the causal effect of stimulation",
+    fig.suptitle("Figure 4 — Dynamical geometry and descriptive stimulation analyses;\n"
+                 "the macaque PFC microstimulation targeting estimand is not identified by the public release",
                  fontsize=7.8, fontweight="bold", y=0.985)
     save_figure(fig, "fig4_main")
     print("  Figure 4 saved.")
@@ -1517,15 +1521,13 @@ def make_figure9(stats_data):
     plt.close(fig)
 
 
-def make_figS11_round8():
-    """Supplementary S11 (Round-8 Part 3B, updated Part 10/K4, Round-8.1 Part 11):
-    two panels named explicitly by comments.txt -- (A) the SOLDADO-6 PRIMARY causal
-    benchmark (K4: promoted from a "different arena" framing to the primary
-    leaderboard itself) with PAC/RL/anat_avg_ctrl/anat_modal_ctrl shown as
+def make_figS11_macaque_pfc_microstimulation_leaderboard_and_behavior_bound():
+    """Supplementary S11: two panels -- (A) the design-incomplete macaque PFC microstimulation
+    descriptive ranking with PAC/RL/anat_avg_ctrl/anat_modal_ctrl shown as
     ineligible-in-primary (concrete reasons in primary_leaderboard.arms -- the two
     anat arms are a single area-level scalar with zero per-trial variance, not
-    scoreable, Round-8.1 Part 11) plus a rank-invariance inset; (B) the
-    behavior-as-bound diag-AUC-per-dataset plus the Part 2 graded-behavior
+    scoreable) plus a rank-invariance inset; (B) the
+    behavior-as-bound diag-AUC-per-dataset plus the graded-behavior
     (RT~drift) forest. Self-contained: reads results/ JSON directly rather than
     the (partially stale) all_statistics.json causal_benchmark copy, so it is
     correct regardless of run order."""
@@ -1542,27 +1544,27 @@ def make_figS11_round8():
     fig = plt.figure(figsize=(7.2, 3.4))
     gs = gridspec.GridSpec(1, 2, fig, wspace=0.55, left=0.09, right=0.97, top=0.80, bottom=0.14)
 
-    # ── A: Soldado-6 PRIMARY arena (Round-8.1 Part 11: anat_avg_ctrl/
-    # anat_modal_ctrl are a single area-level scalar with zero per-trial
-    # variance -- genuinely ineligible, not scored/null -- shown as N/A
-    # alongside PAC/RL rather than as ranked bars), rank-invariance inset ──
+    # ── A: macaque PFC microstimulation descriptive arena (anat_avg_ctrl/anat_modal_ctrl are a
+    # single area-level scalar with zero per-trial variance -- genuinely
+    # ineligible, not scored/null -- shown as N/A alongside PAC/RL rather
+    # than as ranked bars), rank-invariance inset ──
     ax_a = fig.add_subplot(gs[0])
-    soldado_arms = ["vstar_alignment", "min_energy_dir_alignment", "random_alignment",
+    macaque_pfc_microstimulation_arms = ["vstar_alignment", "min_energy_dir_alignment", "random_alignment",
                     "gramian_trace", "stable_alignment", "input_norm"]
     labels_a = {"vstar_alignment": "$v^*$ (ours)", "min_energy_dir_alignment": "Min-energy dir.",
                "random_alignment": "Random", "gramian_trace": "Gramian (fn'l)",
                "stable_alignment": "Stable dir.", "input_norm": "Coupling dose"}
     primary_lb = bench["primary_leaderboard"]
-    rows = [primary_lb["arms"][a] for a in soldado_arms]
+    rows = [primary_lb["arms"][a] for a in macaque_pfc_microstimulation_arms]
     ineligible_names = ["anat_avg_ctrl", "anat_modal_ctrl", "macrosignal_pac", "rl_policy_alignment"]
     ineligible_labels = ["Avg. ctrl. (struct., N/A)", "Modal ctrl. (struct., N/A)",
                          "PAC (ineligible)", "RL (ineligible)"]
-    all_names = soldado_arms + ineligible_names
+    all_names = macaque_pfc_microstimulation_arms + ineligible_names
     all_labels = list(labels_a.values()) + ineligible_labels
     y = np.arange(len(all_names))[::-1]
     winner = primary_lb["winner"]
     significant = set(primary_lb["significant_arms"])
-    for yi, name, row in zip(y[:len(rows)], soldado_arms, rows):
+    for yi, name, row in zip(y[:len(rows)], macaque_pfc_microstimulation_arms, rows):
         col = "#59A14F" if name in significant else "#4E79A7"
         ax_a.plot([row["slope_ci_lo"], row["slope_ci_hi"]], [yi, yi], color=col, lw=1.3, zorder=2)
         ax_a.scatter([row["slope"]], [yi], color=col, s=20, zorder=3)
@@ -1572,9 +1574,9 @@ def make_figS11_round8():
     ax_a.axvline(0, color="k", lw=0.7, ls="--")
     ax_a.set_yticks(y)
     ax_a.set_yticklabels(all_labels, fontsize=5.2)
-    ax_a.set_xlabel("Marginal DR slope (per SD), Soldado n=15,670", fontsize=6.0)
-    ax_a.set_title(f"A  Primary arena (Soldado-6, K4/Part 11): winner={labels_a[winner]},\n"
-                   f"min-energy dir. also significant; PAC/RL/anat ineligible here",
+    ax_a.set_xlabel(f"Legacy DR slope (per SD), macaque PFC microstimulation n={primary_lb['n']:,}", fontsize=6.0)
+    ax_a.set_title(f"A  Design-incomplete macaque PFC microstimulation ranking: point winner={labels_a[winner]},\n"
+                   f"no licensed causal arm; PAC/RL/anat ineligible here",
                    loc="left", fontsize=5.6, fontweight="bold")
     panel_label(ax_a, "A")
 
@@ -1609,15 +1611,28 @@ def make_figS11_round8():
     panel_label(ax_b, "B")
 
     ax_ins2 = ax_b.inset_axes([0.50, 0.55, 0.47, 0.40])
-    forest_cohorts = ["dandi000469", "dandi001187", "dandi000673", "boran_ieeg"]
-    forest_labels = ["000469", "001187", "000673", "Boran"]
+    # Primary independent-cohort pool and any linked-release sensitivity view are read
+    # from the artifact's own bookkeeping so this panel can't drift out of sync with it.
+    primary_cohorts = graded["_meta"]["datasets_pooled"]
+    sensitivity_cohorts = graded["_meta"].get("linked_sensitivity_views_excluded", [])
+    forest_cohorts = list(primary_cohorts) + list(sensitivity_cohorts)
+    cohort_short = {"dandi000469": "000469", "dandi001187": "001187",
+                     "dandi000673": "000673", "boran_ieeg": "Boran"}
+    forest_labels = [cohort_short.get(c, c) + (" (sens.)" if c in sensitivity_cohorts else "")
+                      for c in forest_cohorts]
     betas = [graded[c]["response_time"]["beta"] for c in forest_cohorts]
     los = [graded[c]["response_time"]["ci_lo"] for c in forest_cohorts]
     his = [graded[c]["response_time"]["ci_hi"] for c in forest_cohorts]
     yf = np.arange(len(forest_cohorts))[::-1]
-    for yi, b, lo, hi in zip(yf, betas, los, his):
-        ax_ins2.plot([lo, hi], [yi, yi], color="#4E79A7", lw=1.0)
-        ax_ins2.scatter([b], [yi], color="#4E79A7", s=10, zorder=3)
+    for yi, b, lo, hi, c in zip(yf, betas, los, his, forest_cohorts):
+        is_sens = c in sensitivity_cohorts
+        col = "#999999" if is_sens else "#4E79A7"
+        ax_ins2.plot([lo, hi], [yi, yi], color=col, lw=1.0)
+        if is_sens:
+            ax_ins2.scatter([b], [yi], s=10, zorder=3, marker="D",
+                            facecolors="none", edgecolors=col, linewidths=0.6)
+        else:
+            ax_ins2.scatter([b], [yi], color=col, s=10, zorder=3)
     pooled = graded.get("_meta", {}).get("forest", {}).get("pooled")
     if pooled is not None:
         ax_ins2.axvline(pooled, color="#B41E1E", lw=0.8, ls=":")
@@ -1625,13 +1640,13 @@ def make_figS11_round8():
     ax_ins2.set_yticks(yf)
     ax_ins2.set_yticklabels(forest_labels, fontsize=4.0)
     ax_ins2.tick_params(labelsize=4.0)
-    ax_ins2.set_title("RT~drift ($\\theta$), readout only", fontsize=4.2)
+    ax_ins2.set_title("RT~drift ($\\theta$); dotted=primary pool", fontsize=4.2)
 
-    fig.suptitle("Figure S11 — Round 8: the causal benchmark's two arenas are never merged\n"
+    fig.suptitle("Figure S11 — the design-incomplete macaque PFC microstimulation ranking is descriptive\n"
                  "(A), and behavioral relevance is reported as a bound, not a control target (B)",
                  fontsize=7.3, fontweight="bold", y=0.98)
-    save_figure(fig, "figS11_round8")
-    print("  Figure S11 (Round 8) saved.")
+    save_figure(fig, "figS11_macaque_pfc_microstimulation_leaderboard_and_behavior_bound")
+    print("  Figure S11 saved.")
     plt.close(fig)
 
 
@@ -3018,7 +3033,7 @@ def make_figS10(stats_data):
 
 
 def make_figS_dim_robustness(stats_data):
-    """Round-6 supplementary: the latent dimensionality is data-selected, and every
+    """Supplementary: the latent dimensionality is data-selected, and every
     headline quantity is invariant to it (and to the operator rank).
     (a) per-dataset cv-PR and parallel-analysis k vs channel count, with k=8 marked;
     (b) the four headline quantities vs latent k in {6,8,10,12};
@@ -3121,13 +3136,711 @@ def make_figS_dim_robustness(stats_data):
     plt.close(fig)
 
 
+def _adjudication_values(name, artifact):
+    if name in {"DANDI 000469", "DANDI 000574"}:
+        group = artifact["group"]
+        return [group[key]["mean"] for key in (
+            "m2_minus_m0_nats_per_observation", "m4_minus_m2_nats_per_transition",
+            "m1_minus_m0_nats_per_observation", "m3_minus_m2_nats_per_transition",
+        )]
+    if name == "Miller N-back":
+        rows = [value["drift"]["summary"] for value in artifact["patients"].values()
+                if value.get("status") == "complete"]
+        return [float(np.mean([row[key] for row in rows])) for key in (
+            "m2_minus_m0_nats_per_observation", "m4_minus_m2_nats_per_transition",
+            "m1_minus_m0_nats_per_observation", "m3_minus_m2_nats_per_transition",
+        )]
+    if name == "DANDI 001187/000673":
+        sys.path.insert(0, str(ROOT / "scripts"))
+        from run_switching_adjudication import extract_folds
+        rows = extract_folds(name, artifact)
+        return [
+            float(np.mean([
+                row["fold"].get(
+                    "m2_minus_m0_nats_per_observation",
+                    row["fold"].get("M2_minus_M0_nats_per_observation"),
+                )
+                for row in rows
+            ])),
+            float(np.mean([
+                row["fold"]["m4_minus_m2_nats_per_transition"]
+                if "m4_minus_m2_nats_per_transition" in row["fold"]
+                else row["fold"]["M4_two_state_log_likelihood_per_transition"]
+                - row["fold"]["M2_log_likelihood_per_transition_conditional"]
+                for row in rows
+            ])),
+            np.nan,
+            np.nan,
+        ]
+    group = artifact["group"]
+    return [group["M2_minus_M0_nats_per_observation"]["mean"],
+            group["M4_two_minus_M2_nats_per_transition"]["mean"], np.nan, np.nan]
+
+
+def make_current_adjudication_figure():
+    nature_style()
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from run_switching_adjudication import extract_folds
+    switching = json.loads((RESULTS / "switching_adjudication.json").read_text())
+    positive = json.loads((RESULTS / "drift_positive_control_000469.json").read_text())
+    files = {
+        "DANDI 000469": "human_drift_spine_000469.json",
+        "DANDI 000574": "human_drift_spine_000574.json",
+        "DANDI 001187/000673": "human_drift_spine_001187_000673.json",
+        "Miller N-back": "miller_drift_spine.json",
+        "Panichello 2024": "panichello_2024_drift_switching.json",
+    }
+    fig, axes = plt.subplots(len(files), 1, figsize=(7.2, 8.2), sharex=True)
+    positions = np.arange(7)
+    display_low, display_high = -0.10, 0.40
+    rng = np.random.default_rng(20260801)
+    for ax, (name, filename) in zip(axes, files.items()):
+        artifact = json.loads((RESULTS / filename).read_text())
+        rows = extract_folds(name, artifact)
+        entities = sorted({row["entity"] for row in rows})
+        values_by_entity = []
+        for entity in entities:
+            folds = [row["fold"] for row in rows if row["entity"] == entity]
+            columns = []
+            fold_extractors = (
+                lambda fold: fold.get(
+                    "m2_minus_m0_nats_per_observation", fold.get("M2_minus_M0", np.nan)
+                ),
+                lambda fold: fold["m4_minus_m2_nats_per_transition"]
+                if "m4_minus_m2_nats_per_transition" in fold
+                else fold.get("M4_two_state_log_likelihood_per_transition", np.nan)
+                - fold.get("M2_log_likelihood_per_transition_conditional", np.nan),
+                lambda fold: fold.get("m1_minus_m0_nats_per_observation", np.nan),
+                lambda fold: fold.get("m3_minus_m2_nats_per_transition", np.nan),
+            )
+            fold_columns = []
+            for extract in fold_extractors:
+                values = [extract(fold) for fold in folds]
+                values = np.asarray(values, dtype=float)
+                fold_columns.append(
+                    float(np.nanmean(values)) if np.any(np.isfinite(values)) else np.nan
+                )
+            controls = {}
+            if name in {"DANDI 000469", "DANDI 000574"}:
+                dataset_key = name.removeprefix("DANDI ")
+                controls = positive["datasets"][dataset_key]["entity_metrics"].get(entity, {})
+            columns.extend([
+                fold_columns[0],
+                controls.get(
+                    "raw.content_axis.m2_minus_heteroscedastic_m0_nats_per_transition",
+                    np.nan,
+                ),
+                controls.get(
+                    "raw.content_axis.m2_minus_free_variance_ar1_m0_nats_per_transition",
+                    np.nan,
+                ),
+                controls.get(
+                    "raw.neighbouring_trial_prediction.own_minus_neighbour_r2_advantage",
+                    np.nan,
+                ),
+                *fold_columns[1:],
+            ])
+            values_by_entity.append(columns)
+        values_by_entity = np.asarray(values_by_entity, dtype=float)
+        for column in range(len(positions)):
+            finite = values_by_entity[:, column][np.isfinite(values_by_entity[:, column])]
+            if len(finite):
+                jitter = rng.uniform(-0.06, 0.06, len(finite))
+                inside = (finite >= display_low) & (finite <= display_high)
+                ax.scatter(positions[column] + jitter[inside], finite[inside], s=13,
+                           alpha=0.65, color="#4E79A7")
+                ax.scatter(positions[column] + jitter[finite > display_high],
+                           np.full(np.sum(finite > display_high), display_high - 0.008),
+                           marker="^", s=22, alpha=0.75, color="#4E79A7")
+                ax.scatter(positions[column] + jitter[finite < display_low],
+                           np.full(np.sum(finite < display_low), display_low + 0.008),
+                           marker="v", s=22, alpha=0.75, color="#4E79A7")
+                ax.plot(positions[column], np.median(finite), "D", ms=4, color="black")
+        null = switching["datasets"][name]["model_recovery"].get(
+            "pure_confined_diffusion_entity_summary", {}
+        )
+        null_spread = null.get("fold_value_percentile_range_95")
+        if null.get("median") is not None and null_spread is not None:
+            null_interval = np.clip(null_spread, display_low, display_high)
+            ax.vlines(positions[4], *null_interval, color="#E15759", lw=3, alpha=0.75)
+            ax.plot(positions[4], null["median"], "_", color="#E15759", ms=8)
+        ax.axhline(0, color="black", lw=0.7)
+        ax.set_ylim(display_low, display_high)
+        ax.set_ylabel("advantage", fontsize=7)
+        ax.set_title(f"{name} (independent N={len(entities)})", loc="left", fontsize=8)
+    axes[-1].set_xticks(
+        positions,
+        ["M2−M0", "M2−mix M0", "M2−AR1 M0", "own−neighbor\nR²",
+         "M4−M2", "M1−M0", "M3−M2"],
+        fontsize=6,
+    )
+    fig.suptitle(
+        "Matched controls separate predictive history from confined dynamics",
+        fontsize=10,
+    )
+    fig.text(0.5, 0.955,
+             "Diamonds: entity medians; first three and final three columns are nats/target; "
+             "red: fitted-M2 M4−M2 null",
+             ha="center", va="top", fontsize=7)
+    save_figure(fig, "fig_current_adjudication")
+    plt.close(fig)
+
+
+def make_current_switching_decomposition_figure():
+    nature_style()
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from run_switching_adjudication import DATASETS, extract_folds
+    switching = json.loads((RESULTS / "switching_adjudication.json").read_text())
+    fig, axes = plt.subplots(1, 2, figsize=(7.2, 3.8), gridspec_kw={"width_ratios": [1.15, 1]})
+    ax = axes[0]
+    colors = ("#4E79A7", "#F28E2B", "#59A14F", "#B07AA1", "#E15759")
+    markers = ("o", "s", "^", "D", "P")
+    for (name, filename), color, marker in zip(DATASETS.items(), colors, markers):
+        rows = extract_folds(name, json.loads((RESULTS / filename).read_text()))
+        by_entity = {}
+        for row in rows:
+            if row["switching"].get("status") == "non_identified":
+                continue
+            by_entity.setdefault(row["entity"], []).append(
+                row["fold"]["switching_decomposition"]
+            )
+        coefficient = [
+            float(np.mean([value["absolute_coefficient_separation"] for value in values]))
+            for values in by_entity.values()
+        ]
+        log_variance = [
+            float(np.mean([value["absolute_log_variance_separation"] for value in values]))
+            for values in by_entity.values()
+        ]
+        excluded = switching["datasets"][name]["variance_floor"]["n_folds_excluded"]
+        ax.scatter(coefficient, log_variance, s=18, alpha=0.65, color=color,
+                   marker=marker,
+                   label=f"{name} (N={len(by_entity)}, floor excl.={excluded})")
+    ax.set_xlabel("absolute AR-coefficient separation")
+    ax.set_ylabel("absolute log-variance separation")
+    ax.set_title("What the fitted switching regimes separate", loc="left")
+    ax.legend(frameon=False, fontsize=5)
+    null_ax = axes[1]
+    y = np.arange(len(DATASETS))
+    for index, ((name, _), color) in enumerate(zip(DATASETS.items(), colors)):
+        result = switching["datasets"][name]
+        observed = result.get("entity_median_inference", {}).get(
+            "free_switching_minus_m2", {}
+        )
+        recovery = result["model_recovery"]
+        pure_null = recovery.get("pure_confined_diffusion_entity_summary", {})
+        heteroscedastic_null = recovery.get(
+            "heteroscedastic_confined_diffusion_entity_summary", {}
+        )
+        series = (
+            (observed.get("estimate"),
+             observed.get("patient_or_session_bootstrap_interval_95"), "o", color),
+            (pure_null.get("median"),
+             pure_null.get(
+                 "fold_value_percentile_range_95"
+             ), "s", "0.45"),
+            (heteroscedastic_null.get("median"),
+             heteroscedastic_null.get(
+                 "fold_value_percentile_range_95"
+             ), "^", "#E15759"),
+        )
+        for offset, (estimate, interval, marker, point_color) in zip(
+            (-0.18, 0.0, 0.18), series
+        ):
+            if estimate is None or interval is None:
+                continue
+            null_ax.errorbar(
+                estimate, index + offset,
+                xerr=[[estimate - interval[0]], [interval[1] - estimate]],
+                fmt=marker, ms=4, color=point_color, capsize=2, lw=0.8,
+            )
+    null_ax.axvline(0, color="black", lw=0.7)
+    null_ax.set(
+        yticks=y,
+        yticklabels=list(DATASETS),
+        xlabel="M4−M2 (nats/transition)",
+        title="Observed and recovery-null summaries",
+    )
+    null_ax.tick_params(axis="y", labelsize=5.5)
+    null_ax.plot([], [], "o", color="#4E79A7", label="observed median + bootstrap CI")
+    null_ax.plot([], [], "s", color="0.45", label="homoscedastic null + entity range")
+    null_ax.plot([], [], "^", color="#E15759", label="heteroscedastic null + entity range")
+    null_ax.legend(frameon=False, fontsize=5, loc="best")
+    save_figure(fig, "fig_current_switching_decomposition")
+    plt.close(fig)
+
+
+def make_current_geometry_prediction_figure():
+    nature_style()
+    path = RESULTS / "geometry_from_drift_parameters_000469.json"
+    if not path.is_file():
+        return
+    artifact = json.loads(path.read_text())
+    if artifact["overall"]["status"] == "not_interpretable":
+        return
+    fig, axes = plt.subplots(1, 2, figsize=(7.2, 3.0))
+    for ax, key, title in zip(axes, ("crossnobis_content_distance", "probe_dispersion"),
+                              ("Crossnobis decay timescale", "probe dispersion")):
+        pairs = artifact[key]["pairs"]
+        predicted = np.asarray([row["predicted"] for row in pairs])
+        observed = np.asarray([row["observed"] for row in pairs])
+        low, high = min(predicted.min(), observed.min()), max(predicted.max(), observed.max())
+        ax.plot([low, high], [low, high], "--", color="black", lw=0.8)
+        ax.scatter(predicted, observed, color="#59A14F", s=24)
+        if low > 0 and high / low > 100:
+            ax.set_xscale("log")
+            ax.set_yscale("log")
+        ax.set(xlabel="parameter-free prediction", ylabel="measured", title=title)
+    save_figure(fig, "fig_current_geometry_prediction")
+    plt.close(fig)
+
+
+def make_current_hierarchical_confinement_figure():
+    nature_style()
+    path = RESULTS / "hierarchical_confinement_000469.json"
+    if not path.is_file():
+        return
+    artifact = json.loads(path.read_text())
+    fit = artifact["log_scale"]["moment_estimator"]
+    if fit.get("status") != "complete":
+        return
+    patients = fit["patients"]
+    names = sorted(
+        patients,
+        key=lambda name: patients[name]["partial_pooled_geometric_mean_per_second"],
+    )
+    unpooled = np.exp(np.asarray([
+        patients[name]["unpooled_inverse_variance_log_mean"] for name in names
+    ]))
+    pooled = np.asarray([
+        patients[name]["partial_pooled_geometric_mean_per_second"] for name in names
+    ])
+    fig, axes = plt.subplots(1, 2, figsize=(7.2, 3.4), gridspec_kw={"width_ratios": [2, 1]})
+    y = np.arange(len(names))
+    axes[0].plot(unpooled, y, "o", color="0.7", label="unpooled")
+    axes[0].plot(pooled, y, "o", color="#59A14F", label="partial pooled")
+    for index in range(len(names)):
+        axes[0].plot([unpooled[index], pooled[index]], [index, index], color="0.8", lw=0.7)
+    axes[0].axvline(
+        fit["group_geometric_mean_per_second"], color="black", ls="--", lw=0.8
+    )
+    axes[0].set_xscale("log")
+    axes[0].set(yticks=y, yticklabels=names, xlabel="confinement rate λ (s⁻¹)", title="Patient shrinkage")
+    contrasts = artifact["anisotropy"]
+    keys = ("log_content_minus_permuted_axis", "log_content_minus_signal_matched_complement")
+    values = [contrasts[key]["group_mean"] for key in keys]
+    intervals = [contrasts[key]["patient_cluster_bootstrap_interval_95"] for key in keys]
+    errors = np.asarray([[value - interval[0] for value, interval in zip(values, intervals)],
+                         [interval[1] - value for value, interval in zip(values, intervals)]])
+    axes[1].bar([0, 1], values, color=["#4E79A7", "#F28E2B"])
+    axes[1].errorbar([0, 1], values, yerr=errors, fmt="none", color="black", capsize=2)
+    axes[1].axhline(0, color="black", lw=0.7)
+    axes[1].set(xticks=[0, 1], xticklabels=["permuted", "matched\ncomplement"],
+                ylabel="log(content/control λ)", title="Anisotropy controls")
+    axes[0].legend(frameon=False, fontsize=6)
+    save_figure(fig, "fig_current_hierarchical_confinement")
+    plt.close(fig)
+
+
+def _bootstrap_mean_ci(values, rng, n_boot=5000):
+    array = np.asarray([v for v in values if v is not None and np.isfinite(v)], dtype=float)
+    if len(array) < 2:
+        return None
+    draws = np.mean(array[rng.integers(0, len(array), size=(n_boot, len(array)))], axis=1)
+    return float(np.mean(array)), np.percentile(draws, [2.5, 97.5]), len(array)
+
+
+def make_region_stratified_figure():
+    """One region-resolved figure -- per-region
+    M2-minus-matched-flexibility-M0 and per-region content-minus-complement
+    own-trial-R2 advantage, patient-bootstrap intervals, n_units annotated.
+    No panel for a non-identified region."""
+    nature_style()
+    spine_path = RESULTS / "region_stratified_drift_000469.json"
+    controls_path = RESULTS / "drift_positive_control_000469.json"
+    if not spine_path.is_file():
+        return
+    spine = json.loads(spine_path.read_text())
+    regions = [r for r in spine["regions"] if r != "pooled"]
+    rng = np.random.default_rng(20260803)
+
+    matched_flex_summary, complement_summary, n_units = {}, {}, {}
+    for region in regions:
+        block = spine["regions"][region]
+        n_units[region] = int(np.mean([
+            s["n_units"] for s in block["sessions"].values() if s.get("status") == "complete"
+        ])) if any(s.get("status") == "complete" for s in block["sessions"].values()) else 0
+        summary = block["group"].get("trial_prediction_r2_advantage")
+        complement_summary[region] = summary if isinstance(summary, dict) and summary.get("status") != "not_estimable" else None
+
+    if controls_path.is_file():
+        controls_artifact = json.loads(controls_path.read_text())
+        # region-stratified positive-control entity metrics were written into
+        # results/region_stratified_drift_000469.json's regions[region]["positive_controls"]
+        # by run_drift_positive_controls.py --region-stratified.
+        for region in regions:
+            entities = spine["regions"][region].get("positive_controls", {}).get("entity_metrics", {})
+            values = [
+                row.get("raw.content_axis.m2_minus_heteroscedastic_m0_nats_per_transition")
+                for row in entities.values()
+            ]
+            matched_flex_summary[region] = _bootstrap_mean_ci(values, rng)
+
+    plot_regions_matched = [r for r in regions if matched_flex_summary.get(r) is not None]
+    plot_regions_complement = [r for r in regions if complement_summary.get(r) is not None]
+    if not plot_regions_matched and not plot_regions_complement:
+        return
+
+    fig, axes = plt.subplots(1, 2, figsize=(7.2, 3.2))
+    for ax, region_list, title, ylabel in (
+        (axes[0], plot_regions_matched, "M2 vs. matched-flexibility M0 (region-stratified)", "nats/transition"),
+        (axes[1], plot_regions_complement, "Content vs. complement axis (own-trial R²)", "R² advantage"),
+    ):
+        if not region_list:
+            ax.axis("off")
+            ax.text(0.5, 0.5, "not identified for any region", ha="center", va="center", fontsize=7)
+            continue
+        x = np.arange(len(region_list))
+        if ax is axes[0]:
+            means = [matched_flex_summary[r][0] for r in region_list]
+            los = [matched_flex_summary[r][1][0] for r in region_list]
+            his = [matched_flex_summary[r][1][1] for r in region_list]
+            ns = [matched_flex_summary[r][2] for r in region_list]
+        else:
+            means = [complement_summary[r]["mean"] for r in region_list]
+            los = [complement_summary[r]["ci"][0] if "ci" in complement_summary[r] else np.nan for r in region_list]
+            his = [complement_summary[r]["ci"][1] if "ci" in complement_summary[r] else np.nan for r in region_list]
+            ns = [complement_summary[r]["n_patients"] for r in region_list]
+        errors = np.asarray([[m - lo for m, lo in zip(means, los)], [hi - m for hi, m in zip(his, means)]])
+        ax.bar(x, means, color="#4E79A7")
+        ax.errorbar(x, means, yerr=errors, fmt="none", color="black", capsize=2)
+        ax.axhline(0, color="black", lw=0.7)
+        for xi, (n_pat, region) in enumerate(zip(ns, region_list)):
+            ax.text(xi, 0, f"n={n_pat}\nunits≈{n_units.get(region, 0)}", ha="center", va="bottom", fontsize=5)
+        ax.set(xticks=x, xticklabels=region_list, ylabel=ylabel, title=title)
+        ax.tick_params(axis="x", labelsize=6, rotation=30)
+    save_figure(fig, "fig_current_region_stratified")
+    plt.close(fig)
+
+
+def make_attractor_recovery_control_figure():
+    """4 panels: (A) max persistence per Betti dimension across sessions with
+    each observation's percentile against both nulls (the raw per-draw null
+    distributions are not persisted in the artifact, only the summary
+    percentile, so the null is shown as the percentile annotation rather than
+    a literal band); (B) recurrence-quantification laminarity/determinism at
+    the 5%-target-RR threshold across sessions; (C) fixed-point locations in
+    the 2-component latent with Jacobian eigenvalues in the complex plane for
+    one representative session; (D) the planted-truth confusion matrix."""
+    nature_style()
+    path = RESULTS / "attractor_recovery_control.json"
+    if not path.is_file():
+        return
+    artifact = json.loads(path.read_text())
+    complete = {k: v for k, v in artifact["sessions"].items() if v.get("status") == "complete"}
+    if not complete:
+        return
+    fig, axes = plt.subplots(2, 2, figsize=(7.2, 6.8))
+
+    ax = axes[0, 0]
+    beta0_persist = [s["persistent_homology"]["observed_betti"]["0"]["max_persistence"] for s in complete.values()]
+    beta0_pct = [s["persistent_homology"]["percentiles"]["beta_0_vs_gaussian_null_percentile"] for s in complete.values()]
+    scatter = ax.scatter(beta0_persist, beta0_pct, s=10, color=PALETTE["neutral"], edgecolor="black", linewidth=0.3)
+    ax.axhline(95, color=PALETTE["error"], ls="--", lw=0.8, label="95th pct (recovery threshold)")
+    ax.set(xlabel="observed max persistence (beta_0)", ylabel="percentile vs Gaussian null",
+           title=f"Persistent homology ({sum(s['persistent_homology']['recovered'] for s in complete.values())}/{len(complete)} sessions recovered)")
+    ax.legend(frameon=False, fontsize=5)
+
+    ax = axes[0, 1]
+    laminarity = [s["recurrence_quantification"]["by_threshold"]["target_rr_0.05"]["laminarity"] for s in complete.values()]
+    determinism = [s["recurrence_quantification"]["by_threshold"]["target_rr_0.05"]["determinism"] for s in complete.values()]
+    ax.scatter(determinism, laminarity, s=10, color=PALETTE["zero_back"], edgecolor="black", linewidth=0.3)
+    ax.set(xlabel="determinism", ylabel="laminarity", title="Recurrence quantification (5% target RR)")
+
+    ax = axes[1, 0]
+    example = next(iter(complete.values()))
+    for fp in example["fixed_points"]["fixed_points"]:
+        loc = fp["location"]
+        color = {"stable_point": PALETTE["correct"], "saddle": PALETTE["error"], "line_attractor": PALETTE["target"], "limit_cycle": PALETTE["non_target"]}.get(fp["classification"], PALETTE["neutral"])
+        ax.scatter(*loc, s=40, color=color, edgecolor="black", linewidth=0.5, label=fp["classification"])
+    handles, labels = ax.get_legend_handles_labels()
+    unique = dict(zip(labels, handles))
+    ax.legend(unique.values(), unique.keys(), frameon=False, fontsize=5)
+    ax.set(xlabel="PC1", ylabel="PC2", title=f"Fixed points, one session (pattern={example['fixed_points']['pattern']})")
+
+    ax = axes[1, 1]
+    cm = artifact["planted_truth_calibration"]["confusion_matrix"]
+    systems = list(cm.keys())
+    patterns = sorted({p for counts in cm.values() for p in counts})
+    matrix = np.array([[cm[sys_].get(p, 0) for p in patterns] for sys_ in systems])
+    im = ax.imshow(matrix, cmap="Blues", aspect="auto")
+    ax.set(xticks=range(len(patterns)), xticklabels=patterns, yticks=range(len(systems)), yticklabels=systems,
+           title="Planted-truth confusion matrix")
+    ax.tick_params(axis="x", labelsize=5, rotation=45)
+    for i in range(len(systems)):
+        for j in range(len(patterns)):
+            ax.text(j, i, str(matrix[i, j]), ha="center", va="center", fontsize=5)
+    plt.colorbar(im, ax=ax, shrink=0.7, label="n replicates")
+
+    fig.suptitle(f"Attractor recovery control -- verdict: {artifact['predeclared_decision']['verdict']}", fontsize=8)
+    fig.tight_layout()
+    save_figure(fig, "fig_attractor_recovery_control")
+    plt.close(fig)
+
+
+def make_intrinsic_dimensionality_figure():
+    """3 panels: (A) per-structure delay-epoch estimates with bootstrap
+    intervals, one row per estimator; (B) an example session's n-dependence
+    curve; (C) cross-estimator ordering agreement (Spearman rho matrix)."""
+    nature_style()
+    path = RESULTS / "intrinsic_dimensionality.json"
+    if not path.is_file():
+        return
+    artifact = json.loads(path.read_text())
+    fig, axes = plt.subplots(1, 3, figsize=(9.5, 3.2))
+
+    ax = axes[0]
+    estimators = artifact["estimators"]
+    medians = artifact["structure_delay_median_by_estimator"]
+    structures = sorted({s for v in medians.values() for s in v})
+    colors = list(PALETTE.values())
+    for i, estimator in enumerate(estimators):
+        values = [medians[estimator].get(s) for s in structures]
+        x = np.arange(len(structures)) + i * 0.2
+        ax.scatter(x, values, s=14, color=colors[i % len(colors)], label=estimator)
+    ax.set(xticks=np.arange(len(structures)) + 0.3, xticklabels=structures, ylabel="dimensionality (median)", title="Per-structure, delay epoch")
+    ax.tick_params(axis="x", labelsize=5, rotation=30)
+    ax.legend(frameon=False, fontsize=5)
+
+    ax = axes[1]
+    example_row = next((r for r in artifact["rows"].values() if r["epochs"].get("delay", {}).get("status") == "complete" and "n_dependence_curve" in r["epochs"]["delay"]), None)
+    if example_row:
+        curve = example_row["epochs"]["delay"]["n_dependence_curve"]
+        levels = sorted(int(k) for k in curve)
+        for estimator in estimators:
+            values = [curve[str(lvl)][estimator] for lvl in levels]
+            ax.plot(levels, values, marker="o", ms=3, label=estimator)
+        ax.set(xlabel="n units subsampled", ylabel="dimensionality", title=f"n-dependence curve ({example_row['structure']})")
+        ax.legend(frameon=False, fontsize=5)
+
+    ax = axes[2]
+    agreement = artifact["cross_estimator_ordering_agreement"]
+    if agreement.get("status") == "complete":
+        pairwise = agreement["pairwise"]
+        matrix = np.full((len(estimators), len(estimators)), np.nan)
+        for i, a in enumerate(estimators):
+            matrix[i, i] = 1.0
+            for j, b in enumerate(estimators):
+                key = f"{a}_vs_{b}"
+                if key in pairwise:
+                    matrix[i, j] = matrix[j, i] = pairwise[key]["rho"]
+        im = ax.imshow(matrix, cmap="RdBu_r", vmin=-1, vmax=1)
+        ax.set(xticks=range(len(estimators)), xticklabels=estimators, yticks=range(len(estimators)), yticklabels=estimators, title="Cross-estimator agreement (Spearman rho)")
+        ax.tick_params(axis="x", labelsize=5, rotation=45)
+        ax.tick_params(axis="y", labelsize=5)
+        plt.colorbar(im, ax=ax, shrink=0.7)
+    else:
+        ax.text(0.5, 0.5, agreement.get("reason", "not estimable"), ha="center", va="center", transform=ax.transAxes, fontsize=6)
+        ax.set_axis_off()
+
+    fig.suptitle(f"Intrinsic dimensionality -- verdict: {artifact['predeclared_decision']['verdict']}", fontsize=8)
+    fig.tight_layout()
+    save_figure(fig, "fig_intrinsic_dimensionality")
+    plt.close(fig)
+
+
+def make_latent_displacement_scaling_figure():
+    """3 panels: (A) an example fold's MSD curve on log-log axes with
+    confined/random-walk/ballistic reference slopes; (B) saturation_ratio per
+    structure with its shuffle-null percentile; (C) the two denominators
+    (band-free fraction_of_folds_with_a_value vs OU fraction_identified) as a
+    paired bar -- this contrast is a result in itself."""
+    nature_style()
+    path = RESULTS / "latent_displacement_scaling.json"
+    if not path.is_file():
+        return
+    artifact = json.loads(path.read_text())
+    fig, axes = plt.subplots(1, 3, figsize=(9.5, 3.2))
+
+    ax = axes[0]
+    example_fold = None
+    for row in artifact["rows"].values():
+        for fold in row["delay"]["folds"]:
+            if fold.get("status") == "complete" and fold["observed"]["saturation_ratio"] is not None:
+                example_fold = fold
+                break
+        if example_fold:
+            break
+    if example_fold:
+        msd = np.array(example_fold["observed"]["msd_curve"])
+        lags = np.arange(1, len(msd) + 1)
+        ax.plot(lags, msd, "o-", ms=3, color=PALETTE["zero_back"], label="observed")
+        ref_confined = np.full_like(msd, msd[-1])
+        ref_rw = msd[0] * lags
+        ref_ballistic = msd[0] * lags**2
+        ax.plot(lags, ref_confined, "--", color=PALETTE["neutral"], lw=0.7, label="confined (slope 0)")
+        ax.plot(lags, ref_rw, "--", color=PALETTE["one_back"], lw=0.7, label="random walk (slope 1)")
+        ax.plot(lags, ref_ballistic, "--", color=PALETTE["two_back"], lw=0.7, label="ballistic (slope 2)")
+        ax.set(xscale="log", yscale="log", xlabel="lag (bins)", ylabel="MSD (state units^2)", title="Example fold MSD")
+        ax.legend(frameon=False, fontsize=5)
+
+    ax = axes[1]
+    by_structure = {}
+    for row in artifact["rows"].values():
+        ratios = [f["observed"]["saturation_ratio"] for f in row["delay"]["folds"] if f.get("status") == "complete" and f["observed"]["saturation_ratio"] is not None]
+        by_structure.setdefault(row["structure"], []).extend(ratios)
+    structures = sorted(by_structure)
+    means = [np.mean(by_structure[s]) if by_structure[s] else np.nan for s in structures]
+    ax.bar(range(len(structures)), means, color=PALETTE["zero_back"])
+    ax.axhline(1.0, color="black", lw=0.7, ls="--", label="confined ref")
+    ax.axhline(2.0, color=PALETTE["error"], lw=0.7, ls="--", label="random-walk ref")
+    ax.set(xticks=range(len(structures)), xticklabels=structures, ylabel="mean saturation_ratio", title="Per-structure saturation_ratio")
+    ax.tick_params(axis="x", labelsize=5, rotation=30)
+    ax.legend(frameon=False, fontsize=5)
+
+    ax = axes[2]
+    denom = artifact["denominator_summary"]
+    bars = [denom["fraction_of_folds_with_a_value"], denom["fraction_identified"]]
+    ax.bar([0, 1], bars, color=[PALETTE["zero_back"], PALETTE["error"]])
+    ax.set(xticks=[0, 1], xticklabels=["band-free\n(fraction_of_folds_with_a_value)", "OU criterion\n(fraction_identified)"],
+           ylabel="fraction", ylim=(0, 1.05), title="The two denominators")
+    for xi, value in enumerate(bars):
+        ax.text(xi, value + 0.02, f"{value:.2f}", ha="center", fontsize=6)
+
+    fig.suptitle(f"Latent displacement scaling -- verdict: {artifact['predeclared_decision']['verdict']}", fontsize=8)
+    fig.tight_layout()
+    save_figure(fig, "fig_latent_displacement_scaling")
+    plt.close(fig)
+
+
+def make_functional_microcircuit_graph_figure():
+    """3 panels: (A) small-worldness sigma per structure against its
+    degree-preserving null percentile; (B) delay-minus-baseline sigma per
+    structure; (C) n-dependence curve for mean_clustering, one example
+    session."""
+    nature_style()
+    path = RESULTS / "functional_microcircuit_graph.json"
+    if not path.is_file():
+        return
+    artifact = json.loads(path.read_text())
+    full_battery_rows = [r for r in artifact["rows"].values() if r.get("full_battery")]
+    fig, axes = plt.subplots(1, 3, figsize=(9.5, 3.2))
+
+    ax = axes[0]
+    sigmas, percentiles, labels = [], [], []
+    for row in full_battery_rows:
+        delay = row["epochs"].get("delay", {})
+        if delay.get("status") == "complete" and "small_worldness" in delay and delay["small_worldness"].get("sigma") is not None:
+            sigmas.append(delay["small_worldness"]["sigma"])
+            percentiles.append(delay.get("null_percentiles", {}).get("mean_clustering"))
+            labels.append(row["structure"])
+    if sigmas:
+        colors = [PALETTE["zero_back"] if lbl == "hippocampus" else PALETTE["two_back"] for lbl in labels]
+        ax.scatter(range(len(sigmas)), sigmas, c=colors, s=14, edgecolor="black", linewidth=0.3)
+        ax.axhline(1.0, color="black", lw=0.7, ls="--", label="random-like reference (sigma~1)")
+        ax.set(xticks=range(len(sigmas)), xticklabels=labels, ylabel="small_worldness_sigma", title="Sigma per session (delay)")
+        ax.tick_params(axis="x", labelsize=5, rotation=45)
+        ax.legend(frameon=False, fontsize=5)
+    else:
+        ax.text(0.5, 0.5, "no full-battery sessions with a computed sigma", ha="center", va="center", transform=ax.transAxes, fontsize=6)
+        ax.set_axis_off()
+
+    ax = axes[1]
+    deltas = artifact["deciding_contrast_sigma_epoch_delta"]
+    if deltas["rows"]:
+        a_vals = [r["delta_a"] for r in deltas["rows"]]
+        b_vals = [r["delta_b"] for r in deltas["rows"]]
+        x = np.arange(len(a_vals))
+        width = 0.35
+        ax.bar(x - width / 2, a_vals, width, color=PALETTE["zero_back"], label=deltas["structure_a"])
+        ax.bar(x + width / 2, b_vals, width, color=PALETTE["two_back"], label=deltas["structure_b"])
+        ax.axhline(0, color="black", lw=0.7)
+        ax.set(xlabel="paired patient", ylabel="sigma (delay - baseline)", title="Epoch contrast, deciding pair")
+        ax.legend(frameon=False, fontsize=5)
+    else:
+        ax.text(0.5, 0.5, f"underpowered: {deltas['n_paired_patients']} paired patients", ha="center", va="center", transform=ax.transAxes, fontsize=6)
+        ax.set_axis_off()
+
+    ax = axes[2]
+    example = next((r for r in full_battery_rows if "n_dependence_curve" in r), None)
+    if example:
+        curve = example["n_dependence_curve"]
+        levels = sorted(int(k) for k in curve)
+        values = [curve[str(lvl)]["mean_clustering"] for lvl in levels]
+        ax.plot(levels, values, "o-", ms=4, color=PALETTE["zero_back"])
+        ax.set(xlabel="n units subsampled", ylabel="mean_clustering", title=f"n-dependence ({example['structure']})")
+    else:
+        ax.text(0.5, 0.5, "no n-dependence curve available", ha="center", va="center", transform=ax.transAxes, fontsize=6)
+        ax.set_axis_off()
+
+    fig.suptitle(f"Functional microcircuit graph -- verdict: {artifact['predeclared_decision']['verdict']}", fontsize=8)
+    fig.tight_layout()
+    save_figure(fig, "fig_functional_microcircuit_graph")
+    plt.close(fig)
+
+
+def make_structure_identifiability_legs_figure():
+    """Forest plot: for each contrast (pre_sma-hippocampus, pre_sma-amygdala,
+    hippocampus-amygdala), the model's Wald interval and the matched-draw
+    bootstrap interval on the same axis, with the agreement label -- this
+    figure exists specifically to show the legs disagreeing on the deciding
+    contrast, not to smooth it into one number."""
+    nature_style()
+    path = RESULTS / "structure_identifiability_model.json"
+    if not path.is_file():
+        return
+    artifact = json.loads(path.read_text())
+    legs = artifact["leg_agreement_by_contrast"]
+    contrasts = list(legs.keys())
+    fig, ax = plt.subplots(figsize=(6.5, 0.9 * len(contrasts) + 1.5))
+    y = np.arange(len(contrasts)) * 2
+    for i, name in enumerate(contrasts):
+        leg = legs[name]
+        model_ci = leg["model_wald_ci95"]
+        matched_ci = leg["matched_draw_bootstrap_ci95"]
+        if model_ci:
+            ax.plot(model_ci, [y[i] + 0.3] * 2, color=PALETTE["zero_back"], lw=2, solid_capstyle="butt")
+            ax.plot(np.mean(model_ci), y[i] + 0.3, "o", color=PALETTE["zero_back"], ms=4)
+        if matched_ci:
+            ax.plot(matched_ci, [y[i] - 0.3] * 2, color=PALETTE["two_back"], lw=2, solid_capstyle="butt")
+            ax.plot(leg["matched_draw_mean_diff"], y[i] - 0.3, "s", color=PALETTE["two_back"], ms=4)
+        label = f"{name}: {leg['agreement']}"
+        if leg.get("matched_draw_sign_flip_p") is not None:
+            label += f" (matched exact p={leg['matched_draw_sign_flip_p']:.3f})"
+        ax.text(0, y[i] + 0.9, label, fontsize=5.5)
+    ax.axvline(0, color="black", lw=0.7)
+    ax.set(yticks=y, yticklabels=contrasts, xlabel="coefficient / fraction-identified difference")
+    ax.plot([], [], color=PALETTE["zero_back"], lw=2, label="mixed-effects model (Wald 95% CI)")
+    ax.plot([], [], color=PALETTE["two_back"], lw=2, label="matched-draw replication (bootstrap 95% CI)")
+    ax.legend(frameon=False, fontsize=6, loc="lower right")
+    ax.set_title(f"Structure identifiability legs -- revised verdict: {artifact['predeclared_decision']['verdict']}", fontsize=8)
+    fig.tight_layout()
+    save_figure(fig, "fig_structure_identifiability_legs")
+    plt.close(fig)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Main
 # ─────────────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--current-results-only", action="store_true")
+    arguments = parser.parse_args()
     warnings.filterwarnings("ignore")
     FIGURES_DIR.mkdir(exist_ok=True)
+    if arguments.current_results_only:
+        make_current_adjudication_figure()
+        make_current_switching_decomposition_figure()
+        make_current_geometry_prediction_figure()
+        make_current_hierarchical_confinement_figure()
+        make_region_stratified_figure()
+        make_attractor_recovery_control_figure()
+        make_intrinsic_dimensionality_figure()
+        make_latent_displacement_scaling_figure()
+        make_functional_microcircuit_graph_figure()
+        make_structure_identifiability_legs_figure()
+        raise SystemExit(0)
     stats_data = load_all_stats()
 
     print("Generating Figure 1...")
@@ -3188,11 +3901,11 @@ if __name__ == "__main__":
     print("Generating Supplementary S10 (stimulation timing + location)...")
     make_figS10(stats_data)
 
-    print("Generating Supplementary S_dim_robustness (Round-6 dimensionality)...")
+    print("Generating Supplementary S_dim_robustness (dimensionality)...")
     make_figS_dim_robustness(stats_data)
 
-    print("Generating Supplementary S11 (Round-8 Part 3B: benchmark N/A + behavior bound)...")
-    make_figS11_round8()
+    print("Generating Supplementary S11 (benchmark N/A + behavior bound)...")
+    make_figS11_macaque_pfc_microstimulation_leaderboard_and_behavior_bound()
 
     print("\nAll figures saved to figures/")
     for f in sorted(FIGURES_DIR.glob("fig*.pdf")):

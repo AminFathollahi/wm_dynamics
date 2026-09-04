@@ -33,6 +33,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
+from project_config import data_root, dataset_path, executable, project_path
 
 from preprocessing import load_tes1_stimulation, build_tes1_input_matrix
 from dynamics import exact_dmd
@@ -40,10 +41,11 @@ from control import (
     lqr_design, lqr_simulate, controllability_gramian, is_controllable
 )
 from statistics import robust_dispersion
+from provenance import _json_safe
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 RESULTS   = ROOT / "results"
-EXT_DATA  = Path("/media/amin/EXTERNAL_USB/SMAF/Research/Representation/Working Memory/data")
+EXT_DATA  = data_root()
 TES1_ZIP  = EXT_DATA / "Tes1" / "HuangLiu2016dataset.zip"
 MILLER_LOCS = EXT_DATA / "kai miller" / "memory_nback" / "memory_nback" / "locs"
 BORAN_DIR   = EXT_DATA / "000574"
@@ -519,7 +521,7 @@ def main():
     stats["tes1_lqr"] = build_stats_summary(miller_results, boran_results, all_tes1)
 
     with open(stats_path, "w") as f:
-        json.dump(stats, f, indent=2, default=str)
+        json.dump(_json_safe(stats), f, indent=2, allow_nan=False)
 
     # ── Print summary ──────────────────────────────────────────────────────────
     print("\n=== Miller Summary ===")

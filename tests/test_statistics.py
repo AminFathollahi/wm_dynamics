@@ -33,6 +33,10 @@ from statistics import (
     permutation_pvalue,
     tost_equivalence,
     bf_null_slope,
+    minimum_detectable_paired_difference,
+    partial_correlation_permutation_test,
+    power_to_detect_effect,
+    circular_anova_permutation_test,
 )
 
 
@@ -388,14 +392,29 @@ class TestLinearMixedEffectsTest:
         assert unadjusted["p_value"] < 0.05
         assert abs(adjusted["beta"]) < abs(unadjusted["beta"])
 
-    def test_covariate_none_matches_no_covariates(self, rng):
+    def test_covariate_with_no_true_effect_barely_shifts_beta(self, rng):
         x = rng.standard_normal(40)
         c = np.tile([0, 1, 2, 3], 10).astype(float)
         s = np.repeat(np.arange(10), 4)
-        r1 = linear_mixed_effects_test(x, c, s, n_perm=200, rng=np.random.default_rng(1))
-        r2 = linear_mixed_effects_test(x, c, s, n_perm=200, rng=np.random.default_rng(1),
-                                       covariates=np.zeros(40))
-        assert r1["beta"] == pytest.approx(r2["beta"], abs=1e-8)
+        unrelated_covariate = rng.standard_normal(40)
+        r1 = linear_mixed_effects_test(x, c, s, rng=np.random.default_rng(1))
+        r2 = linear_mixed_effects_test(x, c, s, rng=np.random.default_rng(1),
+                                       covariates=unrelated_covariate)
+        assert r1["beta"] == pytest.approx(r2["beta"], abs=0.5)
+
+    def test_degenerate_covariate_reports_explicit_failure(self, rng):
+        # A covariate with exactly zero variance makes the joint fixed-effect
+        # design matrix singular. The fit must fail loudly (converged=False,
+        # nan, and a reason) rather than silently falling back to a
+        # zero-effect/p=1 result.
+        x = rng.standard_normal(40)
+        c = np.tile([0, 1, 2, 3], 10).astype(float)
+        s = np.repeat(np.arange(10), 4)
+        result = linear_mixed_effects_test(x, c, s, covariates=np.zeros(40))
+        assert result["converged"] is False
+        assert result["reason"]
+        assert np.isnan(result["beta"])
+        assert np.isnan(result["p_value"])
 
 
 class TestRayleighTest:
@@ -424,6 +443,30 @@ class TestRayleighTest:
         phases = rng.uniform(-np.pi, np.pi, 30)
         result = rayleigh_test(phases)
         assert set(result.keys()) >= {"R", "Z", "p_value", "mean_direction", "N"}
+
+
+class TestCircularAnovaPermutationTest:
+    def test_shared_mean_direction_not_significant(self, rng):
+        phases = rng.uniform(-np.pi, np.pi, 90)
+        groups = np.repeat(["a", "b", "c"], 30)
+        result = circular_anova_permutation_test(phases, groups, n_perm=300, rng=rng)
+        assert result["p_value"] > 0.05
+
+    def test_separated_mean_directions_significant(self, rng):
+        phases = np.concatenate([
+            rng.normal(0.0, 0.1, 30), rng.normal(np.pi / 2, 0.1, 30), rng.normal(np.pi, 0.1, 30),
+        ])
+        groups = np.repeat(["a", "b", "c"], 30)
+        result = circular_anova_permutation_test(phases, groups, n_perm=300, rng=rng)
+        assert result["p_value"] < 0.01
+
+    def test_returns_required_keys(self, rng):
+        phases = rng.uniform(-np.pi, np.pi, 40)
+        groups = np.repeat(["a", "b"], 20)
+        result = circular_anova_permutation_test(phases, groups, n_perm=100, rng=rng)
+        assert set(result.keys()) >= {"statistic", "p_value", "n_groups", "N"}
+        assert result["n_groups"] == 2
+        assert result["N"] == 40
 
 
 class TestCTGOffdiagonalTest:
@@ -677,3 +720,93 @@ class TestBfNullSlope:
     def test_bf01_and_bf10_reciprocal(self):
         bf = bf_null_slope(0.05, 0.1, r_scale=0.5)
         np.testing.assert_allclose(bf["bf_01"] * bf["bf_10"], 1.0, rtol=1e-9)
+
+
+class TestMinimumDetectablePairedDifference:
+    def test_matches_closed_form_for_known_spread(self):
+        # sd=1, n=25 -> mdd = (1.96 + 0.8416) / 5 ~= 0.5603
+        rng = np.random.default_rng(0)
+        values = rng.normal(loc=0.0, scale=1.0, size=25)
+        result = minimum_detectable_paired_difference(values)
+        expected = (1.959964 + 0.841621) * np.std(values, ddof=1) / np.sqrt(25)
+        assert result["status"] == "computed"
+        np.testing.assert_allclose(result["mdd"], expected, rtol=1e-4)
+
+    def test_larger_n_gives_a_smaller_bound_at_fixed_spread(self):
+        rng = np.random.default_rng(1)
+        small = minimum_detectable_paired_difference(rng.normal(scale=2.0, size=10))
+        large = minimum_detectable_paired_difference(rng.normal(scale=2.0, size=1000))
+        assert large["mdd"] < small["mdd"]
+
+    def test_too_few_values_is_not_computable(self):
+        result = minimum_detectable_paired_difference([0.1])
+        assert result["status"] == "not_computable"
+
+
+class TestPowerToDetectEffect:
+    def test_power_is_high_for_a_large_effect_relative_to_spread(self):
+        rng = np.random.default_rng(0)
+        values = rng.normal(loc=0.12, scale=0.11, size=36)
+        result = power_to_detect_effect(effect=0.12, values=values)
+        assert result["status"] == "computed"
+        assert result["power"] > 0.95
+
+    def test_power_is_low_for_a_tiny_effect_relative_to_spread(self):
+        rng = np.random.default_rng(0)
+        values = rng.normal(loc=0.0, scale=1.0, size=10)
+        result = power_to_detect_effect(effect=0.01, values=values)
+        assert result["power"] < 0.10
+
+    def test_power_increases_with_sample_size_at_fixed_spread_and_effect(self):
+        rng = np.random.default_rng(1)
+        small = power_to_detect_effect(effect=0.1, values=rng.normal(scale=0.3, size=10))
+        large = power_to_detect_effect(effect=0.1, values=rng.normal(scale=0.3, size=200))
+        assert large["power"] > small["power"]
+
+    def test_zero_effect_reduces_to_alpha(self):
+        # power against a true effect of exactly 0 is the test's own false-positive rate: alpha
+        rng = np.random.default_rng(2)
+        values = rng.normal(scale=1.0, size=500)
+        result = power_to_detect_effect(effect=0.0, values=values)
+        assert result["power"] == pytest.approx(0.05, abs=0.01)
+
+    def test_too_few_values_is_not_computable(self):
+        assert power_to_detect_effect(0.1, [0.1])["status"] == "not_computable"
+
+    def test_zero_spread_is_not_computable(self):
+        assert power_to_detect_effect(0.1, [1.0, 1.0, 1.0])["status"] == "not_computable"
+
+
+class TestPartialCorrelationPermutationTest:
+    def test_no_controls_matches_plain_pearson(self):
+        rng = np.random.default_rng(0)
+        x = rng.normal(size=200)
+        y = 0.6 * x + rng.normal(size=200)
+        from scipy.stats import pearsonr
+        result = partial_correlation_permutation_test(y, x, controls=[], n_perm=500, rng=np.random.default_rng(1))
+        expected_r, _ = pearsonr(y, x)
+        assert result["status"] == "computed"
+        np.testing.assert_allclose(result["r"], expected_r, rtol=1e-8)
+        assert result["p_value"] < 0.05
+
+    def test_confound_fully_explained_by_control_vanishes(self):
+        # y and x are both driven only by z; once z is controlled for, y and x share nothing.
+        rng = np.random.default_rng(2)
+        z = rng.normal(size=300)
+        y = z + rng.normal(scale=0.01, size=300)
+        x = z + rng.normal(scale=0.01, size=300)
+        raw = partial_correlation_permutation_test(y, x, controls=[], n_perm=200, rng=np.random.default_rng(3))
+        partial = partial_correlation_permutation_test(y, x, controls=[z], n_perm=2000, rng=np.random.default_rng(4))
+        assert raw["r"] > 0.9
+        assert abs(partial["r"]) < 0.2
+        assert partial["p_value"] > 0.05
+
+    def test_genuine_partial_relationship_survives_an_irrelevant_control(self):
+        rng = np.random.default_rng(5)
+        x = rng.normal(size=300)
+        irrelevant = rng.normal(size=300)
+        y = 0.7 * x + rng.normal(scale=0.3, size=300)
+        result = partial_correlation_permutation_test(y, x, controls=[irrelevant], n_perm=2000, rng=np.random.default_rng(6))
+        assert result["r"] > 0.5
+        assert result["p_value"] < 0.05
+        assert result["n_controls"] == 1

@@ -16,7 +16,7 @@ estimate stays valid if either the propensity or the outcome model is right, and
 cross-fitting so flexible nuisance learners do not bias the second stage
 (Chernozhukov 2018; Kennedy 2023).
 
-Where treatment is experimentally assigned (Soldado-Magraner microstim, RAM
+Where treatment is experimentally assigned (macaque PFC microstimulation, RAM
 open-loop), the propensity is KNOWN — pass it in via `propensity=` rather than
 estimating it; that puts the doubly-robust estimator in its ideal regime with
 guaranteed overlap.
@@ -144,6 +144,43 @@ def aipw_pseudo_outcome(
     )
 
 
+def _bootstrap_pvalue(
+    stat_fn, n: int, n_boot: int, rng: np.random.Generator
+) -> dict:
+    """Nonparametric bootstrap CI + two-sided p-value for a statistic that is
+    zero under the null (ATE, DML theta, ...), used instead of a normal-theory
+    Wald test so validity does not depend on enough independent units for the
+    CLT to hold -- exactly what breaks with the small session/subject counts
+    common across these datasets (a normal-theory SE from ~5 cross-fit folds
+    can produce implausible p-values like 1e-193 that are a small-n artifact,
+    not evidence). p-value via the fraction of the bootstrap distribution
+    crossing zero (Davison & Hinkley 1997 percentile-based test).
+
+    stat_fn(idx) : recompute the statistic on a resampled index array.
+    """
+    boot = np.array([stat_fn(rng.integers(0, n, size=n)) for _ in range(n_boot)])
+    ci_lo, ci_hi = np.percentile(boot, [2.5, 97.5])
+    p = 2.0 * min(permutation_pvalue(boot <= 0), permutation_pvalue(boot >= 0))
+    return {"ci_lo": float(ci_lo), "ci_hi": float(ci_hi), "p_value": float(min(p, 1.0)),
+            "se": float(np.std(boot, ddof=1))}
+
+
+def _analytic_wald(point: float, se: float) -> dict:
+    """Normal-theory Wald CI/p-value, reported ALONGSIDE the bootstrap result
+    (not instead of it) -- when the unit count is large enough for the CLT to
+    hold this should closely match the bootstrap, and the two are shown
+    side-by-side (same dual-reporting convention as the trial-level-vs-
+    cluster-robust comparison in run_macaque_pfc_microstimulation_headline_robustness.py) so a
+    reader can see agreement or, at small n, the analytic test's known
+    unreliability (e.g. implausible p~1e-193 from ~5 cross-fit folds).
+    """
+    from scipy.stats import norm
+
+    z = point / se if se > 0 else float("inf")
+    return {"se": float(se), "ci_lo": float(point - 1.96 * se), "ci_hi": float(point + 1.96 * se),
+            "p_value": float(2.0 * norm.sf(abs(z)))}
+
+
 def aipw_ate(
     y: NDArray,
     t: NDArray,
@@ -152,15 +189,20 @@ def aipw_ate(
     propensity: NDArray | None = None,
     outcome_learner=None,
     propensity_learner=None,
+    n_boot: int = 2000,
     rng: np.random.Generator | None = None,
 ) -> dict:
     """Cross-fitted doubly-robust average treatment effect (AIPW).
 
     Returns
     -------
-    dict: ate, se, ci_lo, ci_hi, p_value, n
+    dict: ate, se, ci_lo, ci_hi, p_value -- primary, bootstrap (see
+          _bootstrap_pvalue); se_analytic, ci_lo_analytic, ci_hi_analytic,
+          p_value_analytic -- normal-theory Wald, reported alongside for
+          comparison (see _analytic_wald); n
     """
-    from scipy.stats import norm
+    if rng is None:
+        rng = np.random.default_rng(0)
 
     nu = crossfit_nuisances(
         y, t, X, n_folds=n_folds, propensity=propensity,
@@ -168,15 +210,20 @@ def aipw_ate(
     )
     phi = aipw_pseudo_outcome(y, t, nu["e_hat"], nu["mu0_hat"], nu["mu1_hat"])
     ate = float(np.mean(phi))
-    se = float(np.std(phi, ddof=1) / np.sqrt(len(phi)))
-    z = ate / se if se > 0 else float("inf")
+    n = len(phi)
+    boot_res = _bootstrap_pvalue(lambda idx: float(phi[idx].mean()), n, n_boot, rng)
+    analytic = _analytic_wald(ate, float(np.std(phi, ddof=1) / np.sqrt(n)))
     return {
         "ate": ate,
-        "se": se,
-        "ci_lo": float(ate - 1.96 * se),
-        "ci_hi": float(ate + 1.96 * se),
-        "p_value": float(2.0 * norm.sf(abs(z))),
-        "n": int(len(phi)),
+        "se": boot_res["se"],
+        "ci_lo": boot_res["ci_lo"],
+        "ci_hi": boot_res["ci_hi"],
+        "p_value": boot_res["p_value"],
+        "se_analytic": analytic["se"],
+        "ci_lo_analytic": analytic["ci_lo"],
+        "ci_hi_analytic": analytic["ci_hi"],
+        "p_value_analytic": analytic["p_value"],
+        "n": int(n),
     }
 
 
@@ -189,6 +236,14 @@ def _dr_slope(phi: NDArray, modifier: NDArray, n_perm: int, rng: np.random.Gener
     cate_vs_modifier_slope (raw-scale, single modifier) and
     benchmark_modifiers (z-scored, one call per candidate modifier) so the
     two never fork.
+
+    When the modifier has ~zero variance over the rows handed in (no rows at
+    all, or every row sharing one constant value), the closed-form slope has
+    no defined denominator; `_fit` below falls back to slope=0.0 so the
+    caller's arithmetic never divides by zero, but that 0.0 is a numerical
+    guard firing, not a measured null. The returned `degenerate` flag says
+    which one happened so a caller can tell a real zero-slope fit apart from
+    "there was nothing to fit" before serializing either into a result.
     """
     n = len(phi)
 
@@ -200,6 +255,8 @@ def _dr_slope(phi: NDArray, modifier: NDArray, n_perm: int, rng: np.random.Gener
         b = float((mc * (pp - pp.mean())).sum() / denom)
         a = float(pp.mean() - b * mm.mean())
         return b, a
+
+    degenerate = n == 0 or float(((modifier - modifier.mean()) ** 2).sum()) < 1e-15
 
     slope, intercept = _fit(modifier, phi)
 
@@ -221,6 +278,8 @@ def _dr_slope(phi: NDArray, modifier: NDArray, n_perm: int, rng: np.random.Gener
         "ate": float(phi.mean()),
         "n": int(n),
         "null": null,
+        "degenerate": bool(degenerate),
+        "status": "no_regressor_variance" if degenerate else "fitted",
     }
 
 
@@ -342,7 +401,7 @@ def benchmark_modifiers(
         on a constant gives a fake slope==0/CI==[0,0]/p==1.0 that reads as a
         "trustworthy null" rather than a structurally-undefined competitor, so
         these are excluded from leaderboard/joint/nested/z_modifiers entirely
-        rather than silently scored (Round-8.1 Part 11B).
+        rather than silently scored.
       phi, z_modifiers : the cross-fit pseudo-outcome and {name: z-scored
         modifier} actually used above — not a new statistical claim (the
         leaderboard/joint/nested numbers already are), kept only so a caller
@@ -376,6 +435,13 @@ def benchmark_modifiers(
             continue
         names.append(k)
         mz[k] = (vf - vf.mean()) / sd
+
+    if not names:
+        # Every candidate modifier was constant on this row set -- nothing to
+        # benchmark; report that plainly instead of crashing on an empty stack.
+        return {"leaderboard": {}, "joint": {}, "nested": {}, "winner": None, "n": n,
+                "excluded": excluded, "phi": phi, "z_modifiers": {},
+                "status": "no_eligible_modifiers"}
 
     leaderboard = {}
     for k in names:
@@ -435,7 +501,7 @@ def dr_learner_cate(
     """Full DR-Learner: cross-fit the doubly-robust pseudo-outcome, then fit a
     second-stage learner of tau(m) on the effect modifiers.
 
-    Use this only where N supports a flexible surface (e.g. Soldado trial-level,
+    Use this only where N supports a flexible surface (e.g. macaque PFC microstimulation trial-level,
     RAM thousands of events). For small interventional sets, prefer
     cate_vs_modifier_slope with a single theory-specified modifier.
 
@@ -468,6 +534,7 @@ def dml_partial_linear(
     n_folds: int = 5,
     outcome_learner=None,
     exposure_learner=None,
+    n_boot: int = 2000,
     rng: np.random.Generator | None = None,
 ) -> dict:
     """Double/debiased ML estimate of a CONTINUOUS exposure's effect (Chernozhukov
@@ -495,9 +562,15 @@ def dml_partial_linear(
     Returns
     -------
     dict: theta (effect of one unit of D on Y, controlling for X), se, ci_lo,
-          ci_hi, p_value, y_resid, d_resid (for diagnostics/plotting), n
+          ci_hi, p_value -- primary, bootstrap (see _bootstrap_pvalue);
+          se_analytic, ci_lo_analytic, ci_hi_analytic, p_value_analytic --
+          DML1/PLR asymptotic-variance Wald test, reported alongside for
+          comparison (see _analytic_wald) -- at the small per-fold n typical
+          here (n<~10) this analytic test is a known unreliable artifact
+          (e.g. p~1e-193), so treat the bootstrap fields as authoritative and
+          the analytic ones as a labeled reference point, not confirmatory;
+          y_resid, d_resid (for diagnostics/plotting), n
     """
-    from scipy.stats import norm
     from sklearn.base import clone
     from sklearn.model_selection import KFold
 
@@ -523,21 +596,31 @@ def dml_partial_linear(
         y_resid[test] = y[test] - g_hat.predict(X[test])
         d_resid[test] = d[test] - m_hat.predict(X[test])
 
-    denom = float((d_resid**2).sum())
-    theta = float((d_resid * y_resid).sum() / denom) if denom > 1e-15 else 0.0
+    def _theta(dd: NDArray, yy: NDArray) -> float:
+        dn = float((dd**2).sum())
+        return float((dd * yy).sum() / dn) if dn > 1e-15 else 0.0
+
+    theta = _theta(d_resid, y_resid)
+    boot_res = _bootstrap_pvalue(
+        lambda idx: _theta(d_resid[idx], y_resid[idx]), n, n_boot, rng
+    )
+
     u_resid = y_resid - theta * d_resid
-    # DML1/PLR asymptotic variance: Var(theta) ~= E[V^2 U^2] / (n * E[V^2]^2)
     ev2 = float(np.mean(d_resid**2))
     eu2v2 = float(np.mean((d_resid**2) * (u_resid**2)))
-    se = float(np.sqrt(eu2v2 / (n * ev2**2))) if ev2 > 1e-15 else float("inf")
-    z = theta / se if se > 0 else float("inf")
+    se_analytic_val = float(np.sqrt(eu2v2 / (n * ev2**2))) if ev2 > 1e-15 else float("inf")
+    analytic = _analytic_wald(theta, se_analytic_val)
 
     return {
         "theta": theta,
-        "se": se,
-        "ci_lo": float(theta - 1.96 * se),
-        "ci_hi": float(theta + 1.96 * se),
-        "p_value": float(2.0 * norm.sf(abs(z))),
+        "se": boot_res["se"],
+        "ci_lo": boot_res["ci_lo"],
+        "ci_hi": boot_res["ci_hi"],
+        "p_value": boot_res["p_value"],
+        "se_analytic": analytic["se"],
+        "ci_lo_analytic": analytic["ci_lo"],
+        "ci_hi_analytic": analytic["ci_hi"],
+        "p_value_analytic": analytic["p_value"],
         "y_resid": y_resid,
         "d_resid": d_resid,
         "n": int(n),
@@ -554,7 +637,8 @@ def e_value(estimate: float, se: float, y_sd: float, d_sd: float) -> dict:
     & Ding's RR->E-value formula. A large E-value (e.g. >2) means only a strong
     unmeasured confounder could null the result; an E-value near 1 means even
     weak unmeasured confounding could. Report alongside every DML estimate used
-    causally (comments.txt WP-CAUSAL-4: mandatory sensitivity analysis).
+    causally: this project's standing rule that every DML estimate carries a
+    mandatory sensitivity analysis.
 
     Parameters
     ----------

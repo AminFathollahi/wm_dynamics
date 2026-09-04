@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Round-11 PART 20A: within-subject re-test of the RAM causal-targeting
-alignment test, gated by run_ram_within_subject_feasibility.py (PASSED:
+"""Within-subject re-test of the RAM causal-targeting alignment test, gated
+by run_ram_within_subject_feasibility.py (PASSED:
 n_multisite_subjects=12 >= 8 -- see results/causal_ram_within_subject.json).
 
 WHY: run_ram_openloop_pipeline.py's pooled test (results/causal_ram.json,

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Round-11 PART 19 (optional): Sadtler et al. 2014-style within- vs
-outside-manifold constraint, tested causally on Soldado microstimulation.
+"""Sadtler et al. 2014-style within- vs outside-manifold constraint, tested
+causally on macaque PFC microstimulation microstimulation.
 
 WHY: Sadtler 2014 (Nature) + Golub 2018 + Oby 2019 -- BCI perturbations
 WITHIN the intrinsic neural manifold are effective, OUTSIDE are not -- has
@@ -13,7 +13,7 @@ deeper level.
 space, not the already-latent-projected B (B_lat = V.T @ B_chan is
 within-manifold by construction -> testing within_frac on B_lat would be
 degenerate/circular). e_hat = B_chan (the raw one-hot stimulated-electrode
-direction in channel space, exactly what run_soldado_pipeline.build_session_
+direction in channel space, exactly what run_macaque_pfc_microstimulation_pipeline.build_session_
 features constructs BEFORE projecting into the latent space -- reused here,
 not redefined). P_k = V @ V.T (V: (C,k) PCA loadings of control-epoch
 maintenance activity, orthonormal columns from pca_decompose's full-SVD
@@ -21,7 +21,7 @@ construction -- src/geometry.py) is the k-dim WM-manifold projector.
     within_frac  = ||P_k @ e_hat|| / ||e_hat||
     outside_frac = ||(I-P_k) @ e_hat|| / ||e_hat||
 DEGENERACY GATE: if within_frac has ~zero variance across conditions
-(nanstd < 1e-9, pooled across all Soldado conditions/sessions), the arm is
+(nanstd < 1e-9, pooled across all macaque PFC microstimulation conditions/sessions), the arm is
 uninformative -- STOP, report honestly, do not force an alternative.
 
 Run:
@@ -45,7 +45,7 @@ from causal import benchmark_modifiers
 from statistics import stable_seed
 
 sys.path.insert(0, str(ROOT / "scripts"))
-from run_soldado_pipeline import load_soldado_session, crop_trial, SESSIONS, N_PC, N_BINS
+from run_macaque_pfc_microstimulation_pipeline import load_macaque_pfc_microstimulation_session, crop_trial, SESSIONS, N_PC, N_BINS
 
 RESULTS = ROOT / "results"
 
@@ -56,7 +56,7 @@ def _session_within_outside(prefix: str) -> dict | None:
     RAW channel-space direction e_hat, exactly as build_session_features
     constructs B_chan (Part 2) before it ever projects into the latent
     space."""
-    corr = load_soldado_session(prefix, correct=True)
+    corr = load_macaque_pfc_microstimulation_session(prefix, correct=True)
     if corr is None or corr["control_idx"] is None:
         return None
     control_idx = corr["control_idx"]
@@ -97,7 +97,7 @@ def _session_within_outside(prefix: str) -> dict | None:
 
 def main() -> None:
     print("Fitting P_k (k-dim WM-manifold projector) and scoring within_frac/outside_frac "
-          "per Soldado session/condition (raw channel-space e_hat) ...")
+          "per macaque PFC microstimulation session/condition (raw channel-space e_hat) ...")
     per_session = {}
     all_within, all_outside = [], []
     for prefix in SESSIONS:
@@ -122,7 +122,7 @@ def main() -> None:
     if within_std < 1e-9:
         out = {
             "status": "excluded_degenerate",
-            "reason": (f"within_frac has ~zero variance across the {len(all_within)} scored Soldado "
+            "reason": (f"within_frac has ~zero variance across the {len(all_within)} scored macaque PFC microstimulation "
                       f"conditions (nanstd={within_std:.3g} < 1e-9) -- the delivered stim set does not "
                       "vary in manifold-overlap on this dataset (every stimulated electrode direction "
                       "projects onto the k-dim control-epoch PCA manifold by a nearly-fixed fraction), "
@@ -161,8 +161,8 @@ def main() -> None:
     rows = []
     session_idx_ctr = 0
     for prefix in session_order:
-        corr = load_soldado_session(prefix, correct=True)
-        err = load_soldado_session(prefix, correct=False)
+        corr = load_macaque_pfc_microstimulation_session(prefix, correct=True)
+        err = load_macaque_pfc_microstimulation_session(prefix, correct=False)
         control_idx = corr["control_idx"]
         fracs = per_session[prefix]["cond_fracs"]
         ctrl_all = _epochs_for(corr, control_idx, 1) + (_epochs_for(err, control_idx, 0) if err is not None else [])

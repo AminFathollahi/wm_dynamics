@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Round-8 Part 5: RL policy-alignment arm -- a CONVERGENCE check, not a horse
-race (see comments.txt SCIENTIFIC FRAMING). On a linear plant (A from DMD, B
+"""RL policy-alignment arm -- a CONVERGENCE check, not a horse
+race. On a linear plant (A from DMD, B
 from TES1) with quadratic cost, LQR is the closed-form optimum; a learned
 policy can at best recover it. This script does NOT claim RL beats LQR. It
 asks a narrower, useful question: does a model-free policy-gradient
@@ -67,6 +67,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from closed_loop import simulate_closed_loop, _b_hat_at_angle
 from statistics import stable_seed
 from io_utils import locked_json_update
+from provenance import _json_safe
 from run_targeting_benchmark import (
     RESULTS, BORAN_SUBJECTS, B_HAT_MISMATCH_DEG,
     _stability_horizon, _pool_arm, _near_tie_candidates,
@@ -86,7 +87,8 @@ def _rollout_reward(A: np.ndarray, b: np.ndarray, kappa: float, horizon: int,
     eigendecomposition, no LQR gain. Reward = -(mean state energy) -
     amp_penalty * (mean control energy), i.e. distance-to-correct-region
     (here: the origin/stable point every arm's rollout is ultimately driving
-    toward) plus a stimulation-amplitude penalty, per comments.txt 5A."""
+    toward) plus a stimulation-amplitude penalty, the standing cost-function
+    convention every arm in this project shares."""
     x = x0.copy()
     state_cost = 0.0
     ctrl_cost = 0.0
@@ -230,7 +232,7 @@ def run_rl_arm_on_boran() -> dict:
                    "flip_frac": flip_frac, "destabilized": bool(res["rho_closed"] > res["rho_open"]),
                    "rho_open": res["rho_open"], "rho_closed": res["rho_closed"]}
 
-        # Part 8B, applied uniformly (comments.txt): same near-tie non-destabilizing
+        # Applied uniformly: same near-tie non-destabilizing
         # donor preference as every other arm -- RL's own physically-realizable donor
         # is picked by cosine-to-b_learned, not exempted from the rescue rule.
         candidates = _near_tie_candidates(donor_sim)
@@ -291,8 +293,8 @@ def main():
     print(f"Convergence check (prediction: rl_policy_alignment ~ vstar_alignment): {convergence_verdict}")
 
     with open(RESULTS / "rl_policy_arm.json", "w") as f:
-        json.dump({"per_subject": per_subject, "leaderboard": leaderboard_entry,
-                   "convergence_verdict": convergence_verdict}, f, indent=2)
+        json.dump(_json_safe({"per_subject": per_subject, "leaderboard": leaderboard_entry,
+                   "convergence_verdict": convergence_verdict}), f, indent=2, allow_nan=False)
     print("Saved results/rl_policy_arm.json")
 
     # Extend targeting_benchmark_boran.json with the new arm (ADD, don't shrink).
@@ -303,7 +305,7 @@ def main():
             tb["per_subject"][subj]["arms"][ARM_NAME] = row["arms"][ARM_NAME]
     tb["leaderboard"][ARM_NAME] = leaderboard_entry
     with open(RESULTS / "targeting_benchmark_boran.json", "w") as f:
-        json.dump(tb, f, indent=2)
+        json.dump(_json_safe(tb), f, indent=2, allow_nan=False)
 
     # Extend causal_benchmark.json leaderboard with a 10th arm.
     slope = dr["theta"] if dr is not None else float("nan")

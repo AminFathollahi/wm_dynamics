@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0.0",
+  "dataset": "DANDI 000574",
+  "checked_at": "2026-08-01",
+  "staged_release": {
+    "version": "0.250815.1108",
+    "evidence": "data/000574/dandiset.yaml citation",
+    "asset_summary": {
+      "number_of_files": 37,
+      "number_of_subjects": 9,
+      "number_of_bytes": 107315450285
+    }
+  },
+  "legacy_artifact_provenance": {
+    "status": "not_recoverable_from_existing_artifacts",
+    "reason": "The legacy 000574/Boran result artifacts do not record a DANDI version, asset manifest, or input file hashes."
+  },
+  "reconciliation_status": "unreconciled",
+  "primary_inference_consequence": "Legacy 000574/Boran results remain archival. A new result from the staged release must be labelled as release-specific and cannot be presented as a numerical replication of legacy artifacts until their source version is recovered.",
+  "next_required_evidence": "A legacy run manifest or source asset hashes that identify its exact DANDI release."
+}

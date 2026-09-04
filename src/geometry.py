@@ -33,6 +33,7 @@ import sys
 import os
 import numpy as np
 from numpy.typing import NDArray
+from scipy.spatial.distance import pdist, squareform
 
 _src_dir = os.path.dirname(__file__)
 if _src_dir not in sys.path:
@@ -66,6 +67,54 @@ def pca_decompose(
     return scores, Vt[:k].T, var_ratio[:k]
 
 
+def fit_frozen_pca(X_train: NDArray, n_components: int) -> tuple[NDArray, NDArray]:
+    """Fit a PCA basis on training data only, for later application to held-out data.
+
+    Returns (mean, components) with components (D, k); apply with
+    `apply_frozen_pca`. Needed whenever a held-out condition (e.g. a
+    perturbation arm) must be scored in the same latent as a train-only fit,
+    which plain `pca_decompose` / `latent_trajectories` (fit and project in
+    one call) cannot do.
+    """
+    mean = X_train.mean(axis=0)
+    _, components, _ = pca_decompose(X_train, n_components)
+    return mean, components
+
+
+def apply_frozen_pca(X: NDArray, mean: NDArray, components: NDArray) -> NDArray:
+    return (X - mean) @ components
+
+
+def phase_scrambled_null(latent: NDArray, rng: np.random.Generator) -> NDArray:
+    """Per-trial, per-channel Fourier phase randomization.
+
+    Replaces each channel's phase spectrum with independent uniform noise
+    while keeping its magnitude spectrum (so total power and the coarse
+    autocorrelation/roughness scale are preserved); this destroys any
+    consistent temporal structure -- confinement, directed drift, periodic
+    structure -- while keeping the same marginal power as the real signal,
+    making it a stricter null than a plain time shuffle for detecting
+    structured (non-stationary-looking) dynamics.
+
+    Parameters
+    ----------
+    latent : (n_trials, n_bins, k)
+    """
+    latent = np.asarray(latent, dtype=float)
+    n_trials, n_bins, k = latent.shape
+    scrambled = np.empty_like(latent)
+    freqs = np.fft.rfft(latent, axis=1)
+    magnitude = np.abs(freqs)
+    n_freqs = freqs.shape[1]
+    random_phase = rng.uniform(0, 2 * np.pi, size=(n_trials, n_freqs, k))
+    random_phase[:, 0, :] = 0.0  # keep the DC component real
+    if n_bins % 2 == 0:
+        random_phase[:, -1, :] = 0.0  # keep the Nyquist component real
+    scrambled_freqs = magnitude * np.exp(1j * random_phase)
+    scrambled = np.fft.irfft(scrambled_freqs, n=n_bins, axis=1)
+    return scrambled
+
+
 def participation_ratio(eigenvalues: NDArray) -> float:
     """Participation ratio (PR): effective dimensionality of a covariance spectrum.
 
@@ -90,6 +139,105 @@ def participation_ratio(eigenvalues: NDArray) -> float:
     return (lam.sum() ** 2) / (lam**2).sum()
 
 
+def twonn_dimension(X: NDArray, discard_fraction: float = 0.1) -> float:
+    """TwoNN intrinsic-dimensionality estimator (Facco et al. 2017, Sci Rep 7:12140).
+
+    Uses only the first two nearest-neighbour distances per point, so it is
+    far less sensitive to curvature/non-uniform density over a large
+    neighbourhood than a full-kNN estimator. Under local uniform density,
+    mu_i = r2_i / r1_i follows a Pareto(d) distribution, so a straight line
+    through the origin in (log mu, -log(1-F_empirical(mu))) has slope d.
+    The largest `discard_fraction` of mu values (least reliable, since the
+    empirical CDF there is close to 1) is dropped before the fit, as in the
+    original paper.
+
+    Parameters
+    ----------
+    X : (N, D) point cloud, N >= 3
+    """
+    X = np.asarray(X, dtype=float)
+    n = len(X)
+    dist = squareform(pdist(X))
+    np.fill_diagonal(dist, np.inf)
+    nn = np.sort(dist, axis=1)[:, :2]
+    mu = nn[:, 1] / np.maximum(nn[:, 0], 1e-12)
+    valid = np.isfinite(mu) & (mu > 1.0)
+    order = np.argsort(mu[valid])
+    mu_sorted = mu[valid][order]
+    n_valid = len(mu_sorted)
+    # F_empirical(mu_(i)) = i / n_valid for the i-th order statistic (1-indexed);
+    # the top discard_fraction is dropped before fitting since F is close to 1
+    # there and -log(1-F) blows up on sampling noise (Facco et al. 2017 Sec. 2).
+    f_emp = np.arange(1, n_valid + 1) / n_valid
+    keep = int(n_valid * (1.0 - discard_fraction))
+    mu_fit, f_fit = mu_sorted[:keep], f_emp[:keep]
+    if len(mu_fit) < 3:
+        return float("nan")
+    x = np.log(mu_fit)
+    y = -np.log(1.0 - f_fit)
+    denom = float(np.sum(x * x))
+    if denom < 1e-12:
+        return float("nan")
+    return float(np.sum(x * y) / denom)
+
+
+def levina_bickel_mle_dimension(X: NDArray, k: int = 20) -> float:
+    """Levina & Bickel (2004, NeurIPS) maximum-likelihood dimension estimator.
+
+    For each point i, with r_1 <= ... <= r_k its distances to its k nearest
+    neighbours, the local MLE is d_hat_i = [(k-1)^-1 * sum_{j=1}^{k-1}
+    log(r_k / r_j)]^-1. Following Levina & Bickel's own recommendation, the
+    reported estimate averages 1/d_hat_i across points before inverting
+    (not the per-point d_hat_i directly, which is upward-biased).
+    """
+    X = np.asarray(X, dtype=float)
+    n = len(X)
+    k = min(k, n - 1)
+    if k < 2:
+        return float("nan")
+    dist = squareform(pdist(X))
+    np.fill_diagonal(dist, np.inf)
+    nn = np.sort(dist, axis=1)[:, :k]
+    r_k = nn[:, -1:]
+    ratios = np.log(np.maximum(r_k, 1e-12) / np.maximum(nn[:, :-1], 1e-12))
+    inv_d_hat = ratios.mean(axis=1)
+    inv_d_hat = inv_d_hat[np.isfinite(inv_d_hat) & (inv_d_hat > 0)]
+    if len(inv_d_hat) == 0:
+        return float("nan")
+    return float(1.0 / inv_d_hat.mean())
+
+
+def correlation_dimension(X: NDArray, n_radii: int = 20) -> float:
+    """Grassberger-Procaccia correlation dimension.
+
+    C(r) = fraction of point pairs within distance r; the correlation
+    dimension is the OLS slope of log C(r) on log r, fit over a log-spaced
+    radius grid spanning the 5th-50th percentile of the pairwise-distance
+    distribution (a standard choice of the mid-range "scaling region",
+    avoiding both the noisy near-zero tail and the saturating large-r tail).
+    """
+    X = np.asarray(X, dtype=float)
+    n = len(X)
+    pairwise = pdist(X)
+    pairwise = pairwise[pairwise > 0]
+    if len(pairwise) < 10:
+        return float("nan")
+    r_lo, r_hi = np.percentile(pairwise, [5, 50])
+    if r_lo <= 0 or r_hi <= r_lo:
+        return float("nan")
+    radii = np.geomspace(r_lo, r_hi, n_radii)
+    counts = np.array([(pairwise < r).sum() for r in radii], dtype=float)
+    total_pairs = n * (n - 1) / 2.0
+    c_r = counts / total_pairs
+    valid = c_r > 0
+    if valid.sum() < 3:
+        return float("nan")
+    x = np.log(radii[valid])
+    y = np.log(c_r[valid])
+    slope, _ = np.polyfit(x, y, 1)
+    return float(slope)
+
+
 def pca_participation_ratio(X: NDArray) -> float:
     """PR of the PCA covariance spectrum of X."""
     Xc = X - X.mean(axis=0)
@@ -102,21 +250,43 @@ def parallel_analysis(
     n_surrogate: int = 200,
     percentile: float = 95.0,
     rng: np.random.Generator | None = None,
+    n_timepoints_per_trial: int | None = None,
 ) -> int:
     """Horn's parallel analysis: number of PCs whose eigenvalue exceeds the
-    upper percentile of eigenvalues from column-permuted surrogates.
+    upper percentile of eigenvalues from surrogate data.
 
-    Each surrogate independently permutes the rows within every column of X,
-    destroying cross-column covariance while preserving each column's marginal
-    distribution; a real component is retained only if its eigenvalue beats what
-    that noise floor produces at the same n/p (Horn 1965). This is the standard
-    distribution-free answer to "how many components are above chance".
+    Horn's classic surrogate independently permutes the rows within every
+    column, which assumes the rows are exchangeable. That is fine for i.i.d.
+    observations, but trial-by-time rows are autocorrelated in time within a
+    trial, so a full row permutation destroys that autocorrelation and yields
+    a surrogate noise floor that is far too low — the procedure then
+    OVER-RETAINS components on real (autocorrelated) data.
+
+    When `n_timepoints_per_trial` is given, rows of X are treated as
+    contiguous trial blocks of that length (the layout produced by e.g.
+    `epochs.transpose(0, 2, 1).reshape(-1, C)`), and each surrogate instead
+    circularly shifts each column WITHIN its own trial block by an
+    independent random offset. This still destroys cross-column covariance
+    and cross-trial alignment (so it still tests "are these components above
+    the chance level of unstructured data"), but preserves each trial's own
+    within-trial autocorrelation, giving Horn's exchangeability assumption a
+    defensible trial-level analogue. This generally raises the surrogate
+    noise floor and retains fewer components than the unblocked row
+    permutation, so k selected before this fix may differ from k selected
+    after it. When `n_timepoints_per_trial` is None, rows are assumed already
+    independent (e.g. one row per trial) and the original full row
+    permutation is used.
 
     Parameters
     ----------
-    X           : (N, D) — N observations, D features
-    n_surrogate : number of column-shuffled surrogates
-    percentile  : surrogate-eigenvalue percentile used as the retention threshold
+    X                      : (N, D) — N observations, D features
+    n_surrogate            : number of surrogates
+    percentile             : surrogate-eigenvalue percentile used as the
+                              retention threshold
+    n_timepoints_per_trial : trial block length in rows, if rows are
+                              trial-by-time samples (contiguous per trial);
+                              None if rows are already independent
+                              observations
 
     Returns
     -------
@@ -128,9 +298,24 @@ def parallel_analysis(
     N, D = Xc.shape
     obs = np.linalg.svd(Xc, full_matrices=False, compute_uv=False) ** 2
 
+    if n_timepoints_per_trial is not None:
+        block = n_timepoints_per_trial
+        if N % block != 0:
+            raise ValueError("N must be a multiple of n_timepoints_per_trial")
+        n_trials = N // block
+
     surr = np.empty((n_surrogate, len(obs)))
     for i in range(n_surrogate):
-        Xs = np.column_stack([Xc[rng.permutation(N), j] for j in range(D)])
+        if n_timepoints_per_trial is None:
+            Xs = np.column_stack([Xc[rng.permutation(N), j] for j in range(D)])
+        else:
+            Xs = np.empty_like(Xc)
+            for j in range(D):
+                trial_blocks = Xc[:, j].reshape(n_trials, block)
+                shifts = rng.integers(0, block, size=n_trials)
+                Xs[:, j] = np.array(
+                    [np.roll(trial_blocks[t], shifts[t]) for t in range(n_trials)]
+                ).reshape(-1)
         s = np.linalg.svd(Xs - Xs.mean(axis=0), full_matrices=False, compute_uv=False)
         surr[i, : len(s)] = s**2
     thresh = np.percentile(surr, percentile, axis=0)
@@ -173,8 +358,12 @@ def select_latent_dim(
 
     # Parallel analysis on the same pooled (observations x channels) matrix that
     # spatiotemporal_participation_ratio SVDs, so both selectors see one space.
+    # Rows are contiguous per-trial blocks of length T (trial-major from the
+    # transpose+reshape below), so the surrogate null respects trial structure.
     X_pooled = X.transpose(0, 2, 1).reshape(-1, C)
-    k_pa = int(np.clip(parallel_analysis(X_pooled, rng=rng), 1, C))
+    k_pa = int(np.clip(
+        parallel_analysis(X_pooled, rng=rng, n_timepoints_per_trial=T), 1, C
+    ))
 
     k = {"cv_pr": k_cv, "parallel_analysis": k_pa}.get(method)
     if k is None:
@@ -604,12 +793,19 @@ def geometric_drift(
     times: NDArray,
     maint_window: tuple[float, float] = (0.3, 1.4),
 ) -> NDArray:
-    """Per-trial Euclidean drift from the condition centroid in latent space.
+    """Per-trial Euclidean drift from the OUT-OF-FOLD condition centroid in
+    latent space.
 
     For each trial, compute the mean distance from the condition's centroid
-    trajectory during the maintenance window. High drift → trajectory has
-    wandered far from the typical maintenance attractor (predicts longer RT
-    or higher error rate; Hypothesis H5d in PAPER_DRAFT).
+    trajectory during the maintenance window, where the centroid for trial i
+    is computed from every OTHER trial in its condition (never including
+    trial i itself). Including a trial in its own centroid mechanically
+    shrinks that trial's distance to the centroid — and shrinks it more in
+    conditions with fewer trials — which biases drift comparisons across
+    conditions of different sizes; the leave-one-out centroid removes that
+    bias. High drift → trajectory has wandered far from the typical
+    maintenance attractor (predicts longer RT or higher error rate;
+    Hypothesis H5d in PAPER_DRAFT).
 
     Parameters
     ----------
@@ -620,22 +816,76 @@ def geometric_drift(
 
     Returns
     -------
-    drift : (N,) — mean Euclidean distance from condition centroid
+    drift : (N,) — mean Euclidean distance from the leave-one-out condition
+        centroid. Trials in a condition with fewer than 2 trials have no
+        out-of-fold centroid and are reported as NaN, not silently zero.
     """
     maint = (times >= maint_window[0]) & (times <= maint_window[1])
     Z_m = Z[:, maint, :]   # (N, T_m, k)
     N = len(Z_m)
-    drift = np.zeros(N)
+    drift = np.full(N, np.nan)
 
     for cond in np.unique(task_id):
         mask = task_id == cond
-        if mask.sum() < 2:
+        n_cond = int(mask.sum())
+        if n_cond < 2:
             continue
-        centroid = Z_m[mask].mean(axis=0)   # (T_m, k)
-        diff = Z_m[mask] - centroid          # (n_cond, T_m, k)
+        group_sum = Z_m[mask].sum(axis=0)              # (T_m, k)
+        loo_centroid = (group_sum[None] - Z_m[mask]) / (n_cond - 1)  # (n_cond, T_m, k)
+        diff = Z_m[mask] - loo_centroid                  # (n_cond, T_m, k)
         drift[mask] = np.sqrt((diff**2).sum(axis=2)).mean(axis=1)
 
     return drift
+
+
+def distance_to_attractor(
+    train_state: NDArray,
+    train_labels: NDArray,
+    test_state: NDArray,
+    test_labels: NDArray,
+) -> NDArray:
+    """Normalized distance-to-attractor (Daume et al. 2025, following
+    Kaminski et al. 2017).
+
+    For each held-out trial and time point: the Euclidean distance to its
+    own-condition centroid divided by the mean distance to every other
+    condition's centroid. DA < 1 means the state is nearest its own
+    (correct) attractor. Centroids are computed from TRAINING trials only —
+    computing them from all trials (including the one being scored) is
+    exactly the selection bias Daume et al. control for, and produces
+    DA < 1 trivially.
+
+    Parameters
+    ----------
+    train_state, test_state : (n_trials, n_time, n_dims) latent trajectories
+    train_labels, test_labels : (n_trials,) condition labels
+
+    Returns
+    -------
+    da : (n_test_trials, n_time) — NaN for a test trial whose condition has
+        no training centroid, or when fewer than 2 conditions have a
+        training centroid (no "other" to normalize against).
+    """
+    condition_labels = np.unique(train_labels)
+    centroids = np.stack([
+        train_state[train_labels == label].mean(axis=0) for label in condition_labels
+    ])  # (n_conditions, n_time, n_dims)
+    n_test, n_time, _ = test_state.shape
+    da = np.full((n_test, n_time), np.nan)
+    if len(condition_labels) < 2:
+        return da
+    for i in range(n_test):
+        own = np.flatnonzero(condition_labels == test_labels[i])
+        if len(own) == 0:
+            continue
+        own_index = own[0]
+        distances = np.linalg.norm(test_state[i][None, :, :] - centroids, axis=2)  # (n_conditions, n_time)
+        other_mask = np.ones(len(condition_labels), dtype=bool)
+        other_mask[own_index] = False
+        other_mean = distances[other_mask].mean(axis=0)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            da[i] = np.where(other_mean > 1e-12, distances[own_index] / other_mean, np.nan)
+    return da
 
 
 def subspace_overlap(
@@ -698,25 +948,11 @@ def coding_direction_stability(
     cos_sim : (n_t, n_t) — absolute cosine similarity matrix
     t_idx   : (n_t,)    — subsampled time indices
     """
-    from sklearn.linear_model import LogisticRegression
-    from sklearn.preprocessing import StandardScaler
-
     T = Z.shape[1]
     t_idx = np.arange(0, T, step)
     n_t = len(t_idx)
     multiclass = len(np.unique(labels)) > 2
-    weights = []
-
-    for ti in t_idx:
-        X = StandardScaler().fit_transform(Z[:, ti, :])
-        clf = LogisticRegression(
-            C=1.0, max_iter=1000 if multiclass else 300,
-            solver="lbfgs" if multiclass else "liblinear",
-        )
-        clf.fit(X, labels)
-        w = clf.coef_  # (1, k) binary, (n_classes, k) multiclass
-        norms = np.linalg.norm(w, axis=1, keepdims=True)
-        weights.append(np.divide(w, norms, out=np.zeros_like(w), where=norms > 1e-12))
+    weights = _fit_axis_weights(Z, labels, t_idx, multiclass)
 
     if multiclass:
         cos_sim = np.zeros((n_t, n_t))
@@ -728,6 +964,92 @@ def coding_direction_stability(
         cos_sim = np.abs(W @ W.T)
 
     return cos_sim, t_idx
+
+
+def _fit_axis_weights(Z: NDArray, labels: NDArray, t_idx: NDArray, multiclass: bool) -> list[NDArray]:
+    """Fit a one-vs-rest logistic-regression decoding axis at each of t_idx.
+
+    Neither coding_direction_stability nor axis_angular_velocity holds out a
+    separate train/test split of trials — the full trial set given here IS
+    the (only) fold — so the scaler is fit ONCE, pooled across every
+    requested timepoint in t_idx, and reused unchanged at every timepoint,
+    rather than refit per timepoint. Refitting a StandardScaler
+    independently at each timepoint changes the standardised feature
+    covariance at each t, and because L2 shrinkage is anisotropic under
+    correlated features, that alone changes the shrunk weight DIRECTION even
+    when the true discriminant axis is perfectly stationary — a spurious
+    source of apparent axis rotation. C is chosen per timepoint by
+    LogisticRegressionCV's internal cross-validation (using this same frozen
+    scaling) instead of being fixed at 1.0.
+
+    Returns a list of unit-normalised weight arrays, (1, k) if binary or
+    (n_classes, k) if multiclass, one per timepoint in t_idx.
+    """
+    from sklearn.linear_model import LogisticRegressionCV
+    from sklearn.preprocessing import StandardScaler
+
+    k = Z.shape[2]
+    scaler = StandardScaler().fit(Z[:, t_idx, :].reshape(-1, k))
+    Cs = np.logspace(-2, 2, 5)
+
+    weights = []
+    for ti in t_idx:
+        X = scaler.transform(Z[:, ti, :])
+        clf = LogisticRegressionCV(
+            Cs=Cs, cv=3, max_iter=1000 if multiclass else 300,
+            solver="lbfgs" if multiclass else "liblinear",
+        )
+        clf.fit(X, labels)
+        w = clf.coef_  # (1, k) binary, (n_classes, k) multiclass
+        norms = np.linalg.norm(w, axis=1, keepdims=True)
+        weights.append(np.divide(w, norms, out=np.zeros_like(w), where=norms > 1e-12))
+    return weights
+
+
+def axis_angular_velocity(
+    Z: NDArray,
+    labels: NDArray,
+    dt: float,
+    step: int = 40,
+) -> tuple[NDArray, NDArray]:
+    """Angular velocity of the decoding axis, omega_axis(t) [rad/s].
+
+    omega_axis(t) = arccos(|<w(t), w(t+step)>|) / (step * dt) -- a direct,
+    DMD-free measure of how fast the coding direction itself rotates,
+    reusing the same per-timepoint decoding axis w(t) as
+    coding_direction_stability. Requires neither a linear operator nor an
+    identifiable eigenvector.
+
+    Parameters
+    ----------
+    Z      : (N, T, k) — latent trajectories
+    labels : (N,)      — class labels (binary or multiclass)
+    dt     : sampling interval (s) of Z's time axis
+    step   : stride for subsampling timepoints (same convention as
+             coding_direction_stability)
+
+    Returns
+    -------
+    omega : (n_t - 1,) — angular velocity between consecutive subsampled
+            timepoints, rad/s
+    t_idx : (n_t - 1,) — the earlier timepoint index of each pair
+    """
+    T = Z.shape[1]
+    t_idx = np.arange(0, T, step)
+    if len(t_idx) < 2:
+        return np.array([]), np.array([], dtype=int)
+    multiclass = len(np.unique(labels)) > 2
+    weights = _fit_axis_weights(Z, labels, t_idx, multiclass)
+    dt_step = float(np.median(np.diff(t_idx))) * dt
+
+    omega = np.empty(len(weights) - 1)
+    for i in range(len(weights) - 1):
+        if multiclass:
+            cos = np.mean(np.abs(np.sum(weights[i] * weights[i + 1], axis=1)))
+        else:
+            cos = np.abs(float((weights[i] @ weights[i + 1].T).item()))
+        omega[i] = np.arccos(np.clip(cos, -1.0, 1.0)) / dt_step
+    return omega, t_idx[:-1]
 
 
 def time_resolved_stability(
@@ -859,7 +1181,8 @@ def spatiotemporal_participation_ratio(
     n_splits: int = 2,
     rng: np.random.Generator | None = None,
 ) -> dict:
-    """Cross-validated participation ratio in the native (pre-PCA) channel space.
+    """Participation ratio in the native (pre-PCA) channel space, cross-validated
+    and reported alongside its legacy predecessor.
 
     Computed identically regardless of dataset: for each trial, treat the
     T time samples during the window as observations of a C-dimensional
@@ -869,11 +1192,33 @@ def spatiotemporal_participation_ratio(
     already-PCA-reduced, capped-at-k latent space) makes PR comparable across
     datasets with very different channel/unit counts.
 
-    Cross-validated: covariance is estimated on a train split of trials, PR is
-    computed on both train (in-sample) and a held-out test split (out-of-sample,
-    which is what should be reported/compared — in-sample PR is optimistic).
-    A shuffle null (channel-shuffled trials) gives the PR expected from noise
-    alone at the same dimensionality and trial count.
+    pr_cv (primary) is a held-out, in-fold-fit / held-out-eval estimator, the
+    finite-sample-corrected analogue of cvPCA (Stringer et al. 2019): the
+    covariance eigenvectors are fit on a TRAIN split of trials only, and PR is
+    computed from the variance those fixed, independently-derived directions
+    explain in the disjoint held-out trial split. A single split's own
+    eigenvalues are always biased by finite-sample noise (and can be trivially
+    rank-deficient whenever a fold has fewer samples than channels), which
+    makes data look more low-dimensional than it truly is; scoring a
+    train-fit basis on an independent held-out split removes that bias.
+
+    pr_cv_legacy is the original "cross-validated" estimator this replaces as
+    primary: PR of the held-out split's OWN covariance, with no train-fit
+    basis at all (so it is not actually evaluating a learned estimator
+    out-of-fold — it is just PR of a single, half-sized data split). Reported
+    only for continuity with prior results.
+
+    Both pr_cv and pr_cv_legacy split at the TRIAL level (a trial's T time
+    samples are never divided across the train/test folds), since time
+    samples within a trial are autocorrelated, not independent draws.
+
+    A shuffle null independently permutes each channel's trial order —
+    destroying cross-channel covariance while preserving each channel's own
+    marginal variance and within-trial autocorrelation — to give the PR
+    expected from noise alone at the same dimensionality and trial count. (A
+    plain channel-identity permutation would NOT do this: PR is basis
+    invariant under relabelling channels, so it leaves the covariance
+    spectrum, and hence PR, completely unchanged.)
 
     Parameters
     ----------
@@ -883,7 +1228,8 @@ def spatiotemporal_participation_ratio(
 
     Returns
     -------
-    dict: pr_insample, pr_cv, pr_cv_std, pr_null, pr_null_std, n_channels, n_trials
+    dict: pr_insample, pr_cv, pr_cv_std, pr_cv_legacy, pr_cv_legacy_std,
+          pr_null, pr_null_std, n_channels, n_trials
     """
     if rng is None:
         rng = np.random.default_rng(0)
@@ -896,29 +1242,30 @@ def spatiotemporal_participation_ratio(
 
     idx = rng.permutation(N)
     folds = np.array_split(idx, min(n_splits, N))
-    pr_cv_list = []
+    pr_cv_list, pr_cv_legacy_list = [], []
     for k in range(len(folds)):
         te = folds[k]
         tr = np.concatenate([folds[j] for j in range(len(folds)) if j != k])
         if len(tr) < 2 or len(te) < 2:
             continue
-        mu_tr = X[tr].transpose(0, 2, 1).reshape(-1, C).mean(0)
+        flat_tr = X[tr].transpose(0, 2, 1).reshape(-1, C)
+        mu_tr = flat_tr.mean(0)
+        _, _, Vt_tr = np.linalg.svd(flat_tr - mu_tr, full_matrices=False)
+
         flat_te = X[te].transpose(0, 2, 1).reshape(-1, C) - mu_tr
+        lam_heldout = ((flat_te @ Vt_tr.T) ** 2).sum(axis=0)
+        pr_cv_list.append(participation_ratio(lam_heldout))
+
         _, s_te, _ = np.linalg.svd(flat_te, full_matrices=False)
-        pr_cv_list.append(participation_ratio(s_te**2))
+        pr_cv_legacy_list.append(participation_ratio(s_te**2))
     pr_cv = float(np.mean(pr_cv_list)) if pr_cv_list else float("nan")
     pr_cv_std = float(np.std(pr_cv_list)) if pr_cv_list else float("nan")
+    pr_cv_legacy = float(np.mean(pr_cv_legacy_list)) if pr_cv_legacy_list else float("nan")
+    pr_cv_legacy_std = float(np.std(pr_cv_legacy_list)) if pr_cv_legacy_list else float("nan")
 
     n_null = 50
     pr_null_list = []
     for _ in range(n_null):
-        X_shuf = X[:, rng.permutation(C), :]
-        flat_shuf = X_shuf.transpose(0, 2, 1).reshape(-1, C)
-        flat_shuf = flat_shuf - flat_shuf.mean(0)
-        # channel identity permutation alone doesn't destroy structure (PCA is
-        # basis-invariant); the null instead independently permutes each
-        # channel's trial order, which destroys cross-channel covariance while
-        # preserving each channel's own marginal variance.
         X_null = np.stack(
             [X[rng.permutation(N), c, :] for c in range(C)], axis=1
         )
@@ -933,6 +1280,8 @@ def spatiotemporal_participation_ratio(
         "pr_insample": float(pr_insample),
         "pr_cv": pr_cv,
         "pr_cv_std": pr_cv_std,
+        "pr_cv_legacy": pr_cv_legacy,
+        "pr_cv_legacy_std": pr_cv_legacy_std,
         "pr_null": pr_null,
         "pr_null_std": pr_null_std,
         "n_channels": int(C),
@@ -964,6 +1313,7 @@ def _ctg_score_fold(
     """AUC matrix for one fold given already-PCA-projected train/test latents."""
     from sklearn.linear_model import LogisticRegression
     from sklearn.preprocessing import StandardScaler
+    from sklearn.metrics import roc_auc_score
 
     n_t = len(t_idx)
     mat = np.full((n_t, n_t), np.nan)
@@ -978,12 +1328,76 @@ def _ctg_score_fold(
         for j, tj in enumerate(t_idx):
             X_te_t = sc.transform(Z_te[:, tj, :])
             scores = clf.decision_function(X_te_t)
-            pos, neg = scores[y_te == 1], scores[y_te == 0]
-            if len(pos) == 0 or len(neg) == 0:
+            if len(np.unique(y_te)) != 2:
                 continue
-            u = float(np.sum(pos[:, None] > neg[None, :]))
-            mat[i, j] = u / (len(pos) * len(neg))
+            # roc_auc_score implements the Mann--Whitney convention in which
+            # tied scores contribute one half, unlike the legacy strict-">"
+            # implementation that biased AUC downward whenever scores tied.
+            mat[i, j] = float(roc_auc_score(y_te, scores))
     return mat
+
+
+def _ctg_splits(
+    labels: NDArray,
+    n_splits: int,
+    rng: np.random.Generator,
+    groups: NDArray | None,
+) -> list[tuple[NDArray, NDArray]]:
+    """Build outer folds without allowing a linked recording across folds."""
+    from sklearn.model_selection import StratifiedKFold
+
+    labels = np.asarray(labels)
+    if groups is None:
+        splitter = StratifiedKFold(
+            n_splits=n_splits, shuffle=True,
+            random_state=int(rng.integers(0, 1_000_000)),
+        )
+        return list(splitter.split(np.zeros(len(labels)), labels))
+
+    from sklearn.model_selection import StratifiedGroupKFold
+
+    groups = np.asarray(groups)
+    if len(groups) != len(labels):
+        raise ValueError("groups must have one entry per trial")
+    splitter = StratifiedGroupKFold(
+        n_splits=n_splits, shuffle=True,
+        random_state=int(rng.integers(0, 1_000_000)),
+    )
+    folds = list(splitter.split(np.zeros(len(labels)), labels, groups))
+    for train, test in folds:
+        if set(groups[train]) & set(groups[test]):
+            raise RuntimeError("linked recording group crossed a CTG outer fold")
+    return folds
+
+
+def _permute_labels(
+    labels: NDArray,
+    rng: np.random.Generator,
+    exchangeability_blocks: NDArray | None,
+) -> NDArray:
+    """Permute labels at the declared independent randomization unit.
+
+    A block is permitted only when its trials have one treatment label.  This
+    avoids the common but invalid shortcut of independently shuffling trials
+    within a participant/session when treatment varied at a higher level.
+    """
+    labels = np.asarray(labels)
+    if exchangeability_blocks is None:
+        return rng.permutation(labels)
+    blocks = np.asarray(exchangeability_blocks)
+    if len(blocks) != len(labels):
+        raise ValueError("exchangeability_blocks must have one entry per trial")
+    unique, inverse = np.unique(blocks, return_inverse=True)
+    block_labels = np.empty(len(unique), dtype=labels.dtype)
+    for i in range(len(unique)):
+        values = np.unique(labels[inverse == i])
+        if len(values) != 1:
+            raise ValueError(
+                "block permutation requires one label per exchangeability block; "
+                "use trial-level blocks only when trials are independently randomized"
+            )
+        block_labels[i] = values[0]
+    return rng.permutation(block_labels)[inverse]
 
 
 def ctg_nested_cv(
@@ -994,6 +1408,7 @@ def ctg_nested_cv(
     n_splits: int = 5,
     rng: np.random.Generator | None = None,
     return_fold_data: bool = False,
+    groups: NDArray | None = None,
 ):
     """Cross-temporal generalization with PCA folded into cross-validation.
 
@@ -1020,19 +1435,13 @@ def ctg_nested_cv(
     auc_mat : (n_t, n_t) — mean AUC across folds
     fold_data (only if return_fold_data) : list of tuples
     """
-    from sklearn.model_selection import StratifiedKFold
-
     if rng is None:
         rng = np.random.default_rng(0)
 
     N = X.shape[0]
     labels = np.asarray(labels)
-    skf = StratifiedKFold(
-        n_splits=n_splits, shuffle=True, random_state=int(rng.integers(0, 1_000_000))
-    )
-
     fold_mats, fold_data = [], []
-    for tr_idx, te_idx in skf.split(np.zeros(N), labels):
+    for tr_idx, te_idx in _ctg_splits(labels, n_splits, rng, groups):
         mu, V = _fit_pca_fold(X[tr_idx], n_components)
         Z_tr = _project_fold(X[tr_idx], mu, V)
         Z_te = _project_fold(X[te_idx], mu, V)
@@ -1056,6 +1465,8 @@ def ctg_label_permutation_null(
     n_splits: int = 5,
     n_perm: int = 200,
     rng: np.random.Generator | None = None,
+    groups: NDArray | None = None,
+    exchangeability_blocks: NDArray | None = None,
 ) -> dict:
     """Valid significance test for CTG: shuffle condition labels, not AUC cells.
 
@@ -1092,9 +1503,7 @@ def ctg_label_permutation_null(
     if rng is None:
         rng = np.random.default_rng(0)
 
-    auc_obs, fold_data = ctg_nested_cv(
-        X, labels, t_idx, n_components, n_splits, rng, return_fold_data=True
-    )
+    auc_obs = ctg_nested_cv(X, labels, t_idx, n_components, n_splits, rng, groups=groups)
 
     def _stat(mat: NDArray) -> tuple[float, float]:
         n_t = mat.shape[0]
@@ -1106,12 +1515,12 @@ def ctg_label_permutation_null(
 
     null = np.zeros(n_perm)
     for p in range(n_perm):
-        fold_mats = []
-        for Z_tr, y_tr, Z_te, y_te in fold_data:
-            y_tr_p = rng.permutation(y_tr)
-            y_te_p = rng.permutation(y_te)
-            fold_mats.append(_ctg_score_fold(Z_tr, y_tr_p, Z_te, y_te_p, t_idx))
-        mat_p = np.nanmean(np.stack(fold_mats), axis=0)
+        labels_p = _permute_labels(labels, rng, exchangeability_blocks)
+        # Rebuild the complete nested analysis, including split assignment and
+        # train-fold PCA/scaling, for every null draw.  Reusing observed-fold
+        # projections is only valid for a strictly label-blind split, which
+        # stratification is not.
+        mat_p = ctg_nested_cv(X, labels_p, t_idx, n_components, n_splits, rng, groups=groups)
         null[p], _ = _stat(mat_p)
 
     p_value = permutation_pvalue(null >= off_obs)
@@ -1330,6 +1739,166 @@ def time_resolved_content_decoding(
 
     return {"auc_per_t": auc_obs, "p_per_t": p_per_t, "t_idx": t_idx,
             "n_classes": int(len(all_classes))}
+
+
+def content_decoding_single_latent(
+    X: NDArray,
+    labels: NDArray,
+    t_idx: NDArray,
+    n_components: int,
+    latent_index: int,
+    n_splits: int = 3,
+    n_perm: int = 200,
+    rng: np.random.Generator | None = None,
+) -> dict:
+    """The complement of :func:`content_decoding_dropping_latent`: fits the
+    same ``n_components``-dimensional per-fold PCA basis but hands the
+    classifier ONLY column ``latent_index`` (0-based, ordered by descending
+    training-fold variance) rather than all but one. Used to profile which
+    individual latent -- not merely whether removing the leading one costs
+    anything -- carries a population's item content, at a fixed total k so
+    every latent's index means the same thing across the profile.
+    """
+    from sklearn.model_selection import StratifiedKFold
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.metrics import roc_auc_score
+
+    if rng is None:
+        rng = np.random.default_rng(0)
+
+    N = X.shape[0]
+    labels = np.asarray(labels)
+    all_classes = np.unique(labels)
+    n_t = len(t_idx)
+    skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=int(rng.integers(0, 1_000_000)))
+
+    fold_data = []
+    for tr_idx, te_idx in skf.split(np.zeros(N), labels):
+        mu, V = _fit_pca_fold(X[tr_idx], n_components)
+        Z_tr = _project_fold(X[tr_idx], mu, V)[:, :, [latent_index]]
+        Z_te = _project_fold(X[te_idx], mu, V)[:, :, [latent_index]]
+        fold_data.append((Z_tr, labels[tr_idx], Z_te, labels[te_idx]))
+
+    def _auc_at(ti: int, data: list) -> float:
+        aucs = []
+        for Z_tr, y_tr, Z_te, y_te in data:
+            if len(np.unique(y_tr)) < 2 or len(np.unique(y_te)) < 2:
+                continue
+            sc = StandardScaler()
+            X_tr_t = sc.fit_transform(Z_tr[:, ti, :])
+            X_te_t = sc.transform(Z_te[:, ti, :])
+            clf = LogisticRegression(C=1.0, solver="lbfgs", max_iter=1000)
+            clf.fit(X_tr_t, y_tr)
+            proba_cols = {c: k for k, c in enumerate(clf.classes_)}
+            proba = clf.predict_proba(X_te_t)
+            class_aucs = []
+            for c in np.unique(y_te):
+                if c not in proba_cols:
+                    continue
+                y_bin = (y_te == c).astype(int)
+                if len(np.unique(y_bin)) < 2:
+                    continue
+                class_aucs.append(roc_auc_score(y_bin, proba[:, proba_cols[c]]))
+            if class_aucs:
+                aucs.append(float(np.mean(class_aucs)))
+        return float(np.mean(aucs)) if aucs else float("nan")
+
+    auc_obs = np.array([_auc_at(i, fold_data) for i in range(n_t)])
+
+    null = np.zeros((n_perm, n_t))
+    for p in range(n_perm):
+        fold_data_p = [(Z_tr, rng.permutation(y_tr), Z_te, rng.permutation(y_te))
+                       for Z_tr, y_tr, Z_te, y_te in fold_data]
+        null[p] = np.array([_auc_at(i, fold_data_p) for i in range(n_t)])
+
+    p_per_t = (null >= auc_obs[None, :]).mean(axis=0)
+
+    return {"auc_per_t": auc_obs, "p_per_t": p_per_t, "t_idx": t_idx, "n_classes": int(len(all_classes)),
+            "n_components": int(n_components), "latent_index": int(latent_index)}
+
+
+def content_decoding_dropping_latent(
+    X: NDArray,
+    labels: NDArray,
+    t_idx: NDArray,
+    n_components: int,
+    drop_component_index: int | None = None,
+    n_splits: int = 3,
+    n_perm: int = 200,
+    rng: np.random.Generator | None = None,
+) -> dict:
+    """Identical to :func:`time_resolved_content_decoding` -- same per-fold
+    PCA fit (:func:`_fit_pca_fold`), the same held-out projection
+    (:func:`_project_fold`), the same classifier, cross-validation, and
+    label-permutation null -- with one PCA column excluded from the feature
+    set handed to the classifier. ``drop_component_index=None`` reproduces
+    the full k-latent decoding exactly; an integer index (0-based, ordered
+    by descending training-fold variance, so 0 is the leading latent) drops
+    that column, leaving k-1 features. This is the one subtraction the
+    content-link question needs and no existing function exposes: whether
+    removing the state's own leading latent costs content decoding more
+    than removing a comparable one.
+    """
+    from sklearn.model_selection import StratifiedKFold
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.metrics import roc_auc_score
+
+    if rng is None:
+        rng = np.random.default_rng(0)
+
+    N = X.shape[0]
+    labels = np.asarray(labels)
+    all_classes = np.unique(labels)
+    n_t = len(t_idx)
+    skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=int(rng.integers(0, 1_000_000)))
+    keep_cols = [c for c in range(n_components) if c != drop_component_index]
+
+    fold_data = []
+    for tr_idx, te_idx in skf.split(np.zeros(N), labels):
+        mu, V = _fit_pca_fold(X[tr_idx], n_components)
+        Z_tr = _project_fold(X[tr_idx], mu, V)[:, :, keep_cols]
+        Z_te = _project_fold(X[te_idx], mu, V)[:, :, keep_cols]
+        fold_data.append((Z_tr, labels[tr_idx], Z_te, labels[te_idx]))
+
+    def _auc_at(ti: int, data: list) -> float:
+        aucs = []
+        for Z_tr, y_tr, Z_te, y_te in data:
+            if len(np.unique(y_tr)) < 2 or len(np.unique(y_te)) < 2:
+                continue
+            sc = StandardScaler()
+            X_tr_t = sc.fit_transform(Z_tr[:, ti, :])
+            X_te_t = sc.transform(Z_te[:, ti, :])
+            clf = LogisticRegression(C=1.0, solver="lbfgs", max_iter=1000)
+            clf.fit(X_tr_t, y_tr)
+            proba_cols = {c: k for k, c in enumerate(clf.classes_)}
+            proba = clf.predict_proba(X_te_t)
+            class_aucs = []
+            for c in np.unique(y_te):
+                if c not in proba_cols:
+                    continue
+                y_bin = (y_te == c).astype(int)
+                if len(np.unique(y_bin)) < 2:
+                    continue
+                class_aucs.append(roc_auc_score(y_bin, proba[:, proba_cols[c]]))
+            if class_aucs:
+                aucs.append(float(np.mean(class_aucs)))
+        return float(np.mean(aucs)) if aucs else float("nan")
+
+    auc_obs = np.array([_auc_at(i, fold_data) for i in range(n_t)])
+
+    null = np.zeros((n_perm, n_t))
+    for p in range(n_perm):
+        fold_data_p = [(Z_tr, rng.permutation(y_tr), Z_te, rng.permutation(y_te))
+                       for Z_tr, y_tr, Z_te, y_te in fold_data]
+        null[p] = np.array([_auc_at(i, fold_data_p) for i in range(n_t)])
+
+    p_per_t = (null >= auc_obs[None, :]).mean(axis=0)
+
+    return {"auc_per_t": auc_obs, "p_per_t": p_per_t, "t_idx": t_idx, "n_classes": int(len(all_classes)),
+            "n_components": int(n_components), "drop_component_index": drop_component_index,
+            "kept_components": keep_cols}
 
 
 def out_of_fold_class_confidence(
@@ -1576,6 +2145,122 @@ def temporal_stability_tau(
     }
 
 
+def crossnobis_content_matrix(
+    states: NDArray,
+    labels: NDArray,
+    folds: list[tuple[NDArray, NDArray]],
+) -> dict:
+    """Estimate an unbiased cross-temporal Mahalanobis content matrix.
+
+    Condition contrasts from the training and held-out partitions are never
+    multiplied with themselves.  A shrinkage precision matrix is fitted to
+    training residuals only, making the expected distance zero under the null.
+    """
+    from sklearn.covariance import LedoitWolf
+
+    values = np.asarray(states, dtype=float)
+    condition = np.asarray(labels)
+    if values.ndim != 3 or len(condition) != len(values):
+        raise ValueError("states must have shape (trials, time, features)")
+    matrices = []
+    for train_index, test_index in folds:
+        train_labels = condition[train_index]
+        test_labels = condition[test_index]
+        classes = np.intersect1d(np.unique(train_labels), np.unique(test_labels))
+        if len(classes) < 2:
+            continue
+        train_means = {
+            label: np.mean(values[train_index][train_labels == label], axis=0)
+            for label in classes
+        }
+        test_means = {
+            label: np.mean(values[test_index][test_labels == label], axis=0)
+            for label in classes
+        }
+        residuals = np.concatenate([
+            values[train_index][train_labels == label] - train_means[label][None, :, :]
+            for label in classes
+        ], axis=0).reshape(-1, values.shape[2])
+        precision = LedoitWolf().fit(residuals).precision_
+        pair_matrices = []
+        for first_index, first in enumerate(classes):
+            for second in classes[first_index + 1:]:
+                train_contrast = train_means[first] - train_means[second]
+                test_contrast = test_means[first] - test_means[second]
+                pair_matrices.append(train_contrast @ precision @ test_contrast.T)
+        if pair_matrices:
+            matrices.append(np.mean(pair_matrices, axis=0))
+    if not matrices:
+        return {"status": "not_estimable", "reason": "no fold contains two shared classes"}
+    matrix = np.mean(matrices, axis=0)
+    matrix = 0.5 * (matrix + matrix.T)
+    return {
+        "status": "estimable",
+        "matrix": matrix,
+        "n_folds": len(matrices),
+        "mean_diagonal_distance": float(np.mean(np.diag(matrix))),
+        "mean_off_diagonal_distance": float(np.mean(matrix[~np.eye(len(matrix), dtype=bool)])),
+    }
+
+
+def crossnobis_decay_timescale(matrix: NDArray, dt: float) -> dict:
+    """Fit a ratio-scale exponential timescale to a crossnobis matrix."""
+    from scipy.optimize import curve_fit
+
+    values = np.asarray(matrix, dtype=float)
+    if values.ndim != 2 or values.shape[0] != values.shape[1] or len(values) < 4:
+        return {"status": "not_estimable", "reason": "need a square matrix with four time bins"}
+    lag_profile = np.asarray([
+        np.mean(np.diag(values, k=lag)) for lag in range(len(values))
+    ])
+    if not np.all(np.isfinite(lag_profile)) or lag_profile[0] <= 0.0:
+        return {
+            "status": "not_estimable",
+            "reason": "crossnobis diagonal is nonpositive or non-finite",
+            "lag_profile": lag_profile.tolist(),
+        }
+
+    def decay(lag: NDArray, amplitude: float, tau: float, offset: float) -> NDArray:
+        return amplitude * np.exp(-lag / tau) + offset
+
+    lag_seconds = dt * np.arange(len(values))
+    lower_tau = dt / 10.0
+    upper_tau = dt * len(values) * 20.0
+    try:
+        parameters, _ = curve_fit(
+            decay, lag_seconds, lag_profile,
+            p0=(max(lag_profile[0] - lag_profile[-1], 1e-6), max(dt * 3.0, dt), lag_profile[-1]),
+            bounds=([0.0, lower_tau, -np.inf], [np.inf, upper_tau, np.inf]),
+            maxfev=20000,
+        )
+    except Exception as exc:
+        return {"status": "not_estimable", "reason": f"exponential fit failed: {exc}"}
+    fitted = decay(lag_seconds, *parameters)
+    denominator = float(np.sum((lag_profile - np.mean(lag_profile)) ** 2))
+    r_squared = 1.0 - float(np.sum((lag_profile - fitted) ** 2)) / max(denominator, 1e-12)
+    boundary_hit = bool(
+        parameters[1] <= lower_tau * (1.0 + 1e-5)
+        or parameters[1] >= upper_tau * 0.95
+    )
+    estimable = bool(r_squared >= 0.0 and not boundary_hit)
+    reason = None
+    if r_squared < 0.0:
+        reason = "exponential fit is worse than a constant"
+    elif boundary_hit:
+        reason = "timescale reached a declared optimization bound"
+    return {
+        "status": "estimable" if estimable else "not_estimable",
+        "reason": reason,
+        "timescale_seconds": float(parameters[1]),
+        "timescale_bounds_seconds": [float(lower_tau), float(upper_tau)],
+        "timescale_bound_hit": boundary_hit,
+        "amplitude": float(parameters[0]),
+        "offset": float(parameters[2]),
+        "r_squared": r_squared,
+        "lag_profile": lag_profile.tolist(),
+    }
+
+
 def _condition_time_marginals(Z: NDArray, labels: NDArray) -> tuple[NDArray, NDArray, NDArray]:
     """Shared ANOVA-style marginalization used by marginalize_condition_time and
     dpca_condition_subspace_projection: the grand-mean-removed condition-averaged
@@ -1708,6 +2393,51 @@ def dpca_condition_subspace_projection(
     }
 
 
+def phase_scramble_trials(Z: NDArray, rng: np.random.Generator) -> NDArray:
+    """Randomise the Fourier phase of each trial, shared across channels.
+
+    Preserves each channel's amplitude spectrum (hence its autocorrelation
+    structure) while destroying any condition- or time-aligned structure
+    across trials — the standard "could this just be smoothed noise" null.
+
+    Uses ONE random phase perturbation per trial, ADDED to every channel's
+    own phase at each frequency (Prichard & Theiler 1994 multivariate
+    surrogate construction) rather than replacing each channel's phase
+    independently. Because the same perturbation is added to every channel,
+    the phase DIFFERENCE between any two channels at a given frequency — and
+    therefore the instantaneous cross-channel covariance — is left exactly
+    unchanged; only the trial's alignment to task/condition timing is
+    destroyed. Randomising phase independently per channel instead destroys
+    cross-channel covariance along with temporal structure, which makes the
+    resulting null test only "is there any cross-channel structure at all"
+    rather than "is the structure time-aligned" — too weak a null.
+
+    Parameters
+    ----------
+    Z   : (N, T, k) — trajectories (trials x time x channels)
+    rng : random number generator
+
+    Returns
+    -------
+    (N, T, k) phase-scrambled trajectories
+    """
+    N, T, k = Z.shape
+    Z_out = np.empty_like(Z)
+    for n in range(N):
+        n_freq = T // 2 + 1
+        shift = rng.uniform(0, 2 * np.pi, n_freq)  # shared across channels
+        rotor = np.exp(1j * shift)
+        for d in range(k):
+            x = Z[n, :, d]
+            fft = np.fft.rfft(x)
+            fft_scrambled = fft * rotor
+            fft_scrambled[0] = fft[0]  # DC
+            if T % 2 == 0:
+                fft_scrambled[-1] = np.abs(fft[-1])  # Nyquist: must stay real
+            Z_out[n, :, d] = np.fft.irfft(fft_scrambled, n=T)
+    return Z_out
+
+
 def ctg_phase_scramble_null(
     Z: NDArray,
     labels: NDArray,
@@ -1774,25 +2504,9 @@ def ctg_phase_scramble_null(
 
     tau_obs = _compute_tau(Z)
 
-    def _phase_scramble(Z_in, rng):
-        N, T_full, k = Z_in.shape
-        Z_out = np.empty_like(Z_in)
-        for n in range(N):
-            for d in range(k):
-                x = Z_in[n, :, d]
-                fft = np.fft.rfft(x)
-                phases = rng.uniform(0, 2 * np.pi, len(fft))
-                # Preserve DC and Nyquist amplitude; randomise intermediate phases
-                fft_scrambled = np.abs(fft) * np.exp(1j * phases)
-                fft_scrambled[0] = fft[0]           # DC
-                if T_full % 2 == 0:
-                    fft_scrambled[-1] = np.abs(fft[-1])  # Nyquist: must stay real
-                Z_out[n, :, d] = np.fft.irfft(fft_scrambled, n=T_full)
-        return Z_out
-
     tau_null = np.zeros(n_permutations)
     for p in range(n_permutations):
-        Z_scrambled = _phase_scramble(Z, rng)
+        Z_scrambled = phase_scramble_trials(Z, rng)
         tau_null[p] = _compute_tau(Z_scrambled)
         if verbose and (p + 1) % 50 == 0:
             import sys

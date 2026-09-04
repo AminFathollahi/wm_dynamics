@@ -2,12 +2,20 @@
 """DANDI 001187 (Daume/Cheng/Rutishauser lab) single-unit Sternberg WM pipeline.
 
 Same lab/task lineage as 000469 and 000673 (see run_000469_pipeline.py,
-run_000673_pipeline.py) — a different cohort of subjects run through the
-same Sternberg paradigm, with a different NWB schema
-(``intervals/WM_trials``, ``PicIDs_Encoding1``). Kept as a separate stats
-key / result-file prefix; combined with the other two only at the
-meta-analysis level (Stouffer's method for item-identity CTG), never merged
-into one subject pool. Shared numerical pipeline: src/spike_pipeline.py.
+run_000673_pipeline.py), with a different NWB schema (``intervals/WM_trials``,
+``PicIDs_Encoding1``). 000469 is an independent cohort, but 001187 and 000673
+are NOT: direct NWB identity checks (native identifier, trial timestamps,
+accuracy, picture IDs) confirm they share 31 patients across 37 recording
+sessions -- release-specific views of the same patient-sessions, not separate
+subjects (see provenance/dataset_overlap_report.json and
+provenance/canonical_primary_records.json, built by
+scripts/audit_dataset_identity.py). 001187 is the canonical view for those
+sessions; the matching 000673 view is a linked sensitivity analysis, excluded
+from primary pooling to avoid double-counting. Kept as a separate stats key /
+result-file prefix; combined with the others only at the meta-analysis level
+(Stouffer's method for item-identity CTG), which deduplicates the linked
+000673 sessions before combining -- see run_000673_pipeline.py. Shared
+numerical pipeline: src/spike_pipeline.py.
 
 Outputs (per session):
   results/dandi001187_geometry_{key}.npz, results/dandi001187_ctg_{key}.npz,
@@ -27,14 +35,17 @@ from threadpoolctl import threadpool_limits
 warnings.filterwarnings("ignore")
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
+from project_config import data_root, dataset_path, executable, project_path
 
 import h5py
 from spike_pipeline import (load_spike_times, build_psth, fit_pca_psth,
                             load_vs_load_ctg, item_identity_ctg, correct_error_drift,
-                            pr_by_load, low_rate_unit_mask, MIN_SESSION_ACCURACY)
+                            pr_by_load, low_rate_unit_mask, MIN_SESSION_ACCURACY,
+                            FrozenPSTHTransform)
 from statistics import linear_mixed_effects_test, fdr_bh, stouffer_combine, stable_seed
+from provenance import _json_safe
 
-DATA_DIR = Path("/media/amin/EXTERNAL_USB/SMAF/Research/Representation/Working Memory/data/001187")
+DATA_DIR = dataset_path("dandi_001187")
 RESULTS = ROOT / "results"
 N_PC = 8
 BIN_MS = 100
@@ -92,9 +103,7 @@ def _process_session(fp: str):
 
         times = np.arange(BIN_MS / 2, MAINT_WIN * 1000, BIN_MS) / 1000.0
         psth = build_psth(spike_lists, t_maint, bin_ms=BIN_MS, smooth_ms=SMOOTH_MS, window_s=MAINT_WIN)
-        mu = psth.mean(axis=0, keepdims=True)
-        sd = psth.std(axis=0, keepdims=True) + 1e-8
-        psth_z = (psth - mu) / sd
+        psth_z = FrozenPSTHTransform().fit_transform(psth)
         Z, V, var_ratio = fit_pca_psth(psth_z, n_comp=N_PC)
 
         pr_per_load = pr_by_load(psth_z, loads, rng=np.random.default_rng(0))
@@ -166,7 +175,7 @@ def main():
         pooled_key.extend([key] * len(drift))
 
     with open(RESULTS / "dandi001187_summary.json", "w") as f:
-        json.dump(summary, f, indent=2)
+        json.dump(_json_safe(summary), f, indent=2, allow_nan=False)
 
     p_vals = np.array([v["p_offdiag_vs_chance"] for v in summary.values()
                         if np.isfinite(v["p_offdiag_vs_chance"])])
@@ -204,7 +213,7 @@ def main():
               f"Stouffer's method): z={pooled['z_combined']:.3f}, p={pooled['p_combined']:.4e}")
 
     with open(stats_path, "w") as f:
-        json.dump(stats, f, indent=2)
+        json.dump(_json_safe(stats), f, indent=2, allow_nan=False)
     print("\nSaved results/dandi001187_summary.json, updated all_statistics.json")
 
 

@@ -1,7 +1,7 @@
 """Self-check for scripts/run_rl_policy_arm.py's policy-gradient direction
 search: on a synthetic unstable 2D plant with a KNOWN dominant eigenvector,
-the learned steering direction should align with it (cos > 0.8) -- per
-comments.txt 5A. This is the one required check; the Boran integration
+the learned steering direction should align with it (cos > 0.8), the
+standing acceptance criterion for this arm. This is the one required check; the Boran integration
 (run_rl_arm_on_boran) needs real TES1/geometry data and is exercised by
 actually running the script, not unit-tested here.
 """

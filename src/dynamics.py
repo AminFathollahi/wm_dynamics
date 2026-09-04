@@ -25,10 +25,18 @@ from numpy.typing import NDArray
 # ── Trajectory tangling ─────────────────────────────────────────────────────────
 
 def velocity_field(Z: NDArray, dt: float = 1.0) -> NDArray:
-    """Central finite-difference velocity estimate of a trajectory.
+    """Finite-difference velocity estimate of a trajectory.
 
-    Ż[t] ≈ (Z[t+1] - Z[t-1]) / (2Δt),   for 1 ≤ t ≤ T-2
-    Endpoints are set to zero.
+    Ż[t] ≈ (Z[t+1] - Z[t-1]) / (2Δt),   for 1 ≤ t ≤ T-2   (central difference)
+
+    The two boundary samples have no symmetric neighbourhood, so they use
+    one-sided differences instead of being left at zero -- a zero-velocity
+    boundary is a fabricated data point, not a measurement, and every
+    downstream consumer of this function (trajectory_tangling's max over
+    t', local Jacobian regressions, etc.) would otherwise treat "the
+    trajectory doesn't move at the boundary" as if it were observed:
+      Ż[0]  ≈ (Z[1] - Z[0]) / Δt
+      Ż[-1] ≈ (Z[-1] - Z[-2]) / Δt
 
     Parameters
     ----------
@@ -40,12 +48,20 @@ def velocity_field(Z: NDArray, dt: float = 1.0) -> NDArray:
     Zdot : (T, d)
     """
     Zdot = np.zeros_like(Z)
+    T = Z.shape[0]
+    if T < 2:
+        return Zdot
     Zdot[1:-1] = (Z[2:] - Z[:-2]) / (2.0 * dt)
+    Zdot[0] = (Z[1] - Z[0]) / dt
+    Zdot[-1] = (Z[-1] - Z[-2]) / dt
     return Zdot
 
 
 def trajectory_tangling(
-    Z: NDArray, epsilon: float = 1e-3, dt: float = 1.0
+    Z: NDArray,
+    epsilon: float = 1e-3,
+    dt: float = 1.0,
+    rng: np.random.Generator | None = None,
 ) -> NDArray:
     """Trajectory tangling metric Q(t) from Russo et al. 2018.
 
@@ -56,15 +72,32 @@ def trajectory_tangling(
     has low Q throughout a movement cycle (untangled flow field), enabling
     noise-robust execution.
 
+    Candidate comparison points t' are drawn only from this single
+    trajectory. Russo et al.'s original quantity pools comparison points
+    across trials, conditions and time; this within-trial version is a
+    narrower (and generally higher-variance) estimate. Use `trial_tangling`
+    to get Q(t) per trial and pool across the returned (N, T) array at the
+    call site if a cross-trial/condition comparison set is required.
+
     Parameters
     ----------
     Z       : (T, d)
-    epsilon : regularizer; prevents blow-up when states coincide (1e-3 ≈ 0.1% of typical ‖Z‖²)
+    epsilon : denominator regularizer expressed as a FRACTION of this
+        trajectory's own typical squared state-space separation (the
+        median pairwise ‖Z(t) - Z(t')‖² over the comparison set), not an
+        absolute value -- so it stays a small, scale-appropriate guard
+        against near-coincident states regardless of the units/magnitude
+        Z happens to be in.
     dt      : time step (affects Ż magnitude but not Q ordering)
+    rng     : only used to subsample state pairs for the denominator scale
+        estimate when T > 2000 (exact for T <= 2000); irrelevant otherwise.
 
     Returns
     -------
-    Q : (T,) — tangling at each time step (0 at endpoints)
+    Q : (T,) — tangling at each time step (0 at the two trajectory
+        endpoints: a boundary sample is still used as a candidate t' for
+        every other t, but is not itself scored, since it has no two-sided
+        neighbourhood in time)
     """
     T = Z.shape[0]
     Zdot = velocity_field(Z, dt)
@@ -77,15 +110,25 @@ def trajectory_tangling(
         dstate = Z[:, None, :] - Z[None, :, :]        # (T, T, d)
         dvel   = Zdot[:, None, :] - Zdot[None, :, :]  # (T, T, d)
         num = (dvel**2).sum(axis=2)                    # (T, T)
-        den = (dstate**2).sum(axis=2) + epsilon        # (T, T)
+        dstate_sq = (dstate**2).sum(axis=2)             # (T, T)
+        nonzero = dstate_sq[dstate_sq > 0]
+        scale = float(np.median(nonzero)) if nonzero.size else 1.0
+        den = dstate_sq + epsilon * scale
         ratio = num / den                               # (T, T)
         Q[1:-1] = ratio[1:-1].max(axis=1)
     else:
+        if rng is None:
+            rng = np.random.default_rng(0)
+        sample_idx = rng.integers(0, T, size=(min(4000, T * 10), 2))
+        d_sample = ((Z[sample_idx[:, 0]] - Z[sample_idx[:, 1]]) ** 2).sum(axis=1)
+        d_sample = d_sample[d_sample > 0]
+        scale = float(np.median(d_sample)) if d_sample.size else 1.0
+        eps_eff = epsilon * scale
         for t in range(1, T - 1):
             dstate = Z - Z[t]
             dvel   = Zdot - Zdot[t]
             num = (dvel**2).sum(axis=1)
-            den = (dstate**2).sum(axis=1) + epsilon
+            den = (dstate**2).sum(axis=1) + eps_eff
             Q[t] = (num / den).max()
 
     return Q
@@ -201,7 +244,7 @@ def exact_dmd(
 
 def trial_dmd(
     Z: NDArray,
-    r: int = 6,
+    r: int,
     dt: float = 1.0,
 ) -> dict:
     """Apply exact DMD to a single trial latent trajectory.
@@ -236,15 +279,31 @@ def _dmd_from_pairs(X1: NDArray, X2: NDArray, r: int) -> tuple[NDArray, NDArray]
     return A, lam
 
 
+def _dmd_rank_cap(r: int, d: int, n_trials: int, n_timepoints: int) -> int:
+    """Largest DMD truncation rank identifiable from `n_trials` trials of
+    `n_timepoints` samples each (one snapshot pair per consecutive sample
+    within a trial), capped at the requested rank `r` and the ambient
+    dimensionality `d`.
+
+    Must be computed from whichever trial count will actually be fit --
+    e.g. a cross-validation fold's training trials only -- not a larger
+    pool the fit never sees. A rank cap derived from more trials than are
+    actually available to a given fit can hand that fit a rank its own
+    snapshot pairs cannot identify.
+    """
+    n_pairs = n_trials * (n_timepoints - 1)
+    return max(1, min(r, d, n_pairs - 1))
+
+
 def ensemble_dmd(
     Z_trials: NDArray,
-    r: int = 6,
+    r: int,
     dt: float = 1.0,
     n_splits: int = 5,
     n_null: int = 50,
     rng: np.random.Generator | None = None,
 ) -> dict:
-    """DMD fit on pooled single-trial transition pairs, with CV and a null.
+    """Affine DMD fit on pooled single-trial transition pairs, with CV and a null.
 
     Fitting DMD to a trial-averaged mean trajectory at rank r hits near-perfect
     R² by construction (an r×r operator fit to one smooth curve) and is
@@ -252,91 +311,138 @@ def ensemble_dmd(
     trajectories with trial-to-trial timing jitter makes the *mean* contract
     even when individual trials don't. This function instead stacks every
     trial's (x_t → x_{t+1}) pairs into one snapshot-pair regression, fits a
-    single operator A on the ensemble, and validates it out-of-sample.
+    single operator on the ensemble, and validates it out-of-sample.
 
-    Cross-validation: A is fit on a subset of trials and scored (one-step R²)
-    on held-out trials — unlike the trivial in-sample R² of the mean-trajectory
-    fit, this can genuinely fail if the linear approximation doesn't
-    generalise across trials.
+    The fit is affine, x(t+1) ≈ A x(t) + c, not purely linear: X1/X2 are
+    mean-centered before the SVD-based DMD step, and c is recovered as
+    mean(X2) - A @ mean(X1). Without an explicit offset, a genuine nonzero
+    equilibrium point has nowhere to go except into A itself, which distorts
+    A's eigenstructure (e.g. inflates |λ| to sustain a fixed point that a
+    linear-only map can only hold at λ = 1).
 
-    Null: each trial is independently circularly time-shifted before pairing,
-    destroying true (x_t, x_{t+1}) correspondence while preserving each
-    trial's marginal statistics and autocorrelation structure; an operator
-    fit to this scrambled ensemble should show near-chance one-step R².
+    Cross-validation: A, c are fit on a subset of trials and scored
+    (one-step R²) on held-out trials — unlike the trivial in-sample R² of
+    the mean-trajectory fit, this can genuinely fail if the linear
+    approximation doesn't generalise across trials. The truncation rank is
+    recomputed from each fold's OWN training-trial count via
+    `_dmd_rank_cap`, not the full ensemble's: a fold with fewer trials can
+    only support a lower rank than the full set does, even in the common
+    case where the full set's rank cap is unconstrained.
+
+    Null: for each of `n_null` resamples, every trial's successor
+    snapshots X(t+1) are reassigned to a DIFFERENT trial by a circular
+    shift of trial identity (trial i's X(t) is paired with trial
+    (i + shift) mod N's X(t+1), shift != 0 mod N). This destroys genuine
+    one-step transition structure outright, since X(t) and its paired
+    "X(t+1)" now come from two independent trials, while leaving every
+    trial's own within-trial dynamics and the overall X1/X2 marginal
+    distributions untouched. A same-trial circular shift of TIME (rolling
+    one trial's own trajectory before pairing) does not have this
+    property: consecutive samples of a rolled single-trial trajectory are
+    still genuine adjacent transitions of that trial almost everywhere
+    (only the wrap-around seam is broken), so an operator fit to it
+    recovers nearly the same dynamics as the real fit and is not a valid
+    null. The null is scored with the identical trial-wise CV protocol
+    (same fold splitting logic, same per-fold rank cap, same out-of-sample
+    `_r2` evaluation) used for `r2_cv`, so `r2_null` is directly comparable
+    to it rather than an in-sample number being compared against an
+    out-of-sample one.
 
     Parameters
     ----------
     Z_trials : (N, T, d) — single-trial latent trajectories
-    r        : DMD truncation rank
+    r        : requested DMD truncation rank (upper bound; see `_dmd_rank_cap`)
     dt       : time step (s)
     n_splits : number of trial-wise CV folds
-    n_null   : number of circular-shift null resamples
+    n_null   : number of trial-identity-shift null resamples
     rng      : random number generator
 
     Returns
     -------
     dict:
-      A            : (d, d) — operator fit on the full trial ensemble
-      eigenvalues  : (r,) complex
-      div_scalar   : float — Σ log|λᵢ| / dt (true continuous-time divergence)
-      r2_insample  : float — one-step R² on the trials A was fit on
-      r2_cv        : float — mean out-of-sample one-step R² across folds
-      r2_cv_std    : float
-      r2_null      : float — mean one-step R² under the circular-shift null
-      r2_null_std  : float
-      n_trials     : int — trials contributing snapshot pairs
+      A               : (d, d) — operator fit on the full trial ensemble
+      equilibrium     : (d,) — fixed-point offset c for the full-ensemble fit
+      eigenvalues     : (r,) complex
+      div_scalar      : float — Σ log|λᵢ| / dt (true continuous-time divergence)
+      r2_insample     : float — one-step R² on the trials A was fit on
+      r2_cv           : float — mean out-of-sample one-step R² across folds
+      r2_cv_std       : float
+      r2_null         : float — mean out-of-sample one-step R² under the
+                        trial-identity-shift null, same CV protocol as r2_cv
+      r2_null_std     : float
+      r_used          : int — truncation rank used for the full-ensemble fit
+      r_used_per_fold : list[int] — truncation rank used in each real-data
+                        CV fold (can differ fold-to-fold; see `_dmd_rank_cap`)
+      n_trials        : int — trials contributing snapshot pairs
     """
     if rng is None:
         rng = np.random.default_rng(0)
 
     N, T, d = Z_trials.shape
-    r_use = min(r, d, N * (T - 1) - 1)
 
-    def _pairs(Z_sub: NDArray) -> tuple[NDArray, NDArray]:
-        X1 = Z_sub[:, :-1, :].reshape(-1, d).T  # (d, n*(T-1))
-        X2 = Z_sub[:, 1:, :].reshape(-1, d).T
+    def _pairs(idx: NDArray, x2_trial_offset: int = 0) -> tuple[NDArray, NDArray]:
+        """X1 from trials `idx`; X2 from trials `idx` shifted circularly by
+        `x2_trial_offset` trial positions (0 = genuine same-trial pairing,
+        used for the null to break x(t) -> x(t+1) correspondence)."""
+        X1 = Z_trials[idx, :-1, :].reshape(-1, d).T
+        idx2 = (idx + x2_trial_offset) % N if x2_trial_offset else idx
+        X2 = Z_trials[idx2, 1:, :].reshape(-1, d).T
         return X1, X2
 
-    def _r2(A: NDArray, X1: NDArray, X2: NDArray) -> float:
-        pred = A @ X1
+    def _fit_affine(X1: NDArray, X2: NDArray, rank: int) -> tuple[NDArray, NDArray, NDArray]:
+        x1_mean = X1.mean(axis=1, keepdims=True)
+        x2_mean = X2.mean(axis=1, keepdims=True)
+        A, lam = _dmd_from_pairs(X1 - x1_mean, X2 - x2_mean, rank)
+        c = (x2_mean - A @ x1_mean).ravel()
+        return A, c, lam
+
+    def _r2(A: NDArray, c: NDArray, X1: NDArray, X2: NDArray) -> float:
+        pred = A @ X1 + c[:, None]
         ss_res = np.sum((X2 - pred) ** 2)
         ss_tot = np.sum((X2 - X2.mean(axis=1, keepdims=True)) ** 2)
         return float(1.0 - ss_res / (ss_tot + 1e-10))
 
-    X1_all, X2_all = _pairs(Z_trials)
-    A_all, lam_all = _dmd_from_pairs(X1_all, X2_all, r_use)
-    div_scalar = float(np.sum(np.log(np.abs(lam_all) + 1e-300))) / dt
-    r2_insample = _r2(A_all, X1_all, X2_all)
+    def _cv(x2_trial_offset: int, rng_local: np.random.Generator) -> tuple[list[float], list[int]]:
+        idx_all = rng_local.permutation(N)
+        folds = np.array_split(idx_all, min(n_splits, N))
+        scores: list[float] = []
+        ranks: list[int] = []
+        for k in range(len(folds)):
+            te = folds[k]
+            tr = np.concatenate([folds[j] for j in range(len(folds)) if j != k])
+            if len(tr) < 2 or len(te) < 1:
+                continue
+            X1_tr, X2_tr = _pairs(tr, x2_trial_offset)
+            X1_te, X2_te = _pairs(te, x2_trial_offset)
+            rank_tr = _dmd_rank_cap(r, d, len(tr), T)
+            A_tr, c_tr, _ = _fit_affine(X1_tr, X2_tr, rank_tr)
+            scores.append(_r2(A_tr, c_tr, X1_te, X2_te))
+            ranks.append(rank_tr)
+        return scores, ranks
 
-    trial_idx = rng.permutation(N)
-    folds = np.array_split(trial_idx, min(n_splits, N))
-    r2_cv_list = []
-    for k in range(len(folds)):
-        te = folds[k]
-        tr = np.concatenate([folds[j] for j in range(len(folds)) if j != k])
-        if len(tr) < 2 or len(te) < 1:
-            continue
-        X1_tr, X2_tr = _pairs(Z_trials[tr])
-        X1_te, X2_te = _pairs(Z_trials[te])
-        A_tr, _ = _dmd_from_pairs(X1_tr, X2_tr, r_use)
-        r2_cv_list.append(_r2(A_tr, X1_te, X2_te))
+    r_used = _dmd_rank_cap(r, d, N, T)
+    X1_all, X2_all = _pairs(np.arange(N))
+    A_all, c_all, lam_all = _fit_affine(X1_all, X2_all, r_used)
+    div_scalar = float(np.sum(np.log(np.abs(lam_all) + 1e-300))) / dt
+    r2_insample = _r2(A_all, c_all, X1_all, X2_all)
+
+    r2_cv_list, r_used_per_fold = _cv(0, rng)
     r2_cv = float(np.mean(r2_cv_list)) if r2_cv_list else float("nan")
     r2_cv_std = float(np.std(r2_cv_list)) if r2_cv_list else float("nan")
 
     r2_null_list = []
-    for _ in range(n_null):
-        Z_shift = np.empty_like(Z_trials)
-        for i in range(N):
-            shift = int(rng.integers(1, max(T - 1, 2)))
-            Z_shift[i] = np.roll(Z_trials[i], shift, axis=0)
-        X1_s, X2_s = _pairs(Z_shift)
-        A_s, _ = _dmd_from_pairs(X1_s, X2_s, r_use)
-        r2_null_list.append(_r2(A_s, X1_s, X2_s))
-    r2_null = float(np.mean(r2_null_list))
-    r2_null_std = float(np.std(r2_null_list))
+    if N >= 2:
+        for _ in range(n_null):
+            shift = int(rng.integers(1, N))
+            null_scores, _ = _cv(shift, rng)
+            if null_scores:
+                r2_null_list.append(float(np.mean(null_scores)))
+    r2_null = float(np.mean(r2_null_list)) if r2_null_list else float("nan")
+    r2_null_std = float(np.std(r2_null_list)) if r2_null_list else float("nan")
 
     return {
         "A": A_all,
+        "equilibrium": c_all,
         "eigenvalues": lam_all,
         "div_scalar": div_scalar,
         "r2_insample": r2_insample,
@@ -344,6 +450,8 @@ def ensemble_dmd(
         "r2_cv_std": r2_cv_std,
         "r2_null": r2_null,
         "r2_null_std": r2_null_std,
+        "r_used": int(r_used),
+        "r_used_per_fold": [int(x) for x in r_used_per_fold],
         "n_trials": int(N),
     }
 
@@ -362,7 +470,7 @@ def divergence_rank_sweep(
     transition matrix and is numerically sensitive to small eigenvalues; a
     divergence-based contrast (e.g. single-trial vs trial-mean, or condition A
     vs condition B) is only trustworthy if it survives truncation away from
-    that edge case (Round-4 audit item 1b/9).
+    that edge case.
 
     Parameters
     ----------
@@ -465,7 +573,7 @@ def maintenance_eigenspectra(
     conditions   : {condition_name: (N,) boolean trial mask} — caller-defined
         (e.g. Miller's 0/2-back x target/non-target, Boran's set-size levels,
         Rutishauser's load levels); this function makes no assumption about
-        the task's condition scheme (Round-4 audit item 1d).
+        the task's condition scheme.
     maint_window : (t0, t1) window (in `times` units) each trial is cropped to
 
     Returns
@@ -572,7 +680,7 @@ def ring_attractor_phase(
 
 def dmd_reconstruction_error(
     Z: NDArray,
-    r: int = 6,
+    r: int,
     dt: float = 1.0,
 ) -> dict:
     """Validate DMD linearity assumption via one-step-ahead reconstruction error.
@@ -625,7 +733,7 @@ def dmd_reconstruction_error(
 
 def koopman_edmd(
     Z: NDArray,
-    r: int = 6,
+    r: int,
     dt: float = 1.0,
     poly_degree: int = 2,
     delay_embeddings: int = 3,
@@ -823,10 +931,10 @@ def sindy_neural_dynamics(
 
 def flow_divergence(
     Z: NDArray,
+    r: int | None = None,
     dt: float = 1.0,
     method: str = "dmd",
     n_neighbors: int = 20,
-    r: int = 6,
 ) -> dict:
     """Divergence of the neural flow field ∇·v(x, t).
 
@@ -874,6 +982,8 @@ def flow_divergence(
     Zdot = velocity_field(Z, dt)
 
     if method == "dmd":
+        if r is None:
+            raise ValueError("flow_divergence(method='dmd') requires an explicit rank r")
         res = dmd_reconstruction_error(Z, r=r, dt=dt)
         A = res["A"]
         eigs_A = np.linalg.eigvals(A)
@@ -1112,3 +1222,234 @@ def simulate_input_response(
     for t in range(T):
         Z_sim[t + 1] = A @ Z_sim[t] + B @ U[t]
     return Z_sim
+
+
+# ── Discrete-regime one-step dynamics (minimal switching-AR alternative) ───────
+
+def switching_ar_em(
+    X1: NDArray,
+    X2: NDArray,
+    n_states: int = 2,
+    n_iter: int = 30,
+    rng: np.random.Generator | None = None,
+    ridge: float = 1e-3,
+) -> dict:
+    """Fit a discrete-regime one-step map x(t+1) = A_k x(t) + b_k via hard-
+    assignment EM -- a minimal, dependency-free stand-in for a full recurrent
+    switching linear dynamical system (rSLDS).
+
+    Simplification, stated explicitly: states are assigned per snapshot pair
+    independently (no state-persistence/transition model, unlike a true
+    rSLDS's hidden Markov chain over states). This answers a narrower,
+    cheaper question -- do TWO linear regimes fit one-step transitions
+    better than a single rotational operator -- without the cost of a full
+    HMM-based package. n_states=1 recovers an ordinary single-regime linear
+    fit, which is used as the matched null model for comparison.
+
+    Parameters
+    ----------
+    X1, X2   : (n, d) — x(t) and x(t+1) snapshot pairs
+    n_states : number of discrete regimes
+    n_iter   : hard-EM iterations (converges early if assignments stabilise)
+    rng      : random number generator (state initialisation)
+    ridge    : L2 penalty for the per-state regression
+
+    Returns
+    -------
+    dict: A (n_states, d, d), b (n_states, d), sigma2 (n_states,),
+          assignments (n,), log_likelihood (in-sample total), n_params
+    """
+    if rng is None:
+        rng = np.random.default_rng(0)
+    n, d = X1.shape
+    assign = rng.integers(0, n_states, n)
+    A = np.zeros((n_states, d, d))
+    b = np.zeros((n_states, d))
+    sigma2 = np.ones(n_states)
+    loglik_k = np.zeros((n, n_states))
+
+    for _ in range(n_iter):
+        for k in range(n_states):
+            mask = assign == k
+            if mask.sum() < d + 1:
+                A[k], b[k], sigma2[k] = np.eye(d), np.zeros(d), 1.0
+                continue
+            Xa = np.column_stack([X1[mask], np.ones(int(mask.sum()))])
+            beta = np.linalg.solve(Xa.T @ Xa + ridge * np.eye(d + 1), Xa.T @ X2[mask])
+            A[k], b[k] = beta[:d].T, beta[d]
+            resid = X2[mask] - (X1[mask] @ A[k].T + b[k])
+            sigma2[k] = float(np.mean(np.sum(resid**2, axis=1))) / d + 1e-8
+
+        for k in range(n_states):
+            resid = X2 - (X1 @ A[k].T + b[k])
+            sq = np.sum(resid**2, axis=1)
+            loglik_k[:, k] = -0.5 * sq / sigma2[k] - 0.5 * d * np.log(2 * np.pi * sigma2[k])
+        new_assign = np.argmax(loglik_k, axis=1)
+        if np.array_equal(new_assign, assign):
+            break
+        assign = new_assign
+
+    total_loglik = float(np.sum(loglik_k[np.arange(n), assign]))
+    return {"A": A, "b": b, "sigma2": sigma2, "assignments": assign,
+            "log_likelihood": total_loglik, "n_params": int(n_states * (d * d + d + 1))}
+
+
+def fit_band_matched_omega(
+    data: NDArray,
+    srate: float,
+    lo: float,
+    hi: float,
+    rng: np.random.Generator,
+    downsample_hz: float = 50.0,
+    n_pc: int = 8,
+    dmd_rank: int = 8,
+    n_bootstrap: int = 200,
+    r2_margin: float = 0.02,
+) -> dict:
+    """Band-matched rotation frequency from multi-trial, multi-channel data:
+    bandpass -> downsample -> PCA -> ensemble DMD. A within-band oscillation
+    traces a rotating trajectory in PCA space whose leading eigenvalue's
+    imaginary part is the oscillation frequency.
+
+    An identifiability check accompanies the point estimate rather than
+    trusting it outright: the fitted operator's held-out one-step R^2 must
+    exceed its own circular-shift null by r2_margin, on top of a trial-level
+    bootstrap CI excluding zero and a Nyquist check. This matters most for
+    SPONTANEOUS (non-task-locked) oscillations, where each trial has an
+    independent, effectively random phase -- pooling many phase-incoherent
+    trials into one shared linear operator is a materially harder regime
+    than the task-locked dynamics this estimator is usually validated on,
+    and this check is what catches it if the pooled fit cannot recover
+    genuine structure beyond chance.
+
+    Parameters
+    ----------
+    data : (N, C, T) -- N trials, C channels, T samples at srate
+    srate: native sampling rate (Hz)
+    lo, hi: target passband (Hz)
+    rng  : random number generator
+
+    Returns
+    -------
+    dict: f_hz, f_ci, dt, n_trials, n_pc, r_used, r2_cv, r2_null, beats_null,
+          nyquist_hz, aliasing_limited, identifiable
+    """
+    from preprocessing import bandpass_filter
+    from geometry import pca_decompose
+
+    N, C, T = data.shape
+    filtered = np.stack([bandpass_filter(trial.T, lo, hi, srate) for trial in data])  # (N, T, C)
+    factor = max(1, int(srate // downsample_hz))
+    ds = filtered[:, ::factor, :]
+    dt = factor / srate
+    N, T_ds, C = ds.shape
+
+    X_pool = ds.reshape(-1, C)
+    scores, components, _ = pca_decompose(X_pool, min(n_pc, C))
+    k = components.shape[1]
+    Z = scores.reshape(N, T_ds, k)
+    r_use = min(dmd_rank, k, N * (T_ds - 1) - 1)
+
+    def _fit(Z_in, rng_in):
+        ens = ensemble_dmd(Z_in, r=r_use, dt=dt, n_splits=5, n_null=30, rng=rng_in)
+        lam = ens["eigenvalues"]
+        dominant = lam[np.argmax(np.abs(lam))]
+        omega_c = np.log(dominant + 1e-300) / dt
+        f_hz = float(np.abs(omega_c.imag) / (2 * np.pi))
+        return f_hz, ens["r2_cv"], ens["r2_null"]
+
+    f_obs, r2_cv, r2_null = _fit(Z, rng)
+    boots = np.empty(n_bootstrap)
+    for b in range(n_bootstrap):
+        idx = rng.integers(0, N, N)
+        boots[b], _, _ = _fit(Z[idx], rng)
+    ci_lo, ci_hi = float(np.percentile(boots, 2.5)), float(np.percentile(boots, 97.5))
+    nyq_hz = 1.0 / (2.0 * dt)
+    aliasing_limited = bool(abs(f_obs) > 0.8 * nyq_hz)
+    beats_null = bool((r2_cv - r2_null) > r2_margin)
+    return {
+        "f_hz": f_obs, "f_ci": [ci_lo, ci_hi], "dt": dt, "n_trials": int(N),
+        "n_pc": int(k), "r_used": int(r_use), "r2_cv": r2_cv, "r2_null": r2_null,
+        "beats_null": beats_null, "nyquist_hz": nyq_hz, "aliasing_limited": aliasing_limited,
+        "identifiable": bool(ci_lo > 0.0 and not aliasing_limited and beats_null),
+    }
+
+
+def fit_retention_dynamics(
+    trials: NDArray,
+    srate: float,
+    k: int,
+    rng: np.random.Generator,
+    downsample_hz: float = 50.0,
+    n_splits: int = 5,
+    n_null: int = 30,
+    r2_margin: float = 0.02,
+) -> dict:
+    """Ensemble-DMD fit (this project's primary dynamics estimator) on
+    BROADBAND retention-period trials -- the causal-stimulation-dataset
+    counterpart of fit_band_matched_omega, without that function's bandpass
+    step: a stimulation-response test asks whether the DATA's own identified
+    dynamics (whatever mode the fit actually finds) are what stimulation
+    perturbs, not whether a band chosen in advance shows an effect.
+
+    Downsampled to `downsample_hz` before PCA/DMD, same convention as
+    fit_band_matched_omega, so a DMD time step reflects a physiologically
+    meaningful timescale rather than sample-to-sample autocorrelation.
+
+    Parameters
+    ----------
+    trials : (N, C, T) -- N trials, C channels, T samples at srate
+    srate  : native sampling rate (Hz)
+    k      : PCA latent dimensionality (from select_latent_dim)
+    rng    : random number generator
+
+    Returns
+    -------
+    dict: A, components (C, k), mean (C,), v_star, rho, theta, classification,
+          v_stable, r2_cv, r2_null, identifiable, dt, r_used, n_trials
+    """
+    from geometry import pca_decompose
+    from control import canonicalize_eigenvector_phase, dominant_eigenmode
+
+    N, C, T = trials.shape
+    factor = max(1, int(round(srate / downsample_hz)))
+    ds = trials[:, :, ::factor]
+    dt = factor / srate
+    T_ds = ds.shape[2]
+
+    pooled = ds.transpose(0, 2, 1).reshape(-1, C)
+    scores, components, _ = pca_decompose(pooled, k)
+    Z = scores.reshape(N, T_ds, components.shape[1])
+    r_use = min(components.shape[1], N * (T_ds - 1) - 1)
+    ens = ensemble_dmd(Z, r=r_use, dt=dt, n_splits=n_splits, n_null=n_null, rng=rng)
+
+    A = ens["A"]
+    mode = dominant_eigenmode(A)
+    eigs, vecs = np.linalg.eig(A)
+    v_stable = canonicalize_eigenvector_phase(vecs[:, int(np.argmin(np.abs(eigs)))])
+    identifiable = bool((ens["r2_cv"] - ens["r2_null"]) > r2_margin)
+    return {
+        "A": A, "components": components, "mean": pooled.mean(axis=0),
+        "v_star": mode.v_star,
+        # "max_real_eig" is a legacy key kept for existing callers; it has
+        # always held the spectral modulus rho = |lambda|, never Re(lambda).
+        "max_real_eig": mode.rho,
+        "rho": mode.rho, "theta": mode.theta, "classification": mode.classification,
+        "v_stable": v_stable,
+        "r2_cv": ens["r2_cv"], "r2_null": ens["r2_null"], "identifiable": identifiable,
+        "dt": dt, "r_used": int(r_use), "n_trials": int(N),
+    }
+
+
+def switching_ar_score(params: dict, X1: NDArray, X2: NDArray) -> float:
+    """Held-out log-likelihood of switching_ar_em's fitted params on new
+    (x(t), x(t+1)) pairs: each point is hard-assigned to whichever fitted
+    state has the higher likelihood, then scored under that state."""
+    n, d = X1.shape
+    n_states = params["A"].shape[0]
+    loglik_k = np.empty((n, n_states))
+    for k in range(n_states):
+        resid = X2 - (X1 @ params["A"][k].T + params["b"][k])
+        sq = np.sum(resid**2, axis=1)
+        loglik_k[:, k] = -0.5 * sq / params["sigma2"][k] - 0.5 * d * np.log(2 * np.pi * params["sigma2"][k])
+    return float(np.sum(np.max(loglik_k, axis=1)))

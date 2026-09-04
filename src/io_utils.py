@@ -13,9 +13,13 @@ from __future__ import annotations
 
 import fcntl
 import json
+import sys
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from provenance import _json_safe  # noqa: E402
 
 
 @contextmanager
@@ -28,6 +32,10 @@ def locked_json_update(path: str | Path) -> Iterator[dict]:
 
         with locked_json_update(RESULTS / "all_statistics.json") as stats:
             stats["my_analysis_key"] = result
+
+    Non-finite floats (NaN, +-Infinity) are written as null: strict JSON has
+    no token for them, and a value that failed to invalid-JSON its way past
+    every parser is worse than a null a reader has to handle.
     """
     path = Path(path)
     lock_path = path.with_suffix(path.suffix + ".lock")
@@ -41,6 +49,6 @@ def locked_json_update(path: str | Path) -> Iterator[dict]:
                 data = {}
             yield data
             with open(path, "w") as f:
-                json.dump(data, f, indent=2)
+                json.dump(_json_safe(data), f, indent=2, allow_nan=False)
         finally:
             fcntl.flock(lock_file, fcntl.LOCK_UN)

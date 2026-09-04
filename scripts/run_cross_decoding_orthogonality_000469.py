@@ -22,6 +22,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from geometry import cross_decoding_leakage_test
 from statistics import stable_seed, stouffer_combine
+from provenance import _json_safe
 
 RESULTS = ROOT / "results"
 N_PERM = 2000
@@ -86,13 +87,13 @@ def main():
 
     out = {"per_subject": per_subject, "pooled": pooled}
     with open(RESULTS / "cross_decoding_orthogonality_000469.json", "w") as f:
-        json.dump(out, f, indent=2)
+        json.dump(_json_safe(out), f, indent=2, allow_nan=False)
 
     with open(RESULTS / "all_statistics.json") as f:
         stats = json.load(f)
     stats["cross_decoding_orthogonality_000469"] = out
     with open(RESULTS / "all_statistics.json", "w") as f:
-        json.dump(stats, f, indent=2)
+        json.dump(_json_safe(stats), f, indent=2, allow_nan=False)
     print("\nSaved results/cross_decoding_orthogonality_000469.json, updated all_statistics.json")
 
 

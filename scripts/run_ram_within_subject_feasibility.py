@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Round-11 PART 20A feasibility gate: does ds005489 have >=~8 subjects with
+"""Feasibility gate: does ds005489 have >=~8 subjects with
 >=2 DISTINCT stim SITES (different anode_label/cathode_label pairs across
 their sessions)? A within-subject alignment-vs-effect test needs across-site
 variation WITHIN a subject; >=2 sessions at the SAME site only adds
@@ -24,10 +24,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
 RESULTS = ROOT / "results"
-DATA = Path(
-    "/media/amin/EXTERNAL_USB/SMAF/Research/Representation/Working Memory"
-    "/data/ds005489-download"
-)
+DATA = dataset_path("ram_ds005489_openloop")
 MIN_MULTISITE_SUBJECTS = 8
 
 

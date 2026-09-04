@@ -32,13 +32,17 @@ from threadpoolctl import threadpool_limits
 warnings.filterwarnings("ignore")
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
+from project_config import data_root, dataset_path, executable, project_path
 
 import h5py
 from spike_pipeline import (load_spike_times, build_psth, fit_pca_psth,
-                            load_vs_load_ctg, correct_error_drift, pr_by_load)
+                            load_vs_load_ctg, correct_error_drift, pr_by_load,
+                            low_rate_unit_mask, MIN_UNIT_FIRING_RATE_HZ,
+                            FrozenPSTHTransform)
 from statistics import linear_mixed_effects_test, fdr_bh, stable_seed
+from provenance import _json_safe
 
-DATA_DIR = Path("/media/amin/EXTERNAL_USB/SMAF/Research/Representation/Working Memory/data/000574")
+DATA_DIR = dataset_path("dandi_000574")
 RESULTS = ROOT / "results"
 SUBJECTS = [f"sub-0{i}" for i in range(1, 10)]
 N_PC = 8
@@ -78,12 +82,23 @@ def _process_session(subj: str, fp: Path):
         if n_trials < 20:
             return None
 
+        # Boran's NWB units table carries no isolation/SNR quality column, so
+        # apply the same firing-rate QC floor used for the other three
+        # single-unit cohorts sharing this pipeline (spike_pipeline.MIN_UNIT_FIRING_RATE_HZ).
+        rate_mask = low_rate_unit_mask(spike_lists, maint_onsets, MAINT_WIN)
+        n_units_qc = int(rate_mask.sum())
+        if n_units_qc < n_units:
+            print(f"  {key}: firing-rate QC dropping {n_units - n_units_qc}/{n_units} "
+                  f"units below {MIN_UNIT_FIRING_RATE_HZ} Hz", flush=True)
+        if n_units_qc < MIN_UNITS:
+            return None
+        spike_lists = [spk for spk, keep in zip(spike_lists, rate_mask) if keep]
+        n_units = n_units_qc
+
         print(f"\n{'='*55}\n  {key}: {n_units} units, {n_trials} trials\n{'='*55}", flush=True)
         psth = build_psth(spike_lists, maint_onsets, bin_ms=BIN_MS, smooth_ms=SMOOTH_MS,
                           window_s=MAINT_WIN)
-        mu = psth.mean(axis=0, keepdims=True)
-        sd = psth.std(axis=0, keepdims=True) + 1e-8
-        psth_z = (psth - mu) / sd
+        psth_z = FrozenPSTHTransform().fit_transform(psth)
         # Rutishauser cohorts (000469/001187/000673, MIN_UNITS=15) fit a fixed
         # N_PC=8 from >=15 units (reduction ratio >=1.875x); Boran's lower
         # microwire yield (MIN_UNITS=8) means n_comp is capped below n_units
@@ -152,7 +167,7 @@ def main():
         pooled_key.extend([key] * len(drift))
 
     with open(RESULTS / "dandi000574_units_summary.json", "w") as f:
-        json.dump(summary, f, indent=2)
+        json.dump(_json_safe(summary), f, indent=2, allow_nan=False)
 
     p_vals = np.array([v["p_offdiag_vs_chance"] for v in summary.values()
                         if np.isfinite(v["p_offdiag_vs_chance"])])
@@ -183,7 +198,7 @@ def main():
         "beta": lme_drift["beta"], "p_value": lme_drift["p_value"], "n_trials": int(len(pooled_drift)),
     }
     with open(stats_path, "w") as f:
-        json.dump(stats, f, indent=2)
+        json.dump(_json_safe(stats), f, indent=2, allow_nan=False)
     print("\nSaved results/dandi000574_units_summary.json, updated all_statistics.json")
 
 

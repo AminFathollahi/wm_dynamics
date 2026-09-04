@@ -29,7 +29,7 @@ so they run under joblib across processes. Each worker pins BLAS to 1 thread
 (threadpoolctl) to avoid oversubscribing the machine when running as many
 single-threaded workers as there are logical cores.
 
-N_PERM=1000 here (vs. the >=5000 the Round-4 audit required for the
+N_PERM=1000 here (vs. the >=5000 required elsewhere for the
 comparability-critical headline CI-vs-CD contrasts) is a deliberate,
 documented reduction from that requirement, made only because a full
 N_PERM=5000, unparallelized run of this script was measured to require
@@ -59,6 +59,7 @@ from geometry import (dpca_condition_subspace_projection, marginalize_condition_
                       temporal_stability_tau)
 from spike_pipeline import fit_pca_psth
 from statistics import stable_seed
+from provenance import _json_safe
 
 RESULTS = ROOT / "results"
 N_DPCA_COMPONENTS = 4
@@ -181,23 +182,23 @@ def main():
     print("Miller (load)...")
     miller = run_miller()
     with open(RESULTS / "dpca_miller.json", "w") as f:
-        json.dump(miller, f, indent=2)
+        json.dump(_json_safe(miller), f, indent=2, allow_nan=False)
     stats["dpca_miller"] = miller
 
     print("DANDI 000469 (load + content)...")
     d469 = run_dandi000469()
     with open(RESULTS / "dpca_dandi000469.json", "w") as f:
-        json.dump(d469, f, indent=2)
+        json.dump(_json_safe(d469), f, indent=2, allow_nan=False)
     stats["dpca_dandi000469"] = d469
 
     print("pfc-3 (content)...")
     pfc3 = run_pfc3()
     with open(RESULTS / "dpca_pfc3.json", "w") as f:
-        json.dump(pfc3, f, indent=2)
+        json.dump(_json_safe(pfc3), f, indent=2, allow_nan=False)
     stats["dpca_pfc3"] = pfc3
 
     with open(RESULTS / "all_statistics.json", "w") as f:
-        json.dump(stats, f, indent=2)
+        json.dump(_json_safe(stats), f, indent=2, allow_nan=False)
     print("\nSaved dpca_*.json, updated all_statistics.json")
 
 

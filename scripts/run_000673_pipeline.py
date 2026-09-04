@@ -4,11 +4,19 @@
 Third of three Rutishauser-lab Sternberg single-unit datasets (000469,
 001187, 000673 — see run_000469_pipeline.py, run_001187_pipeline.py).
 "Control of working memory by phase-amplitude coupling of human hippocampal
-neurons" — a different cohort, ``intervals/trials`` schema (like 000469) but
-``PicIDs_Encoding1`` field naming (like 001187). Kept as a separate stats key
-/ result-file prefix; combined with the other two only at the meta-analysis
-level (Stouffer's method for item-identity CTG). Shared numerical pipeline:
-src/spike_pipeline.py.
+neurons" — ``intervals/trials`` schema (like 000469) but ``PicIDs_Encoding1``
+field naming (like 001187). NOT an independent cohort from 001187: direct NWB
+identity checks (native identifier, trial timestamps, accuracy, picture IDs)
+confirm 31 shared patients across 37 recording sessions (corrected 2026-08-03 from a prior 16/19 undercount -- see provenance/dataset_overlap_report.json), released twice as
+different curated views of the same patient-sessions (see
+provenance/dataset_overlap_report.json and
+provenance/canonical_primary_records.json, built by
+scripts/audit_dataset_identity.py). 001187 is the canonical view for those
+sessions, so this pipeline's own pooled statistics below (correct-vs-error
+drift, Stouffer item-identity CTG) exclude the linked-duplicate sessions --
+they still get a per-session artifact under this dataset's stats key, as a
+sensitivity view, just not double-counted in cross-dataset pooling. Shared
+numerical pipeline: src/spike_pipeline.py.
 
 Outputs (per session):
   results/dandi000673_geometry_{key}.npz, results/dandi000673_ctg_{key}.npz,
@@ -28,15 +36,19 @@ from threadpoolctl import threadpool_limits
 warnings.filterwarnings("ignore")
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
+from project_config import data_root, dataset_path, executable, project_path
 
 import h5py
 from spike_pipeline import (load_spike_times, build_psth, fit_pca_psth,
                             load_vs_load_ctg, item_identity_ctg, correct_error_drift,
-                            pr_by_load, low_rate_unit_mask, MIN_SESSION_ACCURACY)
+                            pr_by_load, low_rate_unit_mask, MIN_SESSION_ACCURACY,
+                            FrozenPSTHTransform)
 from statistics import linear_mixed_effects_test, fdr_bh, stouffer_combine, stable_seed
+from provenance import load_overlap_report, linked_duplicate_000673_session_keys, _json_safe
 
-DATA_DIR = Path("/media/amin/EXTERNAL_USB/SMAF/Research/Representation/Working Memory/data/000673")
+DATA_DIR = dataset_path("dandi_000673")
 RESULTS = ROOT / "results"
+PROVENANCE = ROOT / "provenance"
 N_PC = 8
 BIN_MS = 100
 SMOOTH_MS = 200
@@ -93,9 +105,7 @@ def _process_session(fp: str):
 
         times = np.arange(BIN_MS / 2, MAINT_WIN * 1000, BIN_MS) / 1000.0
         psth = build_psth(spike_lists, t_maint, bin_ms=BIN_MS, smooth_ms=SMOOTH_MS, window_s=MAINT_WIN)
-        mu = psth.mean(axis=0, keepdims=True)
-        sd = psth.std(axis=0, keepdims=True) + 1e-8
-        psth_z = (psth - mu) / sd
+        psth_z = FrozenPSTHTransform().fit_transform(psth)
         Z, V, var_ratio = fit_pca_psth(psth_z, n_comp=N_PC)
 
         pr_per_load = pr_by_load(psth_z, loads, rng=np.random.default_rng(0))
@@ -155,19 +165,28 @@ def main():
 
     results = Parallel(n_jobs=N_JOBS)(delayed(_process_session)(fp) for fp in files)
 
+    overlap_report = load_overlap_report(PROVENANCE)
+    linked_keys = (linked_duplicate_000673_session_keys(overlap_report)
+                   if overlap_report is not None else set())
+    if overlap_report is None:
+        print("  WARNING: provenance/dataset_overlap_report.json not found -- "
+              "cannot exclude 001187-linked duplicate sessions from pooling", flush=True)
+
     summary = {}
     pooled_drift, pooled_correct, pooled_key = [], [], []
     for r in results:
         if r is None:
             continue
         key, row, drift, correct = r
-        summary[key] = row
+        summary[key] = row  # kept even for linked-duplicate sessions: a valid sensitivity view
+        if key in linked_keys:
+            continue  # already contributed via the canonical 001187 session; don't double-count
         pooled_drift.extend(drift)
         pooled_correct.extend(correct)
         pooled_key.extend([key] * len(drift))
 
     with open(RESULTS / "dandi000673_summary.json", "w") as f:
-        json.dump(summary, f, indent=2)
+        json.dump(_json_safe(summary), f, indent=2, allow_nan=False)
 
     p_vals = np.array([v["p_offdiag_vs_chance"] for v in summary.values()
                         if np.isfinite(v["p_offdiag_vs_chance"])])
@@ -179,7 +198,8 @@ def main():
     key_arr = np.array(pooled_key)
     lme_drift = linear_mixed_effects_test(drift_arr, correct_arr, key_arr, n_perm=5000,
                                            rng=np.random.default_rng(0))
-    print(f"Correct-vs-error drift (000673, pooled N={len(drift_arr)}): "
+    print(f"Correct-vs-error drift (000673, pooled N={len(drift_arr)}, "
+          f"{len(linked_keys)} 001187-linked sessions excluded): "
           f"beta={lme_drift['beta']:.4f}, p={lme_drift['p_value']:.4f}")
 
     stats_path = RESULTS / "all_statistics.json"
@@ -192,7 +212,9 @@ def main():
 
     p_pool = []
     for k in ["dandi000469_ctg", "dandi001187_ctg", "dandi000673_ctg"]:
-        for v in stats.get(k, {}).values():
+        for sess_key, v in stats.get(k, {}).items():
+            if k == "dandi000673_ctg" and sess_key in linked_keys:
+                continue  # linked duplicate of a 001187 session already in the pool
             if v.get("content_ctg") is not None:
                 p_pool.append(v["content_ctg"]["p_value"])
     if len(p_pool) >= 2:
@@ -201,10 +223,11 @@ def main():
             "n_sessions": len(p_pool), "z_combined": pooled["z_combined"], "p_combined": pooled["p_combined"],
         }
         print(f"\nPooled item-identity CTG (000469 + 001187 + 000673, N={len(p_pool)} sessions, "
-              f"Stouffer's method): z={pooled['z_combined']:.3f}, p={pooled['p_combined']:.4e}")
+              f"{len(linked_keys)} 001187-linked 000673 sessions excluded, Stouffer's method): "
+              f"z={pooled['z_combined']:.3f}, p={pooled['p_combined']:.4e}")
 
     with open(stats_path, "w") as f:
-        json.dump(stats, f, indent=2)
+        json.dump(_json_safe(stats), f, indent=2, allow_nan=False)
     print("\nSaved results/dandi000673_summary.json, updated all_statistics.json")
 
 

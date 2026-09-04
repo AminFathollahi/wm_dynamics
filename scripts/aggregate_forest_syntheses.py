@@ -14,6 +14,13 @@ SE provenance (no fabrication — every SE is derived from stored quantities):
                      permutation beta + two-sided p is stored (PR-vs-load slope,
                      correct-vs-error drift). p is floored at 1e-6.
 Every synthesis records which key and which method produced each row.
+
+DANDI 001187 and 000673 share 31 patients across 37 sessions (corrected 2026-08-03 from a prior 16/19 undercount; see
+provenance/dataset_overlap_report.json); the "DANDI 000673" row in every forest
+here excludes those linked-duplicate sessions (dropped by key before pooling
+below, or -- for the q1 PR-vs-load slope and q6 drift-beta rows, which are
+single numbers already pooled upstream -- excluded at the source in
+aggregate_pr_across_datasets.py and run_000673_pipeline.py respectively).
 """
 
 from __future__ import annotations
@@ -28,9 +35,24 @@ from scipy.stats import norm
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 from statistics import forest_meta  # noqa: E402
+from provenance import load_overlap_report, linked_duplicate_000673_session_keys, _json_safe  # noqa: E402
 
 STATS_PATH = ROOT / "results" / "all_statistics.json"
 OUT_PATH = ROOT / "results" / "forest_syntheses.json"
+PROVENANCE_PATH = ROOT / "provenance"
+
+# 001187 and 000673 share 31 patients/37 sessions (corrected 2026-08-03 from a prior 16/19 undercount; provenance/dataset_overlap_report.json);
+# 001187 is the canonical view, so its matching 000673 session-keys are dropped from any
+# per-session dict below before pooling, or a shared patient-session counts twice.
+_OVERLAP_REPORT = load_overlap_report(PROVENANCE_PATH)
+LINKED_000673_KEYS = (linked_duplicate_000673_session_keys(_OVERLAP_REPORT)
+                      if _OVERLAP_REPORT is not None else set())
+
+
+def _drop_linked_000673(label: str, grp: dict) -> dict:
+    if label != "DANDI 000673" or not LINKED_000673_KEYS:
+        return grp
+    return {k: v for k, v in grp.items() if k not in LINKED_000673_KEYS}
 
 
 def se_from_beta_p(beta: float, p: float) -> float:
@@ -136,11 +158,11 @@ def build(d: dict) -> dict:
     }
 
     # ── Q3: flow divergence (mean-trajectory and single-trial ensemble)
-    # Round-7 STEP K2: pool the three fillable-gap cohorts (Boran units, DANDI
-    # 001187, DANDI 000673) into the SAME forest as their siblings — moves this
-    # from ~3 to ~6 datasets. All six are fit at the SAME DMD_RANK=8 (module's
-    # full-latent-rank convention; see run_divergence_analysis.py STEP K2 note),
-    # so they are on comparable footing.
+    # Pool the three previously-uncovered cohorts (Boran units, DANDI 001187,
+    # DANDI 000673) into the SAME forest as their siblings — moves this from
+    # ~3 to ~6 datasets. All six are fit at the SAME DMD_RANK=8 (module's
+    # full-latent-rank convention; see run_divergence_analysis.py's matching
+    # cohort loaders), so they are on comparable footing.
     for field, name in [("div_scalar", "q3_divergence_mean_traj"),
                         ("ensemble_div_scalar", "q3_divergence_ensemble")]:
         div_rows = []
@@ -149,7 +171,7 @@ def build(d: dict) -> dict:
                            ("Boran units", "boran_units"),
                            ("DANDI 001187", "dandi001187"),
                            ("DANDI 000673", "dandi000673")]:
-            grp = d.get("divergence", {}).get(key, {})
+            grp = _drop_linked_000673(label, d.get("divergence", {}).get(key, {}))
             vals = [s[field] for s in grp.values() if isinstance(s, dict) and field in s
                     and np.isfinite(s.get(field, np.nan))]
             if vals:
@@ -171,7 +193,7 @@ def build(d: dict) -> dict:
                        ("Boran units", "boran_units"),
                        ("DANDI 001187", "dandi001187"),
                        ("DANDI 000673", "dandi000673")]:
-        grp = d.get("divergence", {}).get(key, {})
+        grp = _drop_linked_000673(label, d.get("divergence", {}).get(key, {}))
         margins = [s["ensemble_r2_cv"] - s["ensemble_r2_null"]
                    for s in grp.values() if isinstance(s, dict)
                    and s.get("ensemble_r2_cv") is not None and s.get("ensemble_r2_null") is not None
@@ -264,7 +286,7 @@ def build(d: dict) -> dict:
 def main() -> None:
     d = json.load(open(STATS_PATH))
     syntheses = build(d)
-    json.dump(syntheses, open(OUT_PATH, "w"), indent=2)
+    json.dump(_json_safe(syntheses), open(OUT_PATH, "w"), indent=2, allow_nan=False)
 
     print(f"wrote {OUT_PATH.relative_to(ROOT)}")
     for name, s in syntheses.items():

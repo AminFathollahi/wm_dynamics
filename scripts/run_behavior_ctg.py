@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Behavioral performance-decoding CTG (Round-7, STEP B): "when during the
+"""Behavioral performance-decoding CTG: "when during the
 delay is trial outcome (correct vs error) predictable from the maintenance
 population state?"
 
@@ -14,7 +14,7 @@ script only supplies a different label to existing functions.
 
 Datasets with real, non-fabricated response_accuracy in the data available
 to this project: Boran iEEG, Boran units (DANDI 000574), DANDI 000469, 001187,
-000673. Two datasets in the Round-7 spec's inventory turned out NOT to have a
+000673. Two other candidate datasets turned out NOT to have a
 usable label on inspection (STOP-and-report, not fabricated):
   - Miller N-back: the raw MAT files (stim/task/target) encode task condition
     only (whether a response was REQUIRED on that trial), not whether the
@@ -50,18 +50,20 @@ import numpy as np
 warnings.filterwarnings("ignore")
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
+from project_config import data_root, dataset_path, executable, project_path
 
 import h5py
 import scipy.signal as sig
 
-from spike_pipeline import load_spike_times, build_psth, low_rate_unit_mask, MIN_SESSION_ACCURACY
+from spike_pipeline import (load_spike_times, build_psth, low_rate_unit_mask,
+                            MIN_SESSION_ACCURACY, FrozenPSTHTransform)
 from geometry import ctg_label_permutation_null, temporal_stability_tau
 from preprocessing import bandpass_filter, line_noise_notch, bipolar_reference_by_shank
 from statistics import stable_seed
 from io_utils import locked_json_update
 
 RESULTS = ROOT / "results"
-DATA_ROOT = Path("/media/amin/EXTERNAL_USB/SMAF/Research/Representation/Working Memory/data")
+DATA_ROOT = data_root()
 
 MIN_ERROR_TRIALS = 15    # spec B2: dataset-level POOLED (across sessions) error-trial floor
 MIN_ERROR_PER_SESSION = 4   # per-session floor to even attempt a fit: sessions differ in
@@ -138,9 +140,7 @@ def _spike_session_outcome_ctg(f, trials_group: str, loads_field: str, maint_win
 
     times = np.arange(50, maint_win * 1000, 100) / 1000.0
     psth = build_psth(spike_lists, t_maint, bin_ms=100, smooth_ms=200, window_s=maint_win)
-    mu = psth.mean(axis=0, keepdims=True)
-    sd = psth.std(axis=0, keepdims=True) + 1e-8
-    psth_z = (psth - mu) / sd
+    psth_z = FrozenPSTHTransform().fit_transform(psth)
     return _outcome_ctg(psth_z, response_acc, times, rng)
 
 
@@ -187,9 +187,7 @@ def run_boran_units() -> dict:
                 continue
             times = np.arange(50, 3000, 100) / 1000.0
             psth = build_psth(spike_lists, maint_onsets, bin_ms=100, smooth_ms=200, window_s=3.0)
-            mu = psth.mean(axis=0, keepdims=True)
-            sd = psth.std(axis=0, keepdims=True) + 1e-8
-            psth_z = (psth - mu) / sd
+            psth_z = FrozenPSTHTransform().fit_transform(psth)
             row = _outcome_ctg(psth_z, correct, times,
                                np.random.default_rng(stable_seed(f"behctg_boranunits_{key}")))
             out[key] = row
@@ -246,9 +244,9 @@ def run_boran_ieeg() -> dict:
             from scipy.signal import resample
             epochs = resample(epochs, n_epoch_samp, axis=2)
 
-        # Notch (50/100/150 Hz) + bipolar-by-shank reref -- Round-8 7A/7B fix,
-        # replacing the prior median-CAR (see run_boran_pipeline.py for the
-        # canonical version of this step).
+        # Notch (50/100/150 Hz) + bipolar-by-shank reref, replacing a plain
+        # median-CAR (see run_boran_pipeline.py for the canonical version of
+        # this step).
         N0, C_raw, T0 = epochs.shape
         for n in range(N0):
             epochs[n] = line_noise_notch(epochs[n].T, srate, fundamental=50.0, n_harmonics=3).T
@@ -345,7 +343,7 @@ def _pool_dataset(per_session: dict, label: str) -> dict:
     Sessions differ in units/channels, so per-trial FEATURES cannot be pooled
     across sessions into one decoder (same reason every sibling CTG in this
     project is a per-session analysis unit) -- each session is fit separately
-    at a low per-session floor (MIN_ERROR_PER_SESSION), and the spec's B2
+    at a low per-session floor (MIN_ERROR_PER_SESSION), and this project's own
     dataset-level "< 15 error trials pooled" floor is applied here to the
     error-trial count POOLED ACROSS all of a dataset's sessions."""
     from statistics import stouffer_combine

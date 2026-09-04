@@ -9,23 +9,23 @@ later recall grow with the stimulation's geometric alignment to the
 unstable eigenvector v* of the encoding-period population dynamics?
 
 SCOPE BOUNDARY: stimulation here is delivered at ENCODING, not during a
-WM maintenance/delay period (unlike Soldado/Rutishauser/Boran). This
+WM maintenance/delay period (unlike macaque PFC microstimulation/Rutishauser/Boran). This
 dataset therefore speaks to Q4/Q5 (site/actuation dependence) and Q6
 (state-vs-behavior) at encoding, not to the delay-period control claim
 directly -- state this explicitly wherever these results are reported.
 
-BIDS layout (standard, no format quirks like Soldado's mixed MAT
+BIDS layout (standard, no format quirks like macaque PFC microstimulation's mixed MAT
 generations): sub-*/ses-*/ieeg/*_acq-bipolar_ieeg.edf + *_events.tsv
 (fields documented in the sidecar events.json) + *_channels.tsv. The
 `stimulation` and `recalled` columns on WORD events already give T and Y
 directly -- no manual window-matching against STIM_ON events needed.
 
-Design (mirrors scripts/run_soldado_pipeline.py's structure exactly; all
+Design (mirrors scripts/run_macaque_pfc_microstimulation_pipeline.py's structure exactly; all
 numerical work reused from src/geometry.py, src/dynamics.py, src/causal.py):
   1. Per session: epoch high-gamma power around every WORD onset.
   2. Fit PCA + DMD on NON-STIMULATED word epochs only -> v*.
   3. B = one-hot at the session's stimulated bipolar channel (only one
-     stim site per subject in this dataset, unlike Soldado's multi-site
+     stim site per subject in this dataset, unlike macaque PFC microstimulation's multi-site
      design) -> alignment-to-v* (one scalar per session).
   4. Y = recalled (0/1) per word, T = stimulation (0/1) per word,
      modifier = that session's alignment (same value for every word in
@@ -58,24 +58,27 @@ import numpy as np
 warnings.filterwarnings("ignore")
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
+from project_config import data_root, dataset_path, executable, project_path
 
 from geometry import pca_decompose
 from dynamics import dmd_reconstruction_error
 from causal import cate_vs_modifier_slope
 from statistics import stable_seed
+from control import canonicalize_eigenvector_phase
 from io_utils import locked_json_update
-from preprocessing import high_gamma_power
+from preprocessing import high_gamma_power, line_noise_notch
 
-DATA = Path(
-    "/media/amin/EXTERNAL_USB/SMAF/Research/Representation/Working Memory"
-    "/data/ds005489-download"
-)
+DATA = dataset_path("ram_ds005489_openloop")
 RESULTS = ROOT / "results"
 
 PRE_S, POST_S = 0.3, 1.6   # epoch window relative to word onset (word on-screen 1.6s)
 BIN_S = 0.1
 N_PC = 8
-DMD_RANK = 6
+DMD_RANK = 8   # Aligned to the full latent rank (== N_PC), the same cross-cohort-poolability
+               # convention used by run_divergence_analysis.py, run_multiband_analysis.py,
+               # run_behavior_geometry_link.py, and run_contraction_behavior_analysis_000469.py.
+               # Previously 6 with no stated rationale; the epoch window here (19 bins) comfortably
+               # supports r=8.
 MIN_WORDS = 100          # skip sessions with too few usable WORD epochs
 MAX_SUBJECTS = 38        # cap for a full run; set lower for a quick smoke test
 
@@ -89,7 +92,60 @@ def _load_events(events_tsv: Path) -> list[dict]:
         return list(csv.DictReader(f, delimiter="\t"))
 
 
-def build_session_features(ieeg_json: Path) -> dict | None:
+def _derive_word_stimulation(words: list[dict], stim_on: list[dict], stim_off: list[dict],
+                             window_s: float = 2.0) -> None:
+    """Mutate `words` in place, setting each event's 'stimulation' field from
+    STIM_ON/STIM_OFF timestamp overlap rather than trusting the WORD event's
+    own field. Some closed-loop RAM releases (e.g. ds005557) record real
+    STIM_ON/STIM_OFF events but leave every WORD event's own `stimulation`
+    field at "0" -- the online classifier's trigger timing is not backfilled
+    onto the word row it applies to. A word is marked stimulated if any
+    STIM_ON falls within [onset, onset + window_s] of it (word presentation
+    plus a margin for triggering/pulse-train latency), matched to the closest
+    such word if a STIM_ON is nearer to more than one.
+
+    Also copies the matched STIM_ON event's own dose fields (amplitude,
+    pulse_freq, n_pulses, pulse_width) onto the word row: unlike ds005489,
+    this release does not carry those fields on the WORD row itself, only on
+    the STIM_ON event that triggered delivery."""
+    if not stim_on:
+        return
+    word_onsets = [float(w["onset"]) for w in words]
+    for stim_event in sorted(stim_on, key=lambda s: float(s["onset"])):
+        stim_t = float(stim_event["onset"])
+        candidates = [(abs(stim_t - w_on), i) for i, w_on in enumerate(word_onsets)
+                     if 0 <= stim_t - w_on <= window_s]
+        if not candidates:
+            continue
+        _, best_i = min(candidates)
+        words[best_i]["stimulation"] = "1"
+        for field in ("amplitude", "pulse_freq", "n_pulses", "pulse_width"):
+            if field in stim_event:
+                words[best_i][field] = stim_event[field]
+
+
+def _float_or_nan(value) -> float:
+    """Parse a BIDS TSV field (always a string from csv.DictReader) that may
+    be a number, 'n/a', or empty -- never raises."""
+    try:
+        if value in (None, "", "n/a"):
+            return float("nan")
+        return float(value)
+    except (TypeError, ValueError):
+        return float("nan")
+
+
+def build_session_features(ieeg_json: Path, data_root: Path = DATA,
+                           derive_stim_from_stim_on: bool = False,
+                           return_epochs: bool = False) -> dict | None:
+    """Build one session's per-word high-gamma feature set and, when
+    `return_epochs` is set, also return the per-trial epoch array and
+    channel/dose bookkeeping a downstream analysis needs to work directly
+    with the unaveraged (n_words, n_bins, n_channels) log-power epochs
+    rather than only the scalar summary this function has always returned.
+    Callers that only want the scalar summary (the existing open-loop and
+    closed-loop causal pipelines) are unaffected: the extra fields are only
+    added when explicitly requested, and nothing already returned changes."""
     import mne
 
     with open(ieeg_json) as f:
@@ -108,10 +164,20 @@ def build_session_features(ieeg_json: Path) -> dict | None:
     if len(words) < MIN_WORDS:
         return None
 
-    stim_word = next((w for w in words if w["stimulation"] == "1"), None)
-    if stim_word is None or stim_word["anode_label"] == "n/a":
-        return None
-    anode, cathode = stim_word["anode_label"], stim_word["cathode_label"]
+    if derive_stim_from_stim_on:
+        stim_on = [e for e in events if e["trial_type"] == "STIM_ON"]
+        stim_off = [e for e in events if e["trial_type"] == "STIM_OFF"]
+        _derive_word_stimulation(words, stim_on, stim_off)
+        stim_word = next((w for w in words if w["stimulation"] == "1"), None)
+        anode_source = next((s for s in stim_on if s["anode_label"] != "n/a"), None)
+        if stim_word is None or anode_source is None:
+            return None
+        anode, cathode = anode_source["anode_label"], anode_source["cathode_label"]
+    else:
+        stim_word = next((w for w in words if w["stimulation"] == "1"), None)
+        if stim_word is None or stim_word["anode_label"] == "n/a":
+            return None
+        anode, cathode = stim_word["anode_label"], stim_word["cathode_label"]
 
     raw = mne.io.read_raw_edf(str(edf_path), preload=False, verbose="ERROR")
     ch_names = raw.ch_names
@@ -129,7 +195,7 @@ def build_session_features(ieeg_json: Path) -> dict | None:
     pad = int(0.3 * srate)  # extra padding on each side to absorb Hilbert/filter edge effects
     n_bins = int((PRE_S + POST_S) / BIN_S)
 
-    epochs, recalled, stim_flag = [], [], []
+    epochs, recalled, stim_flag, kept_words = [], [], [], []
     for w in words:
         onset_s = float(w["onset"])
         if onset_s - PRE_S - pad / srate < 0 or onset_s + POST_S + pad / srate > rec_dur:
@@ -137,7 +203,8 @@ def build_session_features(ieeg_json: Path) -> dict | None:
         i0 = int(round((onset_s - PRE_S) * srate)) - pad
         i1 = int(round((onset_s + POST_S) * srate)) + pad
         raw_seg = raw.get_data(start=i0, stop=i1)  # (n_ch, T_pad)
-        hgp = high_gamma_power(raw_seg.T, srate=srate, lo=70.0, hi=150.0, smooth_ms=50.0)
+        raw_seg_notched = line_noise_notch(raw_seg.T, srate, fundamental=60.0, n_harmonics=3)  # US mains
+        hgp = high_gamma_power(raw_seg_notched, srate=srate, lo=70.0, hi=150.0, smooth_ms=50.0)
         hgp = hgp[pad:-pad]  # drop padding -> (pre_samp+post_samp, n_ch)
         # bin into BIN_S bins
         n_samp_bin = hgp.shape[0] // n_bins
@@ -145,6 +212,7 @@ def build_session_features(ieeg_json: Path) -> dict | None:
         epochs.append(binned.astype(np.float32))
         recalled.append(int(w["recalled"]))
         stim_flag.append(int(w["stimulation"]))
+        kept_words.append(w)
 
     if len(epochs) < MIN_WORDS:
         return None
@@ -179,8 +247,7 @@ def build_session_features(ieeg_json: Path) -> dict | None:
     A = dmd["A"]
     eigs, vecs = np.linalg.eig(A)
     order = np.argsort(eigs.real)[::-1]
-    v_star = vecs[:, order[0]].real
-    v_star = v_star / (np.linalg.norm(v_star) + 1e-12)
+    v_star = canonicalize_eigenvector_phase(vecs[:, order[0]])
 
     B_chan = np.zeros((n_ch, 1))
     B_chan[ch_names.index(stim_ch), 0] = 1.0
@@ -195,8 +262,8 @@ def build_session_features(ieeg_json: Path) -> dict | None:
         "list": int(words[i]["list"]) if i < len(words) and words[i]["list"] not in ("-1", "n/a") else -1,
     } for i in range(len(recalled))]
 
-    return {
-        "session": str(edf_path.relative_to(DATA)),
+    result = {
+        "session": str(edf_path.relative_to(data_root)),
         "n_words": len(recalled),
         "n_pc": k,
         "var_explained": float(var_ratio.sum()),
@@ -208,6 +275,24 @@ def build_session_features(ieeg_json: Path) -> dict | None:
         "recall_rate_ctrl": float(recalled[stim_flag == 0].mean()),
         "rows": rows,
     }
+    if return_epochs:
+        result["epochs_log"] = epochs_log  # (n_words, n_bins, n_ch), pre-z-score log high-gamma power
+        result["ch_names"] = list(ch_names)
+        result["anode"] = anode
+        result["cathode"] = cathode
+        result["stim_flag"] = stim_flag
+        result["recalled"] = recalled
+        # kept_words is aligned index-for-index with epochs/recalled/stim_flag (both loops above
+        # skip the same trials, out-of-window ones); indexing the pre-filter `words` list here
+        # instead would silently misalign dose values with the trials they were measured on.
+        result["amplitude"] = np.array([_float_or_nan(w.get("amplitude")) for w in kept_words], dtype=float)
+        result["pulse_freq"] = np.array([_float_or_nan(w.get("pulse_freq")) for w in kept_words], dtype=float)
+        result["n_pulses"] = np.array([_float_or_nan(w.get("n_pulses")) for w in kept_words], dtype=float)
+        result["pulse_width"] = np.array([_float_or_nan(w.get("pulse_width")) for w in kept_words], dtype=float)
+        result["serialpos"] = np.array([int(w.get("serialpos", -1)) for w in kept_words], dtype=int)
+        result["list_number"] = np.array(
+            [int(w["list"]) if w.get("list") not in ("-1", "n/a", None) else -1 for w in kept_words], dtype=int)
+    return result
 
 
 def main():
@@ -258,11 +343,19 @@ def main():
           f"[{result['slope_ci_lo']:.4f}, {result['slope_ci_hi']:.4f}] "
           f"p={result['p_value']:.4f} (ATE={result['ate']:.4f}, N={result['n']})")
 
+    # cate_vs_modifier_slope's phi/modifier/null are the pseudo-outcome/permutation-null
+    # arrays used internally to compute the scalar fields above -- not a new statistical
+    # claim, but not JSON-serializable either (same convention as run_macaque_pfc_microstimulation_pipeline.py's
+    # gate_json / causal_macaque_pfc_microstimulation_gate_detail.npz split).
+    np.savez_compressed(RESULTS / "causal_ram_detail.npz",
+                        phi=result["phi"], modifier=result["modifier"], null=result["null"])
+    result_json = {k: v for k, v in result.items() if k not in ("phi", "modifier", "null")}
+
     out = {
         "per_session": per_session,
         "n_sessions_used": len(per_session),
         "pooled_n": len(all_rows),
-        "result": result,
+        "result": result_json,
     }
     with open(RESULTS / "causal_ram.json", "w") as f:
         json.dump(out, f, indent=2, default=lambda o: float(o) if isinstance(o, np.floating) else o)

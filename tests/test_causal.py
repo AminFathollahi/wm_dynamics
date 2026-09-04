@@ -194,7 +194,7 @@ class TestBenchmarkModifiers:
         # A modifier broadcast as the SAME scalar to every row has zero
         # within-arena variance; regressing phi on a constant gives a fake
         # slope==0/CI==[0,0]/p==1.0 that must NOT be filed as a trustworthy
-        # null (Round-8.1 Part 11B guard).
+        # null.
         y, t, X, e, modifiers = self._benchmark_dgp(rng)
         modifiers = dict(modifiers)
         modifiers["constant_mod"] = np.full(len(y), 3.14)

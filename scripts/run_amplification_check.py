@@ -1,23 +1,24 @@
 #!/usr/bin/env python3
-"""Round-11 PART 17A -- the deferred 16A amplification check.
+"""Amplification check: does v* coincide with the propagator's maximally-
+amplified direction?
 
-WHY: PAPER_REPORT.tex's 16A paragraph already ASSERTS (as interpretation)
-that v* has causal leverage because cortical dynamics are non-normal and a
+WHY: the project's own manuscript draft already ASSERTS (as interpretation) that v* has
+causal leverage because cortical dynamics are non-normal and a
 perturbation is amplified along the propagator's top RIGHT SINGULAR vector,
 not its top eigenvector (Murphy&Miller 2009; Goldman 2009; Hennequin/Vogels/
 Gerstner 2014; Bondanelli&Ostojic 2020). This script supplies the one missing
-number: cos(v*, w1) per Soldado session, where v* is the EXACT vector the
-causal benchmark already uses (src/control.py:unstable_eigenvector, same
-argmax(eigs.real)+unit-norm as run_soldado_pipeline.build_session_features)
+number: cos(v*, w1) per macaque PFC microstimulation session, where v* is the EXACT vector the
+causal benchmark already uses (src/control.py:dominant_eigenmode, same
+argmax(eigs modulus)+unit-norm as run_macaque_pfc_microstimulation_pipeline.build_session_features)
 and w1 is the top right singular vector of the SAME control-epoch-fit A.
 
 Does NOT redefine v* or refit A independently: reuses
-run_soldado_pipeline.load_soldado_session + the identical PCA/DMD fit
+run_macaque_pfc_microstimulation_pipeline.load_macaque_pfc_microstimulation_session + the identical PCA/DMD fit
 (src/geometry.pca_decompose, src/dynamics.dmd_reconstruction_error) so A is
 bit-identical to the one the benchmark scores.
 
 Run:
-    /home/amin/miniconda3/bin/graphify query ...  (done -- see comments.txt)
+    /home/amin/miniconda3/bin/graphify query ...  (already done)
     /home/amin/miniconda3/envs/wm_dynamics/bin/python scripts/run_amplification_check.py
 """
 from __future__ import annotations
@@ -35,11 +36,11 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from geometry import pca_decompose
 from dynamics import dmd_reconstruction_error
-from control import unstable_eigenvector
+from control import dominant_eigenmode
 
 sys.path.insert(0, str(ROOT / "scripts"))
-from run_soldado_pipeline import (
-    load_soldado_session, crop_trial, SESSIONS, N_PC, DMD_RANK, N_BINS, BIN_S,
+from run_macaque_pfc_microstimulation_pipeline import (
+    load_macaque_pfc_microstimulation_session, crop_trial, SESSIONS, N_PC, DMD_RANK, N_BINS, BIN_S,
 )
 
 RESULTS = ROOT / "results"
@@ -64,15 +65,15 @@ def _self_check() -> None:
     assert np.allclose(v_star, [1.0, 0.0], atol=1e-8), v_star
     assert not np.allclose(w1, v_star, atol=1e-3), "self-check matrix must be non-normal (w1 != v*)"
     assert 0.0 < cos_hand < 0.999, f"self-check cos out of expected non-normal range: {cos_hand}"
-    # recompute via the same unstable_eigenvector() helper used for the real data
-    v_star2, _ = unstable_eigenvector(A)
-    assert np.allclose(np.abs(v_star2), np.abs(v_star), atol=1e-8)
+    # recompute via the same dominant_eigenmode() helper used for the real data
+    mode2 = dominant_eigenmode(A)
+    assert np.allclose(np.abs(mode2.v_star), np.abs(v_star), atol=1e-8)
     print(f"[self-check] planted non-normal 2x2: cos(v*,w1)={cos_hand:.4f} "
           f"(eigenvector != singular vector, as expected) -- PASS")
 
 
 def _session_amp(prefix: str) -> dict | None:
-    corr = load_soldado_session(prefix, correct=True)
+    corr = load_macaque_pfc_microstimulation_session(prefix, correct=True)
     if corr is None or corr["control_idx"] is None:
         return None
     control_idx = corr["control_idx"]
@@ -96,7 +97,8 @@ def _session_amp(prefix: str) -> dict | None:
     dmd = dmd_reconstruction_error(Z_ctrl_mean, r=r_use, dt=BIN_S)
     A = dmd["A"]
 
-    v_star, max_re_eig = unstable_eigenvector(A)
+    mode = dominant_eigenmode(A)
+    v_star = mode.v_star
 
     U, S, Vt = np.linalg.svd(A)
     w1 = Vt[0].real
@@ -104,7 +106,7 @@ def _session_amp(prefix: str) -> dict | None:
     sigma1 = float(S[0])
 
     cos_va = abs(float(np.dot(v_star, w1)))
-    amp_factor = sigma1 / (abs(max_re_eig) + 1e-12)
+    amp_factor = sigma1 / (mode.rho + 1e-12)
 
     # multistep note (transient growth): A^k for k = N_BINS (delay length),
     # top singular vector of A^k -- report only as a convergence note, not primary.
@@ -117,7 +119,15 @@ def _session_amp(prefix: str) -> dict | None:
     return {
         "cos_vstar_w1": cos_va,
         "amp_factor_sigma1_over_lambda": amp_factor,
-        "max_real_eig": float(max_re_eig),
+        # "max_real_eig" is a legacy key name kept for existing JSON
+        # consumers; the value it holds was always the spectral modulus
+        # rho = |lambda|, never Re(lambda) -- see "rho" below for the same
+        # number under its correct name, plus theta/classification, which
+        # earlier versions of this script did not report.
+        "max_real_eig": mode.rho,
+        "rho": mode.rho,
+        "theta": mode.theta,
+        "classification": mode.classification,
         "sigma1": sigma1,
         "cos_vstar_w1_multistep_Nbins": cos_va_multistep,
         "n_pc": k,
@@ -142,7 +152,7 @@ def main() -> None:
         print(f"cos(v*,w1)={res['cos_vstar_w1']:.4f} amp_factor={res['amp_factor_sigma1_over_lambda']:.3f}")
 
     if not per_session:
-        out = {"status": "infeasible", "reason": "no usable Soldado sessions",
+        out = {"status": "infeasible", "reason": "no usable macaque PFC microstimulation sessions",
                "per_session": {}, "n_sessions": 0}
         with open(RESULTS / "amplification_check.json", "w") as f:
             json.dump(out, f, indent=2)
@@ -164,13 +174,15 @@ def main() -> None:
     with open(RESULTS / "amplification_check.json", "w") as f:
         json.dump(out, f, indent=2, default=lambda o: float(o) if isinstance(o, np.floating) else o)
 
-    print(f"\nPART 17A: median cos(v*, w1) = {median_cos:.4f} over n={len(per_session)} sessions "
+    print(f"\nmedian cos(v*, w1) = {median_cos:.4f} over n={len(per_session)} sessions "
           f"(median amp factor sigma1/|lambda_max| = {median_amp:.3f})")
     if median_cos >= 0.9:
         print("median cos >= 0.9 -> v* IS empirically the maximally-amplified mode; "
-              "17B SKIPPED (no dissociable difference between eigen-v* and singular-w1).")
+              "no dissociable difference between eigen-v* and singular-w1, so the "
+              "cluster-robust comparison in run_amplification_robustness.py is skippable.")
     else:
-        print("median cos < 0.9 -> directions genuinely differ; PART 17B should run.")
+        print("median cos < 0.9 -> directions genuinely differ; run the cluster-robust "
+              "comparison in run_amplification_robustness.py.")
 
 
 if __name__ == "__main__":

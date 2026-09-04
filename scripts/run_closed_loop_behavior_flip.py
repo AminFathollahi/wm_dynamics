@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Closed-loop behavioral flip (Round-7, STEP D): "can on-demand LQR stim turn
+"""Closed-loop behavioral flip: "can on-demand LQR stim turn
 predicted-error trajectories toward the correct-trial region?"
 
 THIS IS IN-SILICO ON A FITTED LINEAR PLANT -- a model prediction, NOT a causal
@@ -128,7 +128,7 @@ def _flip_one_trial(A, B_true, B_hat, x0, target, decoder, margin_fn, horizon,
     (same duty-cycle trigger, same u_budget, same B_hat mismatch), but the
     actuator itself (B_true) is replaced by a random unit direction in the
     SAME latent space -- same convention as the causal-benchmark leaderboard's
-    random_alignment arm (run_soldado_pipeline.py) elsewhere in this project.
+    random_alignment arm (run_macaque_pfc_microstimulation_pipeline.py) elsewhere in this project.
     An informed direction should flip trials; an uninformed one should not."""
     if random_dir:
         n = A.shape[0]

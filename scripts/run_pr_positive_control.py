@@ -30,6 +30,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from geometry import spatiotemporal_participation_ratio
 from statistics import linear_mixed_effects_test
+from provenance import _json_safe
 
 RESULTS = ROOT / "results"
 MILLER_SUBJECTS = ["al", "ca", "cc", "ug"]
@@ -216,7 +217,7 @@ def main():
 
     out = {"positive_control": pc, "mde_by_dataset": mde_results}
     with open(RESULTS / "pr_positive_control.json", "w") as f:
-        json.dump(out, f, indent=2)
+        json.dump(_json_safe(out), f, indent=2, allow_nan=False)
     print("\nSaved results/pr_positive_control.json")
 
 

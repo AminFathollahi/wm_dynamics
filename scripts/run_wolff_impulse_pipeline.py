@@ -54,14 +54,13 @@ import scipy.io as sio
 warnings.filterwarnings("ignore")
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
+from project_config import data_root, dataset_path, executable, project_path
 
 from geometry import time_resolved_content_decoding
 from statistics import stable_seed, stouffer_combine, paired_sign_flip_test
 from io_utils import locked_json_update
 
-DATA_DIR = Path(
-    "/media/amin/EXTERNAL_USB/SMAF/Research/Representation/Working Memory/data/osfstorage/Wolff/data"
-)
+DATA_DIR = dataset_path("wolff_eeg_impulse")
 RESULTS = ROOT / "results"
 MIN_SUBJECT_FILES = 20
 
@@ -103,6 +102,10 @@ def window_features(epoch, window_s: tuple[float, float], valid: np.ndarray) -> 
     lo, hi = window_s
     t_mask = (time >= lo) & (time <= hi)
     trial = np.asarray(epoch.trial)[valid]
+    # Cross-channel mean-center at every timepoint (the dataset's own
+    # published preprocessing, applied here to the full trial before
+    # windowing to match it exactly).
+    trial = trial - trial.mean(axis=1, keepdims=True)
     feat = trial[:, :, t_mask].mean(axis=2)
     return feat[:, :, None]
 
@@ -236,6 +239,18 @@ def main():
     post_effects = np.array([s["post_perturbation"]["effect"] for s in exp1_results])
     collapse_recover = paired_sign_flip_test(post_effects, pre_effects, alternative="greater", rng=rng)
 
+    # Ping-time dependence. If the subspace rotates, the impulse-evoked
+    # response should depend on WHEN in the delay the impulse lands. Experiment 2
+    # already contains two impulses per trial at different ping times (impulse1,
+    # preceding the early-tested item's probe; impulse2, preceding the late-tested
+    # item's probe, i.e. later in the same delay) -- a direct within-subject,
+    # same-classifier comparison, not a new dataset or a new decoder.
+    rng_ping = np.random.default_rng(stable_seed("wolff_exp2_ping_time"))
+    early_effects = np.array([s["post_perturbation_early"]["effect"] for s in exp2_results])
+    late_effects = np.array([s["post_perturbation_late"]["effect"] for s in exp2_results])
+    ping_time_dependence = paired_sign_flip_test(early_effects, late_effects,
+                                                 alternative="two-sided", rng=rng_ping)
+
     print("\nExperiment 1 pooled (Stouffer, N={}):".format(len(exp1_results)))
     for name, r in exp1_pooled.items():
         print(f"  {name}: mean_effect={r['mean_effect']:.4f}, z={r['z_combined']:.3f}, p={r['p_combined']:.4g}")
@@ -245,6 +260,10 @@ def main():
     print("\nExperiment 2 pooled (Stouffer, N={}):".format(len(exp2_results)))
     for name, r in exp2_pooled.items():
         print(f"  {name}: mean_effect={r['mean_effect']:.4f}, z={r['z_combined']:.3f}, p={r['p_combined']:.4g}")
+    print(f"  ping-time dependence, early vs late impulse (paired sign-flip, N={len(exp2_results)}): "
+          f"mean_diff={ping_time_dependence['mean_diff']:.4f} "
+          f"[{ping_time_dependence['ci_lower']:.4f}, {ping_time_dependence['ci_upper']:.4f}], "
+          f"p={ping_time_dependence['p_value']:.4g}")
 
     out = {
         "n_orientation_bins": N_ORIENTATION_BINS,
@@ -266,6 +285,12 @@ def main():
         "experiment2": {
             "per_subject": exp2_results,
             "pooled": exp2_pooled,
+            "ping_time_dependence_early_vs_late": {
+                "mean_diff": ping_time_dependence["mean_diff"],
+                "p_value": ping_time_dependence["p_value"],
+                "ci_lower": ping_time_dependence["ci_lower"],
+                "ci_upper": ping_time_dependence["ci_upper"],
+            },
         },
     }
     import json

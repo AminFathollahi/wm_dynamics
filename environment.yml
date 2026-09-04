@@ -29,3 +29,20 @@ dependencies:
       - control
       - cvxpy
       - pysindy
+      - tphate
+      - pymatreader
+      - statsmodels
+      - pyprep>=0.5,<0.6
+      - dynamax==1.0.2
+      - dandi==0.77.0
+      - pynwb==4.1.0
+      - ripser==0.6.15
+      - persim==0.3.8
+      - bctpy==0.6.0
+      - elephant==1.2.1
+      - neo==0.14.5
+      - umap-learn==0.5.12
+      - hmmlearn==0.3.3
+      - antropy==0.2.2
+      - nolds==0.6.3
+      - cebra==0.6.1

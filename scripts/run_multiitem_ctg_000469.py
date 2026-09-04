@@ -24,13 +24,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
+from project_config import data_root, dataset_path, executable, project_path
 
 import h5py
 from geometry import ctg_content_permutation_null, temporal_stability_tau
 from statistics import stable_seed, stouffer_combine
 from io_utils import locked_json_update
 
-DATA_DIR = Path("/media/amin/EXTERNAL_USB/SMAF/Research/Representation/Working Memory/data/000469")
+DATA_DIR = dataset_path("dandi_000469")
 RESULTS = ROOT / "results"
 N_PC = 8
 CTG_STEP = 3

@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
-"""Round-11 PART 17B: cluster-robust apples-to-apples test of
-amplification_alignment (alignment to w1, the propagator's top RIGHT
-SINGULAR vector) against vstar_alignment (alignment to the top eigenvector),
-on the SAME Soldado rows/sessions/exclusions as
-run_soldado_headline_robustness.py's settled vstar/min_energy result.
+"""Cluster-robust, matched-design comparison of amplification_alignment
+(alignment to w1, the propagator's top RIGHT SINGULAR vector) against
+vstar_alignment (alignment to the top eigenvector), on the SAME macaque PFC microstimulation
+rows/sessions/exclusions as run_macaque_pfc_microstimulation_headline_robustness.py's settled
+vstar/min_energy result.
 
-WHY a separate script rather than extending run_soldado_headline_robustness.py
-in place: that script's ARMS tuple and self-checks are the settled Round-8.1
-robustness result (feeds build_apples_to_apples_leaderboard.py's
-trial_resolution block, a K7-settled null) -- do not touch it. This script
-duplicates its cluster-bootstrap METHOD (identical _slope_formula /
-_cluster_bootstrap logic, same session-resampling rationale) scoped to the
-one new comparison PART 17B needs, with its own independent RNG stream.
+WHY a separate script rather than extending run_macaque_pfc_microstimulation_headline_robustness.py
+in place: that script's ARMS tuple and self-checks are a settled robustness
+result (feeds build_causal_targeting_leaderboard.py's trial_resolution
+block; the underlying null is closed and should not be reopened) -- do not
+touch it. This script duplicates its cluster-bootstrap METHOD (identical
+_slope_formula / _cluster_bootstrap logic, same session-resampling
+rationale) scoped to this one new comparison, with its own independent RNG
+stream.
 
 Run:
     /home/amin/miniconda3/envs/wm_dynamics/bin/python scripts/run_amplification_robustness.py
@@ -29,7 +30,7 @@ warnings.filterwarnings("ignore")
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-import run_soldado_pipeline as soldado  # noqa: E402
+import run_macaque_pfc_microstimulation_pipeline as macaque_pfc_microstimulation  # noqa: E402
 from causal import benchmark_modifiers, _dr_slope  # noqa: E402
 from statistics import stable_seed  # noqa: E402
 
@@ -39,13 +40,13 @@ N_BOOT = 2000
 
 
 def _build_all_rows() -> tuple[list[dict], list[str]]:
-    """Identical construction to run_soldado_headline_robustness.py's
+    """Identical construction to run_macaque_pfc_microstimulation_headline_robustness.py's
     _build_all_rows (minus the session_mean_vstar_scalar column, not needed
     here)."""
     all_rows, session_order = [], []
-    for prefix in soldado.SESSIONS:
+    for prefix in macaque_pfc_microstimulation.SESSIONS:
         try:
-            feat = soldado.build_session_features(prefix, structural_ctrl=None)
+            feat = macaque_pfc_microstimulation.build_session_features(prefix, structural_ctrl=None)
         except Exception as e:
             print(f"  {prefix} FAILED: {e}")
             feat = None
@@ -98,10 +99,10 @@ def _cluster_robust_result(phi, modifier, session_idx, n_sessions, rng) -> dict:
 
 
 def main() -> None:
-    print("Rebuilding all_rows exactly as run_soldado_pipeline.main() does ...")
+    print("Rebuilding all_rows exactly as run_macaque_pfc_microstimulation_pipeline.main() does ...")
     all_rows, session_order = _build_all_rows()
     if not all_rows:
-        print("No usable Soldado sessions -- stopping without a result.")
+        print("No usable macaque PFC microstimulation sessions -- stopping without a result.")
         return
     n_sessions = len(session_order)
 

@@ -23,6 +23,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from geometry import cross_condition_decoding_test
 from statistics import stable_seed, stouffer_combine
+from provenance import _json_safe
 
 RESULTS = ROOT / "results"
 N_PERM = 500
@@ -86,13 +87,13 @@ def main():
 
     out = {"per_subject": per_subject, "pooled": pooled}
     with open(RESULTS / "item_identity_load_generalization_000469.json", "w") as f:
-        json.dump(out, f, indent=2)
+        json.dump(_json_safe(out), f, indent=2, allow_nan=False)
 
     with open(RESULTS / "all_statistics.json") as f:
         stats = json.load(f)
     stats["item_identity_load_generalization_000469"] = out
     with open(RESULTS / "all_statistics.json", "w") as f:
-        json.dump(stats, f, indent=2)
+        json.dump(_json_safe(stats), f, indent=2, allow_nan=False)
     print("\nSaved results/item_identity_load_generalization_000469.json, updated all_statistics.json")
 
 

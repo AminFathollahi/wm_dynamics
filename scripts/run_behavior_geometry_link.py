@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Behavioral performance-predictability -> geometry link (Round-7, STEP C).
+"""Behavioral performance-predictability -> geometry link.
 
 Anchor dataset: DANDI 000469 (content + context + outcome from the same
 sessions). Add Boran iEEG (context + outcome; content is N/A -- no repeated
@@ -29,7 +29,7 @@ on the same Spearman statistic) alongside the permutation p, matching spec
 C3's {beta, ci_lo, ci_hi, p} schema (beta := rho here, since these are rank
 correlations of session-level scalars, not a fitted linear-model beta).
 
-HONEST NOTE (spec C3): the existing drift-vs-accuracy link (PAPER_REPORT.tex
+HONEST NOTE: the existing drift-vs-accuracy link (the project's own manuscript draft,
 L1458-1712) is already weak and mixed in direction; modest/null effects here
 are expected and reported as they come out, not inflated.
 

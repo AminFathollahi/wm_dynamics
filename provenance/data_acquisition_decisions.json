@@ -1,0 +1,48 @@
+[
+  {
+    "decision_id": "P1-panichello-2024",
+    "dataset": "Intermittent rate coding and cue-specific neuronal ensembles support working memory",
+    "primary_source": "https://doi.org/10.5061/dryad.kkwh70sct",
+    "release": "Dryad published 2024-08-27",
+    "license": "See Dryad record; citation/request-to-inform-authors requirement recorded in source README",
+    "estimated_download_bytes": 159164580,
+    "required_assets": "all 25 session MAT files and README.md",
+    "construct": "simultaneous lateral-PFC population representation during a spatial working-memory delay",
+    "independent_unit": "session nested in three macaques",
+    "intervention_status": "observational",
+    "go_no_go": "go",
+    "reason": "151.79 MB official processed release directly adjudicates intermittent versus rate-Off mnemonic representation and fits available external-drive capacity.",
+    "acquisition_attempt_2026_07_30": "The documented Dryad API download endpoint returned HTTP 401; the public file-stream endpoint returned HTTP 403 even with the dataset referrer. No data bytes were accepted, so no unofficial mirror was substituted.",
+    "acquisition_verified_2026_07_31": "User copied the data directly to the external drive at `Panichello_2024/` (capitalized, not the `panichello_2024/` path this decision record originally assumed). 25 .mat files + README present, 145 MB, README session breakdown (10+8+7=25) matches. Verified by direct listing and content read, not just presence."
+  },
+  {
+    "decision_id": "P1-watters-2026",
+    "dataset": "Working Memory of Multi-Object Scenes in Primate Frontal Cortex",
+    "primary_source": "https://osf.io/vyw49",
+    "release": "processed OSF cache; exact version/assets require API inspection before download",
+    "license": "pending official metadata inspection",
+    "estimated_download_bytes": 4831838208,
+    "required_assets": "processed cache only; do not acquire raw DANDI 000620",
+    "construct": "multi-object working-memory composition and held-out behavior prediction",
+    "independent_unit": "session nested in two macaques",
+    "intervention_status": "observational",
+    "go_no_go": "go",
+    "reason": "The audit estimates 4.5 GB compressed, but exact asset manifest and license must be captured before external-drive write. Official documentation identifies the required asset as data_for_figures.zip; the OSF API was not reachable from this execution environment.",
+    "acquisition_verified_2026_07_31": "User copied the data directly to the external drive at `Watters/` (capitalized, not `watters_2026/`). Both `data_for_figures.zip` (4.12 GB) and `data_for_modeling.zip` (382 MB) present and extracted, total ~4.5 GB compressed matching the estimate; `unzip -t` clean on both. License still not independently confirmed from the OSF page itself — treat as pending until read directly."
+  },
+  {
+    "decision_id": "P1-almost-2019-alm",
+    "dataset": "Inagaki ALM delayed-response perturbation positive control",
+    "primary_source": "https://doi.org/10.25378/janelia.7489253",
+    "release": "CRCNS/figshare; exact subset and assets require API inspection before download",
+    "license": "pending official metadata inspection",
+    "estimated_download_bytes": null,
+    "required_assets": "smallest recording-plus-opto subset that preserves trial, silencing, recovery, and behavior metadata",
+    "construct": "predictive dynamics and real perturbation/recovery positive control; not working-memory content",
+    "independent_unit": "mouse/session",
+    "intervention_status": "bilateral optogenetic silencing",
+    "go_no_go": "go",
+    "reason": "Method positive control is justified, but raw bulk data will not be downloaded without a verified asset list and size.",
+    "acquisition_verified_2026_07_31": "User copied the data directly to the external drive at `Inagaki/` (capitalized, not `alm_5/`; `alm_5/SiliconProbeData.zip` is a 114 KB broken stub, ignore it). `Inagaki/SiliconProbeData.zip` (367 MB, unzip -t clean) extracted to `SiliconProbeData/SiliconProbeData/{FixedDelayTask,RandomDelayTask}/` with `SiliconProbeDataStructure.docx` and example PSTH-plotting `.m` scripts. A `WholeCellData.zip` (12.7 GB, also extracted) is present but was not part of the requested subset; leave it, it is not needed for 5.2/6.3 unless a later decision changes the required-assets scope."
+  }
+]

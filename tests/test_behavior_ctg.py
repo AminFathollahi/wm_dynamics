@@ -1,4 +1,5 @@
-"""Tests for scripts/run_behavior_ctg.py (Round-7 STEP B/I).
+"""Tests for scripts/run_behavior_ctg.py, the behavioural-performance
+cross-temporal-generalization arm.
 
 The script reuses geometry.ctg_label_permutation_null unchanged (its own
 docstring: "does not implement any new numerical routine, only supplies a

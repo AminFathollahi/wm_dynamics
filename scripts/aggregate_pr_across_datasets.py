@@ -17,8 +17,10 @@ from pathlib import Path
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 from statistics import linear_mixed_effects_test
+from provenance import load_overlap_report, linked_duplicate_000673_session_keys, _json_safe
 
 RESULTS = ROOT / "results"
+PROVENANCE = ROOT / "provenance"
 
 
 def pr_lme(pr_records: list[tuple[str, float, float]], rng) -> dict:
@@ -63,12 +65,21 @@ def main():
                 records.append((v["subject"], float(ss), prd["pr_cv"]))
     out["boran_units"] = pr_lme(records, rng) if records else None
 
+    # 001187 and 000673 share 31 patients/37 sessions (corrected 2026-08-03 from a prior 16/19 undercount; see
+    # provenance/dataset_overlap_report.json); drop 000673's linked-duplicate
+    # sessions here so its LME reflects only patients not already counted via 001187.
+    overlap_report = load_overlap_report(PROVENANCE)
+    linked_keys = (linked_duplicate_000673_session_keys(overlap_report)
+                   if overlap_report is not None else set())
+
     # 000469 / 001187 / 000673: [key]["pr_per_load"][{1,2,3}]["pr_cv"]
     for dset_key, out_key in [("dandi000469_ctg", "dandi000469"),
                               ("dandi001187_ctg", "dandi001187"),
                               ("dandi000673_ctg", "dandi000673")]:
         records = []
         for key, v in stats.get(dset_key, {}).items():
+            if dset_key == "dandi000673_ctg" and key in linked_keys:
+                continue
             for ld, prd in v["pr_per_load"].items():
                 if isinstance(prd, dict) and np.isfinite(prd.get("pr_cv", np.nan)):
                     records.append((key, float(ld), prd["pr_cv"]))
@@ -82,7 +93,7 @@ def main():
 
     stats["pr_lme_by_dataset"] = out
     with open(RESULTS / "all_statistics.json", "w") as f:
-        json.dump(stats, f, indent=2)
+        json.dump(_json_safe(stats), f, indent=2, allow_nan=False)
     print("Updated all_statistics.json[pr_lme_by_dataset]")
 
 

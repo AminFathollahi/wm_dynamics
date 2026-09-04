@@ -41,13 +41,19 @@ import scipy.io as sio
 from pathlib import Path
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
-_EXT_DATA = Path(
-    "/media/amin/EXTERNAL_USB/SMAF/Research/Representation/Working Memory/data"
+try:  # package import in tests; flat import in directly-run legacy scripts
+    from .project_config import data_asset_path, data_root, dataset_path
+except ImportError:  # pragma: no cover - exercised by script entry points
+    from project_config import data_asset_path, data_root, dataset_path
+
+_EXT_DATA = data_root(required=False)
+DATA_DIR = dataset_path("kai_miller_nback", "data", required=False)
+MILLER_DATA_DIR = (
+    dataset_path("kai_miller_nback", required=False).parents[1]
+    if _EXT_DATA is not None else None
 )
-DATA_DIR = _EXT_DATA / "kai miller" / "memory_nback" / "memory_nback" / "data"
-MILLER_DATA_DIR = _EXT_DATA / "kai miller"
-BORAN_DATA_DIR = _EXT_DATA / "000574"
-TES1_ZIP_PATH = _EXT_DATA / "Tes1" / "HuangLiu2016dataset.zip"
+BORAN_DATA_DIR = dataset_path("dandi_000574", required=False)
+TES1_ZIP_PATH = data_asset_path("tes1_zip", required=False)
 
 SUBJECTS = ["al", "ca", "cc", "ug"]
 SRATE = 1000  # Hz (Miller) -- confirmed from Miller 2019 Nat Hum Behav Methods
@@ -92,6 +98,17 @@ def load_subject(subj: str, data_dir: Path = DATA_DIR) -> dict:
 
 # ── Signal processing ──────────────────────────────────────────────────────────
 
+class PassbandExceedsNyquistError(ValueError):
+    """Raised by bandpass_filter when the requested passband is not representable
+    at the signal's own sampling rate: a Butterworth bandpass needs its low and
+    high edges strictly between 0 Hz and the Nyquist frequency (srate / 2). Without
+    this check, scipy.signal.butter fails later with an unnamed "Digital filter
+    critical frequencies must be 0 < Wn < 1" ValueError that reports neither the
+    sampling rate nor which requested band caused it. The request is never
+    clamped to Nyquist and never narrowed to a band that would fit: either would
+    silently substitute a different measurement for the one asked for."""
+
+
 def bandpass_filter(
     data: np.ndarray, lo: float, hi: float, srate: float, order: int = 4
 ) -> np.ndarray:
@@ -102,8 +119,24 @@ def bandpass_filter(
     data  : (T,) or (T, C)
     lo, hi : passband edges in Hz
     order : filter order (effective 2*order after forward-backward pass)
+
+    Raises
+    ------
+    PassbandExceedsNyquistError
+        If the requested band is not entirely representable at this sampling
+        rate (0 < lo < hi < nyquist fails). This is a hard error, not a
+        warning: a filter fit on a coerced band would produce a number that
+        looks like a measurement and is not one.
     """
     nyq = srate / 2.0
+    if not (0.0 < lo < hi < nyq):
+        raise PassbandExceedsNyquistError(
+            f"requested passband {lo:g}-{hi:g} Hz is not representable at a "
+            f"{srate:g} Hz sampling rate (Nyquist frequency {nyq:g} Hz): a "
+            "Butterworth bandpass filter requires 0 < lo < hi < nyquist. This "
+            "passband is not clamped to Nyquist and no narrower band is "
+            "substituted for it."
+        )
     sos = sig.butter(order, [lo / nyq, hi / nyq], btype="band", output="sos")
     if data.ndim == 1:
         return sig.sosfiltfilt(sos, data)
@@ -119,6 +152,31 @@ def notch_filter(
     if data.ndim == 1:
         return sig.filtfilt(b, a, data)
     return np.apply_along_axis(lambda x: sig.filtfilt(b, a, x), 0, data)
+
+
+def butterworth_bandstop(
+    data: np.ndarray, lo: float, hi: float, srate: float, order: int = 4
+) -> np.ndarray:
+    """Zero-phase Butterworth band-stop filter (sosfiltfilt).
+
+    Distinct from `notch_filter` (a narrow IIR notch at one frequency): this
+    is a wide band-stop over [lo, hi], matching source datasets that specify
+    their own line-noise removal as a Butterworth band-stop rather than a
+    notch (e.g. RAM's 58-62 Hz, 4th-order recipe for the Morlet classifier
+    feature bank -- reproduce the released recipe exactly, don't substitute
+    a differently-shaped filter).
+
+    Parameters
+    ----------
+    data   : (T,) or (T, C)
+    lo, hi : stopband edges in Hz
+    order  : filter order (effective 2*order after forward-backward pass)
+    """
+    nyq = srate / 2.0
+    sos = sig.butter(order, [lo / nyq, hi / nyq], btype="bandstop", output="sos")
+    if data.ndim == 1:
+        return sig.sosfiltfilt(sos, data)
+    return np.apply_along_axis(lambda x: sig.sosfiltfilt(sos, x), 0, data)
 
 
 def common_average_reference(data: np.ndarray) -> np.ndarray:
@@ -143,10 +201,10 @@ def line_noise_notch(
 ) -> np.ndarray:
     """Notch out mains frequency + harmonics (e.g. 50/100/150 Hz for EU sites).
 
-    Round-8 7A fix: the Boran (Zurich, 50 Hz mains) high-gamma path (70-150 Hz)
-    previously had no notch at all, so the 2nd/3rd mains harmonics (100, 150 Hz)
-    fell inside the HGP band uncorrected. Miller (US, 60 Hz) already goes
-    through preprocess(), which does notch -- this covers the Boran gap.
+    Required for any high-gamma (70-150 Hz) path at a 50 Hz-mains site (e.g.
+    Boran/Zurich): the 2nd/3rd mains harmonics (100, 150 Hz) otherwise fall
+    inside the HGP band uncorrected. Miller (US, 60 Hz) already goes through
+    preprocess(), which does notch -- this covers 50 Hz sites.
 
     Parameters
     ----------
@@ -197,11 +255,11 @@ def bipolar_reference_by_shank(
 ) -> tuple[np.ndarray, list[str]]:
     """Bipolar (sequential adjacent-contact) re-reference for depth/sEEG shanks.
 
-    Round-8 7B fix: Boran depth electrodes were only ever CAR'd across ALL
-    channels (mixing shanks/regions), not bipolar -- bipolar-along-shank is
-    the sEEG field standard (shared-reference / volume-conduction artifacts
-    are far better removed by differencing adjacent contacts a few mm apart
-    than by a whole-head average). Channels that don't parse (e.g. scalp EEG
+    Bipolar-along-shank is the sEEG field standard (shared-reference /
+    volume-conduction artifacts are far better removed by differencing
+    adjacent contacts a few mm apart than by a whole-head common-average
+    reference, which mixes signal across shanks/regions). Channels that
+    don't parse (e.g. scalp EEG
     'F3', 'Cz') or belong to a single-contact shank fall back to a
     common-average reference among themselves.
 
@@ -229,27 +287,94 @@ def bipolar_reference_by_shank(
     return np.stack(out_cols, axis=1), out_labels
 
 
-def reject_bad_channels(
-    data: np.ndarray, threshold_mad: float = 3.0
-) -> np.ndarray:
-    """Return boolean mask of channels whose variance is within threshold MADs of median.
+def _mad_outlier_mask(values: np.ndarray, threshold_mad: float) -> np.ndarray:
+    """True where `values` is a robust-z outlier above the population median."""
+    med = np.median(values)
+    mad = np.median(np.abs(values - med))
+    robust_z = np.abs(values - med) / (1.4826 * mad + 1e-12)
+    return robust_z >= threshold_mad
 
-    Uses the median absolute deviation (MAD) scaled to match SD under normality
-    (scale factor 1.4826) for robustness to outlier channels.
+
+def line_noise_power_ratio(
+    data: np.ndarray,
+    srate: float,
+    mains_hz: float = 60.0,
+    n_harmonics: int = 3,
+    bandwidth_hz: float = 2.0,
+) -> np.ndarray:
+    """Fraction of each channel's broadband power concentrated at mains harmonics.
+
+    A channel contaminated by narrowband line noise (mains hum, a stimulation
+    artifact) does not necessarily have unusual total variance -- the
+    contamination can sit almost entirely inside a couple of Hz-wide peaks,
+    which a broadband variance/MAD test cannot see. This measures that
+    concentration directly from a Welch PSD.
+
+    Parameters
+    ----------
+    data   : (T, C)
+    mains_hz : site line frequency (60 US, 50 EU) -- do not assume one site.
+
+    Returns
+    -------
+    ratio : (C,) float in [0, 1] -- line-band power / total power
+    """
+    nperseg = int(min(data.shape[0], max(srate, 256)))
+    freqs, psd = sig.welch(data, fs=srate, axis=0, nperseg=nperseg)
+    total_power = np.trapezoid(psd, freqs, axis=0)
+    line_power = np.zeros(data.shape[1])
+    for h in range(1, n_harmonics + 1):
+        f0 = mains_hz * h
+        if f0 >= srate / 2:
+            break
+        band = (freqs >= f0 - bandwidth_hz / 2) & (freqs <= f0 + bandwidth_hz / 2)
+        if np.any(band):
+            line_power += np.trapezoid(psd[band], freqs[band], axis=0)
+    return line_power / (total_power + 1e-12)
+
+
+def reject_bad_channels(
+    data: np.ndarray,
+    threshold_mad: float = 3.0,
+    srate: float | None = None,
+    mains_hz: float = 60.0,
+    line_noise_threshold_mad: float = 3.0,
+) -> np.ndarray:
+    """Return boolean mask of channels passing broadband-variance AND line-noise QC.
+
+    Two independent, additive criteria; a channel is rejected if it fails
+    EITHER (additive, not substitutive -- both criteria are checked, neither replaces the other):
+      1. broadband variance is a MAD-outlier relative to the other channels
+         (the original criterion).
+      2. its power is abnormally concentrated at the mains frequency and its
+         harmonics (`line_noise_power_ratio`), relative to the other
+         channels. This is required because criterion 1 alone is a known
+         false-negative source in ECoG/iEEG QC: narrowband contamination
+         (mains hum, stimulation artifact) can leave broadband variance
+         unremarkable while still corrupting a specific band, e.g. the
+         70-150 Hz high-gamma band used throughout this project.
+
+    Criterion 2 only runs when `srate` is given (it needs a sampling rate to
+    define frequency bins); passing `srate=None` reproduces the original
+    variance-only behavior exactly, for callers that have not been migrated.
 
     Parameters
     ----------
     threshold_mad : rejection z-score in robust MAD units (3.0 = 3 MAD)
+    srate         : sampling rate in Hz; enables the line-noise criterion.
+    mains_hz      : site line frequency (60 US, 50 EU) -- verify per site,
+                    do not assume one site for every dataset.
 
     Returns
     -------
     good : (C,) bool  — True = keep
     """
-    ch_var = data.var(axis=0)
-    med = np.median(ch_var)
-    mad = np.median(np.abs(ch_var - med))
-    robust_z = np.abs(ch_var - med) / (1.4826 * mad + 1e-12)
-    return robust_z < threshold_mad
+    variance_bad = _mad_outlier_mask(data.var(axis=0), threshold_mad)
+    if srate is None:
+        return ~variance_bad
+    line_ratio = line_noise_power_ratio(data, srate, mains_hz=mains_hz)
+    line_noise_bad = _mad_outlier_mask(line_ratio, line_noise_threshold_mad)
+    return ~(variance_bad | line_noise_bad)
 
 
 def preprocess(
@@ -418,7 +543,7 @@ def run_pipeline(
     Returns the normalized epoch tensor and metadata ready for geometry analysis.
     """
     d = load_subject(subj)
-    good = reject_bad_channels(d["data"], threshold_mad=bad_ch_threshold)
+    good = reject_bad_channels(d["data"], threshold_mad=bad_ch_threshold, srate=SRATE, mains_hz=60.0)
     data_clean = preprocess(d["data"][:, good])
     hgp = high_gamma_power(data_clean)
     ep = epoch_data(hgp, d["stim"], d["task"], d["target"], pre_ms, post_ms)
@@ -458,7 +583,7 @@ def load_miller_nback(
     task = raw["task"].ravel().astype(np.int8)
     target = raw["target"].ravel().astype(np.uint8)
 
-    good = reject_bad_channels(data, threshold_mad=bad_ch_threshold)
+    good = reject_bad_channels(data, threshold_mad=bad_ch_threshold, srate=SRATE, mains_hz=60.0)
     data_clean = preprocess(data[:, good])
     hgp = high_gamma_power(data_clean)  # (T, C)
 
@@ -499,6 +624,9 @@ def load_boran_nwb(
     nwb_path: str,
     signal: str = "ieeg",
     epoch_win: tuple[float, float] = (-6.5, 2.5),
+    reject_channels: bool = False,
+    bad_channel_mad_threshold: float = 3.0,
+    mains_hz: float = 50.0,
 ) -> dict:
     """Load Boran et al. Sternberg WM task from NWB file (DANDI 000574).
 
@@ -518,6 +646,16 @@ def load_boran_nwb(
     nwb_path : path to .nwb file
     signal   : 'ieeg' (1398 Hz, 48 ch) | 'eeg' (140 Hz, 19 ch) | 'lfp' (raw)
     epoch_win: (t_pre, t_post) in seconds relative to probe onset
+    reject_channels : if True, run `reject_bad_channels` (variance-MAD plus
+                       line-noise power-ratio) on the continuous recording
+                       before epoching, and drop failing channels from
+                       `epochs`/`electrode_labels`/`electrode_locs`. Off by
+                       default so existing callers keep the full raw channel
+                       set; new analyses that need clean channels should
+                       opt in explicitly.
+    mains_hz : site line frequency for the line-noise criterion. This
+               release is recorded in Zurich (50 Hz mains), not a US site —
+               do not reuse a 60 Hz default here.
 
     Returns
     -------
@@ -529,6 +667,8 @@ def load_boran_nwb(
       artifact     : (N_trials,) bool
       electrode_labels : list[str]
       electrode_locs   : list[str]  — brain area per electrode
+      good_channels    : (N_ch,) bool — QC mask already applied above
+                          (all True when reject_channels=False)
       srate        : float
     """
     import h5py
@@ -589,6 +729,16 @@ def load_boran_nwb(
     elec_labels_sel = [elec_labels[i] for i in range(len(elec_labels)) if ch_mask[i]]
     elec_locs_sel   = [elec_locs[i]   for i in range(len(elec_locs))   if ch_mask[i]]
 
+    if reject_channels:
+        good_channels = reject_bad_channels(
+            raw_data, threshold_mad=bad_channel_mad_threshold, srate=srate, mains_hz=mains_hz,
+        )
+    else:
+        good_channels = np.ones(raw_data.shape[1], dtype=bool)
+    epochs_arr = epochs_arr[:, good_channels, :]
+    elec_labels_sel = [lab for lab, keep in zip(elec_labels_sel, good_channels) if keep]
+    elec_locs_sel = [loc for loc, keep in zip(elec_locs_sel, good_channels) if keep]
+
     return {
         "epochs": epochs_arr,
         "times": times,
@@ -598,6 +748,7 @@ def load_boran_nwb(
         "valid": valid_mask,
         "electrode_labels": elec_labels_sel,
         "electrode_locs": elec_locs_sel,
+        "good_channels": good_channels,
         "srate": srate,
         "signal": signal,
     }
@@ -653,7 +804,7 @@ def boran_baseline_normalize(
 # ── TES1 — Huang et al. 2017 eLife tES stimulation field ──────────────────────
 
 def load_tes1_stimulation(
-    zip_path: str = str(TES1_ZIP_PATH),
+    zip_path: str | Path | None = None,
     subject: str | None = None,
 ) -> dict | list[dict]:
     """Load tES-induced intracranial voltages from Huang et al. 2017 eLife.
@@ -667,7 +818,7 @@ def load_tes1_stimulation(
 
     Parameters
     ----------
-    zip_path : path to HuangLiu2016dataset.zip
+    zip_path : path to HuangLiu2016dataset.zip; defaults to the configured asset
     subject  : subject ID string (e.g. 'P03'). If None, returns list of all.
 
     Returns
@@ -678,6 +829,9 @@ def load_tes1_stimulation(
       mni_coords   : (N_elec, 3) float — MNI x,y,z in mm (NaN if unlocalized)
       voltage_mV   : (N_elec,) float — induced voltage per mA (NaN if rejected)
     """
+    if zip_path is None:
+        zip_path = data_asset_path("tes1_zip")
+
     def _parse_file(z: zipfile.ZipFile, fname: str, subj_id: str) -> dict:
         with z.open(fname) as fh:
             lines = fh.read().decode("utf-8", errors="replace").strip().split("\n")

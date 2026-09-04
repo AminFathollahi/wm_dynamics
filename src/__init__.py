@@ -1,7 +1,7 @@
 """
 wm_dynamics — Neural manifold geometry and dynamics of working memory maintenance,
 including a closed-loop stimulation (LQR/DARE) control layer and causal-inference
-tools for testing geometry-conditioned treatment effects (see PAPER_REPORT.tex).
+tools for testing geometry-conditioned treatment effects.
 
 Modules
 -------

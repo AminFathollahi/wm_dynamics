@@ -30,10 +30,11 @@ from pathlib import Path
 warnings.filterwarnings("ignore")
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
+from project_config import data_root, dataset_path, executable, project_path
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import h5py
-from spike_pipeline import load_spike_times, build_psth
+from spike_pipeline import load_spike_times, build_psth, low_rate_unit_mask, FrozenPSTHTransform
 from geometry import out_of_fold_class_confidence
 from statistics import gated_outcome_cluster_test
 from io_utils import locked_json_update
@@ -41,7 +42,7 @@ from io_utils import locked_json_update
 import run_full_trial_content_decoding_000469 as single_item
 import run_multiitem_recall_decoding_000469 as multi_item
 
-DATA_DIR = Path("/media/amin/EXTERNAL_USB/SMAF/Research/Representation/Working Memory/data/000469")
+DATA_DIR = dataset_path("dandi_000469")
 RESULTS = ROOT / "results"
 N_PC = 8
 
@@ -70,6 +71,14 @@ def process_load1(subj: str, rng) -> dict | None:
         acc = trials["response_accuracy"][:].astype(bool)
         t_fix = trials["timestamps_FixationCross"][:]
         t_resp = trials["timestamps_Response"][:]
+        t_maint = trials["timestamps_Maintenance"][:]
+
+    # Same firing-rate QC floor as run_000469_pipeline.py (Daume et al. 2024).
+    rate_mask = low_rate_unit_mask(spike_lists, t_maint, single_item.MAINT_WIN)
+    if rate_mask.sum() < 15:
+        return None
+    spike_lists = [spk for spk, keep in zip(spike_lists, rate_mask) if keep]
+    n_units = int(rate_mask.sum())
 
     mask = loads == 1
     if mask.sum() < single_item.MIN_TRIALS_PER_CLASS * 2:
@@ -79,11 +88,11 @@ def process_load1(subj: str, rng) -> dict | None:
         return None
 
     fix_onsets = t_fix[mask] - single_item.FIX_PRE_S
-    psth_fix = single_item._zscore(build_psth(
+    psth_fix = FrozenPSTHTransform().fit_transform(build_psth(
         spike_lists, fix_onsets, bin_ms=single_item.BIN_MS, smooth_ms=single_item.SMOOTH_MS,
         window_s=single_item.FIX_PRE_S + single_item.FIX_POST_S))
     resp_onsets = t_resp[mask] - single_item.RESP_PRE_S
-    psth_resp = single_item._zscore(build_psth(
+    psth_resp = FrozenPSTHTransform().fit_transform(build_psth(
         spike_lists, resp_onsets, bin_ms=single_item.BIN_MS, smooth_ms=single_item.SMOOTH_MS,
         window_s=single_item.RESP_PRE_S + single_item.RESP_POST_S))
 
@@ -118,8 +127,16 @@ def process_load3(subj: str, rng) -> dict | None:
         t_fix = trials["timestamps_FixationCross"][:]
         t_resp = trials["timestamps_Response"][:]
         t_probe = trials["timestamps_Probe"][:]
+        t_maint = trials["timestamps_Maintenance"][:]
         item_labels = {name: trials[field][:].astype(int)
                        for name, (field, _) in multi_item.ITEM_FIELDS.items()}
+
+    # Same firing-rate QC floor as run_000469_pipeline.py (Daume et al. 2024).
+    rate_mask = low_rate_unit_mask(spike_lists, t_maint, multi_item.MAINT_WIN)
+    if rate_mask.sum() < 15:
+        return None
+    spike_lists = [spk for spk, keep in zip(spike_lists, rate_mask) if keep]
+    n_units = int(rate_mask.sum())
 
     mask = loads == 3
     if mask.sum() < multi_item.MIN_TRIALS_PER_CLASS * 2:
@@ -131,11 +148,11 @@ def process_load3(subj: str, rng) -> dict | None:
     fix_post_s = max(multi_item.FIX_POST_S, mean_probe_rel + 2.5)
 
     fix_onsets = t_fix[mask] - multi_item.FIX_PRE_S
-    psth_fix = multi_item._zscore(build_psth(
+    psth_fix = FrozenPSTHTransform().fit_transform(build_psth(
         spike_lists, fix_onsets, bin_ms=multi_item.BIN_MS, smooth_ms=multi_item.SMOOTH_MS,
         window_s=multi_item.FIX_PRE_S + fix_post_s))
     resp_onsets = t_resp[mask] - multi_item.RESP_PRE_S
-    psth_resp = multi_item._zscore(build_psth(
+    psth_resp = FrozenPSTHTransform().fit_transform(build_psth(
         spike_lists, resp_onsets, bin_ms=multi_item.BIN_MS, smooth_ms=multi_item.SMOOTH_MS,
         window_s=multi_item.RESP_PRE_S + multi_item.RESP_POST_S))
 

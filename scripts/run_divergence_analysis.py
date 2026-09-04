@@ -32,6 +32,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from dynamics import (dmd_reconstruction_error, ensemble_dmd, divergence_rank_sweep,
                       mean_trajectory_divergence_rank_sweep, rank_robustness_sign,
                       trajectory_tangling)
+from provenance import _json_safe
 
 RESULTS = ROOT / "results"
 
@@ -323,7 +324,7 @@ def process_rutishauser(out: dict, all_rows: dict):
         all_rows["rutishauser"][subj].update(ens_row)
 
 
-# ── Round-7 STEP K2: fillable gaps (Boran units, DANDI 001187, DANDI 000673) ──
+# ── Previously-uncovered cohorts (Boran units, DANDI 001187, DANDI 000673) ──
 # Growth rate + tangling at DMD_RANK=8 (this module's existing full-latent-rank
 # convention -- ALL of Miller/Boran-iEEG/Rutishauser above are fit the same way,
 # so keeping these three cohorts at the same rank is what makes them poolable
@@ -345,7 +346,7 @@ def _rotation_freq_hz(eigenvalues: np.ndarray, dt: float) -> float:
 
 
 def process_boran_units(out: dict, all_rows: dict):
-    print("  Boran units (single-unit, STEP K2):")
+    print("  Boran units (single-unit):")
     for path in sorted(RESULTS.glob("dandi000574_units_geometry_sub-*.npz")):
         key = path.stem.replace("dandi000574_units_geometry_", "")
         geo = np.load(path, allow_pickle=True)
@@ -376,7 +377,7 @@ def process_boran_units(out: dict, all_rows: dict):
 
 
 def _process_load1v3_dynamics(out: dict, all_rows: dict, group: str, geom_prefix: str):
-    """Shared K2 loader for DANDI 001187 / 000673: load-1-vs-load-3 (context)
+    """Shared loader for DANDI 001187 / 000673: load-1-vs-load-3 (context)
     high-load-trajectory dynamics, mirroring process_rutishauser's load-3-only
     convention for the sibling Rutishauser-lineage cohort (DANDI 000469)."""
     for path in sorted(RESULTS.glob(f"{geom_prefix}_sub-*.npz")):
@@ -409,12 +410,12 @@ def _process_load1v3_dynamics(out: dict, all_rows: dict, group: str, geom_prefix
 
 
 def process_dandi001187(out: dict, all_rows: dict):
-    print("  DANDI 001187 (single-unit, STEP K2):")
+    print("  DANDI 001187 (single-unit):")
     _process_load1v3_dynamics(out, all_rows, "dandi001187", "dandi001187_geometry")
 
 
 def process_dandi000673(out: dict, all_rows: dict):
-    print("  DANDI 000673 (single-unit + LFP, STEP K2):")
+    print("  DANDI 000673 (single-unit + LFP):")
     _process_load1v3_dynamics(out, all_rows, "dandi000673", "dandi000673_geometry")
 
 
@@ -502,9 +503,9 @@ def main():
     process_miller(out, all_rows, tes1)
     process_boran(out, all_rows, tes1_boran)
     process_rutishauser(out, all_rows)
-    process_boran_units(out, all_rows)       # Round-7 STEP K2
-    process_dandi001187(out, all_rows)       # Round-7 STEP K2
-    process_dandi000673(out, all_rows)       # Round-7 STEP K2
+    process_boran_units(out, all_rows)
+    process_dandi001187(out, all_rows)
+    process_dandi000673(out, all_rows)
 
     np.savez(RESULTS / "divergence_analysis.npz", **out)
     print("\n  Saved: results/divergence_analysis.npz")
@@ -516,7 +517,7 @@ def main():
     rushi_divs  = [all_rows["rutishauser"][s]["div_scalar"]
                    for s in RUSHI_SUBJECTS if s in all_rows["rutishauser"]]
 
-    # Round-7 STEP K2 cohorts
+    # Previously-uncovered cohorts
     bu_divs   = [v["div_scalar"] for v in all_rows["boran_units"].values()]
     d1187_divs = [v["div_scalar"] for v in all_rows["dandi001187"].values()]
     d0673_divs = [v["div_scalar"] for v in all_rows["dandi000673"].values()]
@@ -526,15 +527,15 @@ def main():
     print(f"    Boran:  {np.mean(boran_divs):.4f}  ± {np.std(boran_divs):.4f}")
     print(f"    Rushi.: {np.mean(rushi_divs):.4f}  ± {np.std(rushi_divs):.4f}")
     if bu_divs:
-        print(f"    Boran units (STEP K2):   {np.mean(bu_divs):.4f} ± {np.std(bu_divs):.4f} (N={len(bu_divs)})")
+        print(f"    Boran units:   {np.mean(bu_divs):.4f} ± {np.std(bu_divs):.4f} (N={len(bu_divs)})")
     if d1187_divs:
-        print(f"    DANDI 001187 (STEP K2):  {np.mean(d1187_divs):.4f} ± {np.std(d1187_divs):.4f} (N={len(d1187_divs)})")
+        print(f"    DANDI 001187:  {np.mean(d1187_divs):.4f} ± {np.std(d1187_divs):.4f} (N={len(d1187_divs)})")
     if d0673_divs:
-        print(f"    DANDI 000673 (STEP K2):  {np.mean(d0673_divs):.4f} ± {np.std(d0673_divs):.4f} (N={len(d0673_divs)})")
+        print(f"    DANDI 000673:  {np.mean(d0673_divs):.4f} ± {np.std(d0673_divs):.4f} (N={len(d0673_divs)})")
 
-    # STEP K3 payoff: Boran units (spiking) vs Boran iEEG (LFP) dynamics, within
+    # Boran units (spiking) vs Boran iEEG (LFP) dynamics, within
     # the same subjects/trials -- paired on shared subjects, same design as the
-    # axis-rotation K3 comparison in run_axis_rotation_analysis.py.
+    # axis-rotation comparison in run_axis_rotation_analysis.py.
     from statistics import paired_sign_flip_test
     bu_by_subj: dict[str, list] = {}
     for key, v in all_rows["boran_units"].items():
@@ -555,12 +556,12 @@ def main():
                           "mean_diff": res_div["mean_diff"], "ci_lower": res_div["ci_lower"],
                           "ci_upper": res_div["ci_upper"], "p_value": res_div["p_value"]},
         }
-        print(f"\n  STEP K3 spiking-vs-LFP div_scalar (Boran units vs Boran iEEG, N={len(shared)}): "
+        print(f"\n  Spiking-vs-LFP div_scalar (Boran units vs Boran iEEG, N={len(shared)}): "
               f"units={div_bu.mean():.4f} ieeg={div_ie.mean():.4f} diff={res_div['mean_diff']:+.4f} "
               f"[{res_div['ci_lower']:.4f},{res_div['ci_upper']:.4f}] p={res_div['p_value']:.4f} "
               f"({'AGREE' if res_div['p_value'] >= 0.05 else 'DIVERGE'})")
     else:
-        print(f"\n  STEP K3 spiking-vs-LFP div_scalar: only {len(shared)} shared subjects (<4) -- "
+        print(f"\n  Spiking-vs-LFP div_scalar: only {len(shared)} shared subjects (<4) -- "
               f"underpowered, STOP-and-report, not computed.")
     all_stats["divergence_spiking_vs_lfp_boran"] = k3_dynamics
 
@@ -600,7 +601,7 @@ def main():
 
     all_stats["divergence"] = all_rows
     with open(stats_path, "w") as f:
-        json.dump(all_stats, f, indent=2)
+        json.dump(_json_safe(all_stats), f, indent=2, allow_nan=False)
     print("  Updated all_statistics.json")
 
 

@@ -1,34 +1,30 @@
 #!/usr/bin/env python3
-"""DMD operator-rank selection and v*-stability (Round 6, STEP A6; made PRIMARY
-at the CV-selected r=7 in Round 7, STEP A).
+"""DMD operator-rank selection and v*-stability for the macaque PFC microstimulation causal benchmark.
 
-The operator rank r (Round 7: CV-selected r=7 primary; r=6 was the prior
-"retained" default) is a SEPARATE choice from the latent dim: it fixes the
-identified unstable direction v* on which the entire Round-5 causal benchmark
-rests, so it is the highest-stakes dimensionality in the paper. This selects r
-rather than asserting it, and confirms v* does not depend on it.
+The operator rank r is a separate choice from the latent dimension: it fixes
+the identified leading direction v* on which the causal benchmark rests, so
+it is the highest-stakes dimensionality choice in the pipeline. This script
+selects r on data rather than asserting it, and checks whether v* is stable
+to that choice.
 
-  (i)  cross-validated one-step R^2 of the DMD map for r in 4..8 (REUSES
-       dynamics.ensemble_dmd on the Soldado control latent trajectories — the
+  (i)  Cross-validated one-step R^2 of the DMD map for r in 4..8 (reuses
+       dynamics.ensemble_dmd on the macaque PFC microstimulation control latent trajectories — the
        same pooled single-trial snapshot-pair fit used everywhere else). Report
        the curve and the data-selected r (R^2 elbow within 0.01 of the best).
   (ii) v*(r) stability: cosine similarity of v*(r) to the r=6 solution (kept as
-       the fixed reference direction so the r=7 promotion is judged against the
-       same anchor as before) and the sign/magnitude of max Re(lambda), across
-       r in {5,6,7,8}. If v* rotates materially or the leading eigenvalue flips
-       stability, the benchmark is rank-dependent — this is the honest
-       STOP-AND-REPORT check. Round-7 result: vstar_rank_stable=False (min
-       |cos to r6| over r in {5,6,7,8} is below the 0.9 threshold, driven by
-       r=5); report this plainly, do not paper over it.
+       a fixed reference direction) and the sign/magnitude of max Re(lambda),
+       across r in {5,6,7,8}. If v* rotates materially or the leading
+       eigenvalue flips stability, the benchmark is rank-dependent, and that
+       is reported plainly rather than papered over.
 
-  Plus the causal-benchmark v*-alignment slope re-fit at each r (REUSES the
-  Soldado pipeline's own build_session_features + benchmark_modifiers with
-  DMD_RANK overridden), so run_dim_robustness.py can report headline (4) vs rank.
+  Plus the causal-benchmark v*-alignment slope re-fit at each r (reuses the
+  macaque PFC microstimulation pipeline's own build_session_features + benchmark_modifiers with
+  DMD_RANK overridden), so run_dim_robustness.py can report the headline vs rank.
 
 results/dmd_rank_selection.json — {r: {cv_r2_onestep, vstar_cos_to_r6,
     max_re_lambda, benchmark_slope, benchmark_p}}.
 
-Run (needs the Soldado data mount):
+Run (needs the macaque PFC microstimulation data mount):
     conda run -n wm_dynamics python scripts/run_dmd_rank_selection.py
 """
 from __future__ import annotations
@@ -44,29 +40,31 @@ warnings.filterwarnings("ignore")
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-import run_soldado_pipeline as soldado  # noqa: E402  (reuse its loaders + feature build)
+import run_macaque_pfc_microstimulation_pipeline as macaque_pfc_microstimulation  # noqa: E402  (reuse its loaders + feature build)
 from dynamics import ensemble_dmd, dmd_reconstruction_error  # noqa: E402
 from causal import benchmark_modifiers  # noqa: E402
 from statistics import stable_seed  # noqa: E402
 from geometry import pca_decompose  # noqa: E402
+from control import canonicalize_eigenvector_phase  # noqa: E402
+from provenance import _json_safe
 
 RESULTS = ROOT / "results"
 RANKS = (4, 5, 6, 7, 8)
-BIN_S = soldado.BIN_S
-N_BINS = soldado.N_BINS
-N_PC = soldado.N_PC
+BIN_S = macaque_pfc_microstimulation.BIN_S
+N_BINS = macaque_pfc_microstimulation.N_BINS
+N_PC = macaque_pfc_microstimulation.N_PC
 
 
 def _control_latents() -> list[np.ndarray]:
     """Per-session control-trial latent trajectories (N, N_BINS, k), PCA fit on
     the same control pool the pipeline uses. Reused across all ranks."""
     lat = []
-    for prefix in soldado.SESSIONS:
-        corr = soldado.load_soldado_session(prefix, correct=True)
+    for prefix in macaque_pfc_microstimulation.SESSIONS:
+        corr = macaque_pfc_microstimulation.load_macaque_pfc_microstimulation_session(prefix, correct=True)
         if corr is None or corr["control_idx"] is None:
             continue
         C = len(corr["channel_ids"])
-        ctrl = [soldado.crop_trial(tr["spikerate"]) for tr in corr["trials"]
+        ctrl = [macaque_pfc_microstimulation.crop_trial(tr["spikerate"]) for tr in corr["trials"]
                 if tr["stim_cond"] == corr["control_idx"]]
         ctrl = [e for e in ctrl if e is not None]
         if len(ctrl) < 10:
@@ -80,14 +78,14 @@ def _control_latents() -> list[np.ndarray]:
 
 
 def _vstar_and_eig(Z_mean: np.ndarray, r: int) -> tuple[np.ndarray, float]:
-    """v* (real part of top-eigenvalue eigenvector) and max Re(lambda) of the
-    mean-trajectory DMD operator — EXACTLY as run_soldado_pipeline builds it."""
+    """v* (phase-canonicalized direction of the top-eigenvalue eigenvector)
+    and max Re(lambda) of the mean-trajectory DMD operator — matching the
+    construction in run_macaque_pfc_microstimulation_pipeline."""
     r_use = min(r, Z_mean.shape[1], N_BINS - 2)
     A = dmd_reconstruction_error(Z_mean, r=r_use, dt=BIN_S)["A"]
     eigs, vecs = np.linalg.eig(A)
     top = np.argsort(eigs.real)[::-1][0]
-    v = vecs[:, top].real
-    v = v / (np.linalg.norm(v) + 1e-12)
+    v = canonicalize_eigenvector_phase(vecs[:, top])
     return v, float(eigs[top].real)
 
 
@@ -109,15 +107,15 @@ def cv_r2_and_vstar(latents: list[np.ndarray]) -> dict:
 
 
 def benchmark_slope_at_rank(r: int) -> dict:
-    """Re-run the Soldado v*-alignment benchmark with the operator rank set to r,
+    """Re-run the macaque PFC microstimulation v*-alignment benchmark with the operator rank set to r,
     reusing build_session_features + benchmark_modifiers unchanged."""
-    old = soldado.DMD_RANK
-    soldado.DMD_RANK = r
+    old = macaque_pfc_microstimulation.DMD_RANK
+    macaque_pfc_microstimulation.DMD_RANK = r
     try:
         all_rows, session_order = [], []
-        for prefix in soldado.SESSIONS:
+        for prefix in macaque_pfc_microstimulation.SESSIONS:
             try:
-                feat = soldado.build_session_features(prefix, structural_ctrl=None)
+                feat = macaque_pfc_microstimulation.build_session_features(prefix, structural_ctrl=None)
             except Exception:
                 feat = None
             if feat is None:
@@ -150,15 +148,15 @@ def benchmark_slope_at_rank(r: int) -> dict:
         return {"benchmark_slope": float(row["slope"]), "benchmark_p": float(row["p_value"]),
                 "winner": bench["winner"], "n": int(bench["n"])}
     finally:
-        soldado.DMD_RANK = old
+        macaque_pfc_microstimulation.DMD_RANK = old
 
 
 def main():
-    print("Caching Soldado control latents once ...")
+    print("Caching macaque PFC microstimulation control latents once ...")
     latents = _control_latents()
     print(f"  {len(latents)} sessions")
     if not latents:
-        print("No usable Soldado sessions — cannot run rank selection. STOP.")
+        print("No usable macaque PFC microstimulation sessions — cannot run rank selection. STOP.")
         return
 
     print("Per-rank cv one-step R^2 + v* stability (ensemble_dmd) ...")
@@ -195,10 +193,10 @@ def main():
 
     out["_meta"] = {"selected_r": int(elbow), "vstar_rank_stable": bool(stable),
                     "paper_r": 7, "ranks": list(RANKS)}
-    json.dump(out, open(RESULTS / "dmd_rank_selection.json", "w"), indent=2)
+    json.dump(_json_safe(out), open(RESULTS / "dmd_rank_selection.json", "w"), indent=2, allow_nan=False)
     stats = json.load(open(RESULTS / "all_statistics.json"))
     stats["dmd_rank_selection"] = out
-    json.dump(stats, open(RESULTS / "all_statistics.json", "w"), indent=2)
+    json.dump(_json_safe(stats), open(RESULTS / "all_statistics.json", "w"), indent=2, allow_nan=False)
     print("\nwrote results/dmd_rank_selection.json, updated all_statistics.json")
 
 

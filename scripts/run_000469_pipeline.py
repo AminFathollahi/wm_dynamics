@@ -28,15 +28,18 @@ from pathlib import Path
 warnings.filterwarnings("ignore")
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
+from project_config import data_root, dataset_path, executable, project_path
 
 import h5py
 from spike_pipeline import (load_spike_times, build_psth, fit_pca_psth,
                             load_vs_load_ctg, item_identity_ctg, correct_error_drift,
-                            pr_by_load, low_rate_unit_mask, MIN_SESSION_ACCURACY)
+                            pr_by_load, low_rate_unit_mask, MIN_SESSION_ACCURACY,
+                            FrozenPSTHTransform)
 from geometry import temporal_stability_tau
 from statistics import linear_mixed_effects_test, fdr_bh, stable_seed, paired_sign_flip_test
+from provenance import _json_safe
 
-DATA_DIR = Path("/media/amin/EXTERNAL_USB/SMAF/Research/Representation/Working Memory/data/000469")
+DATA_DIR = dataset_path("dandi_000469")
 RESULTS = ROOT / "results"
 N_PC = 8
 BIN_MS = 100
@@ -115,10 +118,11 @@ def main():
         psth_enc = build_psth(spike_lists, t_enc1, bin_ms=BIN_MS, smooth_ms=SMOOTH_MS, window_s=ENC_WIN)
         print(f"  PSTH: {psth.shape}, mean FR={psth.mean():.1f} Hz")
 
-        mu = psth.mean(axis=0, keepdims=True)
-        sd = psth.std(axis=0, keepdims=True) + 1e-8
-        psth_z = (psth - mu) / sd
-        psth_enc_z = (psth_enc - mu[:, :, :psth_enc.shape[2]]) / sd[:, :, :psth_enc.shape[2]]
+        maint_transform = FrozenPSTHTransform().fit(psth)
+        psth_z = maint_transform.transform(psth)
+        # Reuses the maintenance-period fit so the encoding-period control
+        # arm is expressed in the same units, not fit fresh from itself.
+        psth_enc_z = maint_transform.transform(psth_enc)
 
         Z, V, var_ratio = fit_pca_psth(psth_z, n_comp=N_PC)
         print(f"  Z: {Z.shape}, var in {N_PC} PCs: {100*var_ratio:.1f}%")
@@ -227,7 +231,7 @@ def main():
         print(f"  Saved dandi000469_geometry_{subj}.npz")
 
     with open(RESULTS / "dandi000469_summary.json", "w") as f:
-        json.dump(summary, f, indent=2)
+        json.dump(_json_safe(summary), f, indent=2, allow_nan=False)
 
     p_vals = np.array([v["p_offdiag_vs_chance"] for v in summary.values()
                         if np.isfinite(v["p_offdiag_vs_chance"])])
@@ -316,7 +320,7 @@ def main():
         print(f"\n  Within-subject content vs context: only {len(paired)} qualifying sessions, skipping paired test")
 
     with open(RESULTS / "rutishauser_000469_content_context.json", "w") as f:
-        json.dump(content_context, f, indent=2)
+        json.dump(_json_safe(content_context), f, indent=2, allow_nan=False)
 
     stats_path = RESULTS / "all_statistics.json"
     with open(stats_path) as f:
@@ -335,7 +339,7 @@ def main():
     }
     stats["rutishauser_000469_content_context"] = content_context
     with open(stats_path, "w") as f:
-        json.dump(stats, f, indent=2)
+        json.dump(_json_safe(stats), f, indent=2, allow_nan=False)
 
     print("\n" + "="*55 + "\nDANDI 000469 PIPELINE COMPLETE\n" + "="*55)
     for sub, v in summary.items():

@@ -208,8 +208,8 @@ class TestOnDemandTrigger:
 
 
 class TestBehavioralFlip:
-    """Round-7 STEP D/I: does on-demand control, driven from a real trial's
-    OWN starting state, flip a decoder's binary call on that trial? Mirrors
+    """Does on-demand control, driven from a real trial's OWN starting
+    state, flip a decoder's binary call on that trial? Mirrors
     scripts/run_closed_loop_behavior_flip.py's per-trial design (n_trials=1,
     trigger="decoder", x0 = that trial's own state) directly on
     simulate_closed_loop (this project's test boundary is src/, not scripts/

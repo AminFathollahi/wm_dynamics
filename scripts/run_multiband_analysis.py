@@ -58,6 +58,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
+from project_config import data_root, dataset_path, executable, project_path
 
 from preprocessing import (
     DATA_DIR, load_subject, preprocess,
@@ -99,7 +100,7 @@ N_PERM_CTG = 1000
 # ── Boran iEEG (mirrors scripts/run_boran_pipeline.py epoching) ────────────────
 import h5py
 
-BORAN_DIR      = Path("/media/amin/EXTERNAL_USB/SMAF/Research/Representation/Working Memory/data/000574")
+BORAN_DIR      = dataset_path("dandi_000574")
 BORAN_SUBJECTS = [f"sub-0{i}" for i in range(1, 10)]
 BORAN_SRATE    = 1398.0
 T_PRE_MAINT    = 3.0
@@ -333,9 +334,9 @@ def process_boran_multiband(out: dict):
             print(f"    SKIP {subj} — no valid epochs")
             continue
 
-        # Notch (50/100/150 Hz) + bipolar-by-shank reref — Round-8 7A/7B fix,
-        # matches run_boran_pipeline.py exactly so good_ch_indices (computed
-        # there on the same bipolar channel ordering) stay valid here.
+        # Notch (50/100/150 Hz) + bipolar-by-shank reref, matching
+        # run_boran_pipeline.py exactly so good_ch_indices (computed there on
+        # the same bipolar channel ordering) stay valid here.
         epochs = data["epochs"]
         N_e, C_raw, T_e = epochs.shape
         for n in range(N_e):

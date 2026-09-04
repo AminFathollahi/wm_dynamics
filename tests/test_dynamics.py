@@ -20,6 +20,7 @@ from dynamics import (
     local_linear_stability,
     flow_divergence,
     ensemble_dmd,
+    _dmd_rank_cap,
     dmd_reconstruction_error,
     koopman_edmd,
     stimulation_trigger_window,
@@ -37,11 +38,11 @@ class TestVelocityField:
         Zdot = velocity_field(Z)
         assert Zdot.shape == Z.shape
 
-    def test_endpoints_zero(self, rng):
+    def test_endpoints_are_one_sided_difference(self, rng):
         Z = rng.standard_normal((50, 4))
         Zdot = velocity_field(Z)
-        np.testing.assert_array_equal(Zdot[0], np.zeros(4))
-        np.testing.assert_array_equal(Zdot[-1], np.zeros(4))
+        np.testing.assert_allclose(Zdot[0], Z[1] - Z[0])
+        np.testing.assert_allclose(Zdot[-1], Z[-1] - Z[-2])
 
     def test_central_difference_accuracy(self):
         t = np.linspace(0, 1, 1000)
@@ -85,6 +86,25 @@ class TestTrajectorTangling:
         Q = trajectory_tangling(Z, epsilon=1e-6)
         Q_stable = trajectory_tangling(np.outer(np.linspace(0, 1, T), np.ones(d)))
         assert Q[5:-5].mean() > Q_stable[5:-5].mean()
+
+    def test_interior_point_revisiting_start_state_is_not_corrupted_by_boundary(self):
+        # Two full loops around a circle: t=20 revisits the exact position
+        # AND velocity of t=0 (same phase of a uniform periodic flow), so a
+        # correctly-computed Q(20) should be small, matching the smooth
+        # untangled flow everywhere else on the circle. If velocity_field
+        # fabricates Zdot[0] = 0 instead of the true (nonzero) boundary
+        # velocity, ratio[20, 0] = ||Zdot(20) - 0||^2 / (~0 + eps) spikes to
+        # a huge, non-representative value purely because t'=0 is a boundary
+        # sample, not because t=20 is actually a dynamically unstable point.
+        T_period, reps = 20, 2
+        T = T_period * reps + 1
+        theta = 2 * np.pi * np.arange(T) / T_period
+        Z = np.stack([np.cos(theta), np.sin(theta)], axis=1)
+        t_revisit = T_period
+        assert np.allclose(Z[t_revisit], Z[0])  # construction sanity check
+
+        Q = trajectory_tangling(Z, epsilon=1e-3, dt=1.0)
+        assert Q[t_revisit] < 5.0
 
 
 class TestTrialTangling:
@@ -318,6 +338,54 @@ class TestEnsembleDMD:
         res = ensemble_dmd(Z_trials, r=2, dt=1.0, n_splits=5, n_null=30, rng=rng)
         assert res["r2_null"] < res["r2_cv"]
 
+    def test_offset_equilibrium_recovered_without_distorting_eigenvalues(self):
+        # Every trial follows the SAME affine dynamics x(t+1) = A x(t) + c
+        # with a fixed point far from the origin. A purely linear fit
+        # (x(t+1) ~= A x(t), no intercept) can only hold a nonzero fixed
+        # point if one eigenvalue is exactly 1, so it has to inflate an
+        # eigenvalue toward 1 to explain the offset -- distorting the
+        # recovered spectrum even though the true decay is 0.6 on both axes.
+        rng = np.random.default_rng(0)
+        N, T, d = 30, 40, 2
+        decay = 0.6
+        A_true = decay * np.eye(d)
+        c_true = np.array([3.0, -2.0])
+        x_star = np.linalg.solve(np.eye(d) - A_true, c_true)
+
+        Z_trials = np.zeros((N, T, d))
+        for n in range(N):
+            x = x_star + rng.standard_normal(d) * 2.0
+            for t in range(T):
+                Z_trials[n, t] = x
+                x = A_true @ x + c_true + 0.01 * rng.standard_normal(d)
+
+        res = ensemble_dmd(Z_trials, r=2, dt=1.0, n_splits=5, n_null=5,
+                            rng=np.random.default_rng(1))
+        eig = np.sort(np.real(np.linalg.eigvals(res["A"])))
+        np.testing.assert_allclose(eig, [decay, decay], atol=0.05)
+        np.testing.assert_allclose(res["equilibrium"], c_true, atol=0.5)
+
+    def test_rank_cap_selected_per_fold_not_from_full_trial_set(self):
+        # 6 trials of 2 samples each (1 snapshot pair per trial) with an
+        # ambient dimensionality (d=6) that exceeds any individual fold's
+        # available pairs. The full-ensemble cap (6 trials -> 5 pairs after
+        # the -1 margin) must be looser than what a 5-trial training fold
+        # can support (5 trials -> 4 pairs after the same margin): if the
+        # fold reused the full-set cap instead of recomputing it from its
+        # own training trials, every fold would report rank 5, not 4.
+        rng = np.random.default_rng(0)
+        N, T, d, r = 6, 2, 6, 6
+        Z_trials = rng.standard_normal((N, T, d))
+
+        assert _dmd_rank_cap(r, d, N, T) == 5
+        assert _dmd_rank_cap(r, d, N - 1, T) == 4
+
+        res = ensemble_dmd(Z_trials, r=r, dt=1.0, n_splits=N, n_null=3,
+                            rng=np.random.default_rng(2))
+        assert res["r_used"] == 5
+        assert len(res["r_used_per_fold"]) > 0
+        assert all(rank_used == 4 for rank_used in res["r_used_per_fold"])
+
 
 class TestDMDReconstructionError:
     def test_output_keys(self, rng):
@@ -385,7 +453,7 @@ class TestKoopmanEDMD:
 class TestDtPropagation:
     """Regression test: dt must default to a neutral 1.0 sample and every
     dt-sensitive quantity must actually scale with the dt passed in, not a
-    silently baked-in sampling rate (Round-4 audit item 1a)."""
+    silently baked-in sampling rate."""
 
     @pytest.mark.parametrize("fn", [trial_tangling, trial_dmd, maintenance_eigenspectra,
                                      dmd_reconstruction_error, koopman_edmd])

@@ -18,6 +18,7 @@ import sys
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 from statistics import paired_sign_flip_test
+from provenance import _json_safe
 
 RESULTS = ROOT / "results"
 
@@ -72,7 +73,7 @@ def main():
         stats = json.load(f)
     stats["dpca_paired_tests"] = out
     with open(RESULTS / "all_statistics.json", "w") as f:
-        json.dump(stats, f, indent=2)
+        json.dump(_json_safe(stats), f, indent=2, allow_nan=False)
     print("\nUpdated all_statistics.json[dpca_paired_tests]")
 
 

@@ -20,6 +20,7 @@ from geometry import (
     cross_temporal_generalization,
     subspace_overlap,
     geometric_drift,
+    distance_to_attractor,
     ctg_nested_cv,
     ctg_label_permutation_null,
     ctg_content_permutation_null,
@@ -27,14 +28,18 @@ from geometry import (
     spatiotemporal_participation_ratio,
     marginalize_condition_time,
     coding_direction_stability,
+    crossnobis_content_matrix,
+    crossnobis_decay_timescale,
     dpca_condition_subspace_projection,
     time_resolved_content_decoding,
     cross_decoding_leakage_test,
     out_of_fold_class_confidence,
     cross_condition_decoding_test,
     ctg_phase_scramble_null,
+    phase_scramble_trials,
     parallel_analysis,
     select_latent_dim,
+    _fit_axis_weights,
 )
 
 
@@ -72,6 +77,15 @@ class TestCtgNestedCV:
         auc_mat = ctg_nested_cv(X, labels, t_idx, n_components=4, n_splits=3, rng=rng)
         off_mask = ~np.eye(len(t_idx), dtype=bool)
         assert abs(np.nanmean(auc_mat[off_mask]) - 0.5) < 0.15
+
+    def test_linked_recording_groups_do_not_cross_outer_fold(self, rng):
+        X, labels = _labeled_channel_signal(rng, N=60)
+        t_idx = np.arange(0, 30, 5)
+        # Each pair is two release views of one original recording.
+        groups = np.repeat(np.arange(30), 2)
+        auc_mat = ctg_nested_cv(X, labels, t_idx, n_components=4, n_splits=3,
+                                rng=rng, groups=groups)
+        assert auc_mat.shape == (len(t_idx), len(t_idx))
 
 
 class TestCtgLabelPermutationNull:
@@ -318,6 +332,21 @@ class TestSpatiotemporalParticipationRatio:
         X += 0.01 * rng.standard_normal((N, C, T)).astype(np.float32)
         res = spatiotemporal_participation_ratio(X, n_splits=2, rng=rng)
         assert res["pr_cv"] < 2.0
+
+    def test_held_out_estimator_not_rank_limited_by_fold_size(self, rng):
+        # Pure noise, no true cross-channel structure: true PR is C. When a
+        # held-out fold has fewer samples than channels, that fold's OWN
+        # covariance is necessarily rank-deficient (rank <= n_test - 1), so
+        # scoring PR from the fold's own eigenvalues (pr_cv_legacy) mechanically
+        # caps PR far below C even though nothing is really low-dimensional.
+        # Scoring a TRAIN-fit basis on the held-out fold (pr_cv, the primary
+        # estimator) has no such rank ceiling and should sit much closer to C.
+        N, C, T = 8, 12, 2  # n_test/fold = 4 trials * 2 timepoints = 8 < C=12
+        X = rng.standard_normal((N, C, T)).astype(np.float32)
+        res = spatiotemporal_participation_ratio(X, n_splits=2, rng=rng)
+        n_te = (N // 2) * T
+        assert res["pr_cv_legacy"] <= n_te - 1 + 1e-6
+        assert res["pr_cv"] > res["pr_cv_legacy"]
 
 
 class TestMarginalizeConditionTime:
@@ -697,6 +726,99 @@ class TestCodingDirectionStability:
         assert np.all(cos_sim >= -1e-8) and np.all(cos_sim <= 1.0 + 1e-8)
 
 
+class TestFitAxisWeights:
+    def test_scaler_fit_once_across_timepoints(self, rng, monkeypatch):
+        # coding_direction_stability / axis_angular_velocity never split
+        # trials into train/test -- the whole trial set IS the fold -- so the
+        # scaler must be fit ONCE, pooled across every requested timepoint,
+        # not refit independently at each timepoint (refitting per timepoint
+        # is the generative mechanism for spurious apparent axis rotation
+        # described in the module docstring). fit_transform() calls fit()
+        # internally, so counting StandardScaler.fit calls catches both.
+        import sklearn.preprocessing as skpre
+
+        fit_calls = {"n": 0}
+        original_fit = skpre.StandardScaler.fit
+
+        def counting_fit(self, X, y=None, **kwargs):
+            fit_calls["n"] += 1
+            return original_fit(self, X, y, **kwargs)
+
+        monkeypatch.setattr(skpre.StandardScaler, "fit", counting_fit)
+
+        N, T, k = 60, 20, 4
+        labels = (rng.random(N) < 0.5).astype(int)
+        Z = rng.standard_normal((N, T, k))
+        t_idx = np.arange(0, T, 4)
+
+        _fit_axis_weights(Z, labels, t_idx, multiclass=False)
+
+        assert fit_calls["n"] == 1
+
+
+class TestDistanceToAttractor:
+    def test_output_shape(self, rng):
+        n_train, n_test, T, k = 20, 10, 15, 3
+        labels_train = np.array([0, 1] * (n_train // 2))
+        labels_test = np.array([0, 1] * (n_test // 2))
+        train_state = rng.standard_normal((n_train, T, k))
+        test_state = rng.standard_normal((n_test, T, k))
+        da = distance_to_attractor(train_state, labels_train, test_state, labels_test)
+        assert da.shape == (n_test, T)
+
+    def test_state_at_own_centroid_scores_below_one(self, rng):
+        """A test trial placed exactly at its own condition's training
+        centroid, with the other condition's centroid well separated, must
+        score DA well below 1 (nearest its own attractor)."""
+        T, k = 10, 3
+        centroid_a = np.zeros((T, k))
+        centroid_b = np.full((T, k), 5.0)
+        train_state = np.stack([
+            centroid_a + rng.normal(scale=0.05, size=(T, k)) for _ in range(10)
+        ] + [
+            centroid_b + rng.normal(scale=0.05, size=(T, k)) for _ in range(10)
+        ])
+        train_labels = np.array([0] * 10 + [1] * 10)
+        test_state = centroid_a[None, :, :].copy()
+        test_labels = np.array([0])
+        da = distance_to_attractor(train_state, train_labels, test_state, test_labels)
+        assert np.all(da[0] < 1.0)
+
+    def test_state_at_wrong_centroid_scores_above_one(self, rng):
+        T, k = 10, 3
+        centroid_a = np.zeros((T, k))
+        centroid_b = np.full((T, k), 5.0)
+        train_state = np.stack([
+            centroid_a + rng.normal(scale=0.05, size=(T, k)) for _ in range(10)
+        ] + [
+            centroid_b + rng.normal(scale=0.05, size=(T, k)) for _ in range(10)
+        ])
+        train_labels = np.array([0] * 10 + [1] * 10)
+        # Label this trial as condition 0 but place its state at condition 1's centroid.
+        test_state = centroid_b[None, :, :].copy()
+        test_labels = np.array([0])
+        da = distance_to_attractor(train_state, train_labels, test_state, test_labels)
+        assert np.all(da[0] > 1.0)
+
+    def test_single_condition_is_all_nan(self, rng):
+        T, k = 5, 2
+        train_state = rng.standard_normal((10, T, k))
+        train_labels = np.zeros(10, dtype=int)
+        test_state = rng.standard_normal((3, T, k))
+        test_labels = np.zeros(3, dtype=int)
+        da = distance_to_attractor(train_state, train_labels, test_state, test_labels)
+        assert np.all(np.isnan(da))
+
+    def test_unknown_test_condition_is_nan_not_zero(self, rng):
+        T, k = 5, 2
+        train_state = rng.standard_normal((10, T, k))
+        train_labels = np.array([0] * 5 + [1] * 5)
+        test_state = rng.standard_normal((1, T, k))
+        test_labels = np.array([99])
+        da = distance_to_attractor(train_state, train_labels, test_state, test_labels)
+        assert np.all(np.isnan(da[0]))
+
+
 class TestGeometricDrift:
     def test_output_shape(self, synthetic_epochs):
         epochs, times, task_id, _ = synthetic_epochs
@@ -722,6 +844,41 @@ class TestGeometricDrift:
         # The centroid trial (index 0 and 15) should have near-zero drift
         assert drift[0] < drift[1:15].mean()
         assert drift[15] < drift[16:].mean()
+
+    def test_centroid_is_leave_one_out(self, rng):
+        # Exact linear-algebra identity: for n vectors, the deviation of x_i
+        # from the SELF-INCLUSIVE mean equals (n-1)/n times its deviation
+        # from the LEAVE-ONE-OUT mean (the other n-1 vectors' mean), for
+        # every i, regardless of the underlying distribution. Since Euclidean
+        # norm is homogeneous, per-trial drift must obey the same identity.
+        # geometric_drift is required to compute the leave-one-out version;
+        # including the trial in its own centroid (the old behaviour) would
+        # instead reproduce the self-inclusive drift directly.
+        N, T, k = 6, 5, 3
+        task_id = np.zeros(N, dtype=int)
+        times = np.linspace(0.0, 1.0, T)
+        Z = rng.standard_normal((N, T, k))
+
+        # Cover the full time axis so the manual self-inclusive computation
+        # below (over all T) matches what geometric_drift averages over.
+        drift_loo = geometric_drift(Z, task_id, times, maint_window=(0.0, 1.0))
+
+        centroid_self_inclusive = Z.mean(axis=0)
+        drift_self_inclusive = np.sqrt(
+            ((Z - centroid_self_inclusive) ** 2).sum(axis=2)
+        ).mean(axis=1)
+
+        expected_self_inclusive = drift_loo * (N - 1) / N
+        np.testing.assert_allclose(drift_self_inclusive, expected_self_inclusive, rtol=1e-8)
+
+    def test_single_trial_condition_is_nan_not_zero(self):
+        N, T, k = 3, 4, 2
+        task_id = np.array([0, 0, 1])  # condition 1 has only one trial
+        times = np.linspace(0.0, 1.0, T)
+        Z = np.zeros((N, T, k))
+        drift = geometric_drift(Z, task_id, times)
+        assert np.isnan(drift[2])
+        assert np.all(np.isfinite(drift[:2]))
 
 
 class TestCtgPhaseScrambleNull:
@@ -751,6 +908,22 @@ class TestCtgPhaseScrambleNull:
             np.testing.assert_allclose(np.abs(np.fft.rfft(y)), true_amp, atol=1e-8)
 
 
+class TestPhaseScrambleTrials:
+    def test_shared_phase_preserves_cross_channel_correlation(self, rng):
+        # Two channels within a trial that are literally identical (perfect
+        # instantaneous cross-channel covariance). Scrambling with a phase
+        # shared across channels applies the identical transform to both, so
+        # the outputs must stay identical (correlation == 1). Scrambling each
+        # channel's phase independently destroys that correlation.
+        T = 64
+        t = np.linspace(0, 4 * np.pi, T)
+        x = np.sin(t) + 0.1 * rng.standard_normal(T)
+        Z = np.stack([x, x], axis=-1)[None, :, :]  # (1, T, 2)
+        Z_scrambled = phase_scramble_trials(Z, rng)
+        corr = np.corrcoef(Z_scrambled[0, :, 0], Z_scrambled[0, :, 1])[0, 1]
+        assert corr > 0.99
+
+
 class TestParallelAnalysis:
     def test_recovers_known_rank(self, rng):
         # rank-3 signal + isotropic noise: parallel analysis should retain 3.
@@ -763,6 +936,31 @@ class TestParallelAnalysis:
     def test_pure_noise_recovers_near_zero(self, rng):
         X = rng.standard_normal((200, 8))
         assert parallel_analysis(X, n_surrogate=100, rng=rng) <= 1
+
+    def test_trial_block_surrogate_avoids_autocorrelation_overretention(self, rng):
+        # Each channel is independently smoothed (autocorrelated) noise with
+        # NO shared cross-channel structure -- true rank is 0. A surrogate
+        # that destroys within-trial autocorrelation (the unblocked row
+        # permutation) produces an artificially low noise floor and falsely
+        # retains components; a surrogate that preserves within-trial
+        # autocorrelation (per-trial circular shift) should not.
+        n_trials, T, D = 30, 20, 6
+        trials = []
+        for _ in range(n_trials):
+            raw = rng.standard_normal((T + 20, D))
+            smoothed = np.array(
+                [np.convolve(raw[:, d], np.ones(10) / 10, mode="valid") for d in range(D)]
+            ).T
+            trials.append(smoothed[:T])
+        X = np.concatenate(trials, axis=0)  # (n_trials * T, D), trial-major blocks of size T
+
+        k_naive = parallel_analysis(X, n_surrogate=200, rng=np.random.default_rng(1))
+        k_fixed = parallel_analysis(
+            X, n_surrogate=200, rng=np.random.default_rng(1), n_timepoints_per_trial=T
+        )
+        assert k_naive >= 1
+        assert k_fixed == 0
+        assert k_fixed < k_naive
 
 
 class TestSelectLatentDim:
@@ -785,3 +983,29 @@ class TestSelectLatentDim:
         X = rng.standard_normal((30, 6, 15))
         with pytest.raises(ValueError):
             select_latent_dim(X, method="aic", rng=rng)
+
+
+class TestCrossnobisContentDistance:
+    def test_null_is_near_zero_and_stable_signal_is_positive(self, rng):
+        n_trials, n_time, n_features = 120, 12, 8
+        labels = np.arange(n_trials) % 3
+        indices = np.arange(n_trials)
+        folds = [(indices[indices % 5 != fold], indices[indices % 5 == fold]) for fold in range(5)]
+        null = rng.normal(size=(n_trials, n_time, n_features))
+        null_result = crossnobis_content_matrix(null, labels, folds)
+        assert abs(null_result["mean_diagonal_distance"]) < 0.5
+        direction = rng.normal(size=n_features)
+        direction /= np.linalg.norm(direction)
+        signal = null + (labels - 1.0)[:, None, None] * direction[None, None, :] * 1.5
+        signal_result = crossnobis_content_matrix(signal, labels, folds)
+        assert signal_result["mean_diagonal_distance"] > 1.0
+        timescale = crossnobis_decay_timescale(signal_result["matrix"], 0.1)
+        assert timescale["status"] == "estimable"
+
+    def test_decay_timescale_at_bound_is_not_estimable(self):
+        n_time = 10
+        lag = np.abs(np.subtract.outer(np.arange(n_time), np.arange(n_time))) * 0.1
+        nearly_flat = np.exp(-lag / 1000.0)
+        result = crossnobis_decay_timescale(nearly_flat, 0.1)
+        assert result["status"] == "not_estimable"
+        assert result["timescale_bound_hit"] is True

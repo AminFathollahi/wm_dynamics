@@ -29,13 +29,14 @@ from pathlib import Path
 warnings.filterwarnings("ignore")
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
+from project_config import data_root, dataset_path, executable, project_path
 
 import scipy.io as sio
 from geometry import ctg_content_permutation_null, temporal_stability_tau
+from spike_pipeline import FrozenPSTHTransform
+from provenance import _json_safe
 
-DATA_DIR = Path(
-    "/media/amin/EXTERNAL_USB/SMAF/Research/Representation/Working Memory/data/PFC-3/extracted/data"
-)
+DATA_DIR = dataset_path("pfc3")
 RESULTS = ROOT / "results"
 
 WINDOW_S = 2.0            # delay duration: fixed ~2.03s Cue_onT -> Sample_onT
@@ -122,9 +123,7 @@ def main():
             y[row] = ci
             row += 1
 
-    mu = X.mean(axis=0, keepdims=True)
-    sd = X.std(axis=0, keepdims=True) + 1e-8
-    X = (X - mu) / sd
+    X = FrozenPSTHTransform().fit_transform(X)
 
     t_idx = np.arange(0, n_bins, CTG_STEP)
     print(f"Pseudo-population: {X.shape[0]} pseudo-trials, {n_neurons} neurons, "
@@ -170,7 +169,7 @@ def main():
         "p_value": res["p_value"],
     }
     with open(stats_path, "w") as f:
-        json.dump(stats, f, indent=2)
+        json.dump(_json_safe(stats), f, indent=2, allow_nan=False)
     print("Saved results/pfc3_content_ctg.npz, updated all_statistics.json")
 
 

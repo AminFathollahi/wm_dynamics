@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Diagnostic (R5 personalization note): WHY does the on-demand trigger fail
+"""Diagnostic: WHY does the on-demand trigger fail
 for some cohorts and not others?
 
 The decoder-gated trigger (STEP A2) engages only when the trained decoder
@@ -28,8 +28,9 @@ from pathlib import Path
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from control import lqr_design, unstable_eigenvector
+from control import lqr_design, dominant_eigenmode
 from closed_loop import _b_hat_at_angle
+from provenance import _json_safe
 
 RESULTS = ROOT / "results"
 B_HAT_MISMATCH_DEG = 20.0
@@ -122,7 +123,7 @@ def main():
 
         row = cl[key]
         decoder, w_axis = _decoder_and_axis(subj, dataset)
-        v_star, _ = unstable_eigenvector(A)
+        v_star = dominant_eigenmode(A).v_star
         rng = np.random.default_rng(hash(key) % (2**31 - 1))
         B_hat = _b_hat_at_angle(B_true, B_HAT_MISMATCH_DEG, rng)
         diag = _streak_stats(A, B_true, B_hat, x0, target, decoder, row["horizon"],
@@ -140,14 +141,14 @@ def main():
     print(f"\nWorst on-demand cohort (auto-identified): {worst}")
 
     with open(RESULTS / "ondemand_streak_diagnostic.json", "w") as f:
-        json.dump({"per_cohort": out, "worst_cohort": worst}, f, indent=2)
+        json.dump(_json_safe({"per_cohort": out, "worst_cohort": worst}), f, indent=2, allow_nan=False)
 
     stats_path = RESULTS / "all_statistics.json"
     with open(stats_path) as f:
         stats = json.load(f)
     stats["ondemand_streak_diagnostic"] = {"per_cohort": out, "worst_cohort": worst}
     with open(stats_path, "w") as f:
-        json.dump(stats, f, indent=2)
+        json.dump(_json_safe(stats), f, indent=2, allow_nan=False)
     print("\nSaved results/ondemand_streak_diagnostic.json, updated all_statistics.json")
 
 

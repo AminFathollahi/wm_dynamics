@@ -17,6 +17,7 @@ from pathlib import Path
 warnings.filterwarnings("ignore")
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
+from project_config import data_root, dataset_path, executable, project_path
 
 import h5py
 import scipy.signal as sig
@@ -26,8 +27,9 @@ from geometry import (ctg_label_permutation_null, temporal_stability_tau,
                       spatiotemporal_participation_ratio, geometric_drift)
 from statistics import linear_mixed_effects_test, fdr_bh, stable_seed, paired_sign_flip_test
 from causal import dml_partial_linear, e_value
+from provenance import _json_safe
 
-BORAN_DIR = Path("/media/amin/EXTERNAL_USB/SMAF/Research/Representation/Working Memory/data/000574")
+BORAN_DIR = dataset_path("dandi_000574")
 RESULTS   = ROOT / "results"
 SUBJECTS  = [f"sub-0{i}" for i in range(1, 10)]
 SRATE     = 1398.0   # Hz
@@ -209,293 +211,297 @@ PR_MIN_TRIALS_PER_GROUP = 8
 pooled_drift, pooled_correct, pooled_subj, pooled_set_size, pooled_rt = [], [], [], [], []
 
 for subj in SUBJECTS:
-    print(f"\n{'='*55}")
-    print(f"  Processing {subj}")
-    print(f"{'='*55}")
+    try:
+        print(f"\n{'='*55}")
+        print(f"  Processing {subj}")
+        print(f"{'='*55}")
 
-    data = load_subject_sessions(subj)
-    if data is None:
-        print(f"  SKIP {subj} — no valid epochs")
-        continue
-
-    epochs        = data["epochs"]        # (N, C, T_epoch)
-    set_sizes     = data["set_sizes"]
-    correct       = data["correct"]
-    response_time = data["response_time"]
-    electrode_mni = data["electrode_mni"]       # (C_ieeg, 3)
-    electrode_labels = data["electrode_labels"] # list[str] len C_ieeg
-
-    N, C_raw, T_total = epochs.shape
-    print(f"  Epochs: {N} trials, {C_raw} channels, {T_total} samples")
-    print(f"  Set sizes: 4={((set_sizes==4).sum())}, 6={((set_sizes==6).sum())}, 8={((set_sizes==8).sum())}")
-    print(f"  Accuracy: {100*correct.mean():.1f}%")
-
-    # 1. Line-noise notch (50 Hz Zurich mains + harmonics), per trial -- a
-    #    temporal filter, must not blend across trial boundaries (Round-8 7A
-    #    fix: this HGP path -- 70-150 Hz -- previously had no notch at all,
-    #    so the 100/150 Hz mains harmonics fell straight inside the band).
-    print("  Notch (50/100/150 Hz)...")
-    for n in range(N):
-        epochs[n] = line_noise_notch(epochs[n].T, SRATE, fundamental=50.0, n_harmonics=3).T
-
-    # 2. Bipolar re-reference along each depth shank -- a spatial operation,
-    #    safe to vectorize across all trials/timepoints at once (Round-8 7B
-    #    fix: previously only a global per-trial median-CAR, not bipolar,
-    #    which is the sEEG field standard for depth electrodes).
-    print("  Bipolar re-reference by shank...")
-    X_flat = epochs.transpose(0, 2, 1).reshape(-1, C_raw)          # (N*T, C_raw)
-    X_bp, bp_labels = bipolar_reference_by_shank(X_flat, electrode_labels)
-    epochs = X_bp.reshape(N, T_total, -1).transpose(0, 2, 1).astype(np.float32)  # (N, C, T)
-    bp_pairs, bp_orphans = shank_bipolar_index_pairs(electrode_labels)
-    electrode_mni_bp = np.array(
-        [(electrode_mni[i0] + electrode_mni[i1]) / 2 for i0, i1, _ in bp_pairs]
-        + [electrode_mni[i] for i in bp_orphans], dtype=np.float32
-    )
-    C = epochs.shape[1]
-    print(f"  Channels after bipolar reref: {C} (from {C_raw}, {len(bp_pairs)} bipolar pairs "
-          f"+ {len(bp_orphans)} CAR orphans)")
-
-    # 3. HGP
-    print("  Computing HGP...")
-    hgp = compute_hgp_epochs(epochs)   # (N, C, T)
-
-    # 4. Baseline normalize (first 1s = T_EPOCH_PRE)
-    bl_samps = int(T_EPOCH_PRE * SRATE)
-    hgp = baseline_normalize(hgp, bl_samps)
-
-    # 5. Channel rejection
-    good_ch = channel_rejection(hgp)
-    n_rej = int((~good_ch).sum())
-    print(f"  Channels: {good_ch.sum()}/{C} kept ({n_rej} rejected)")
-    hgp = hgp[:, good_ch, :]
-    good_ch_indices = np.where(good_ch)[0]  # indices of kept channels (into bipolar channel set)
-    # Filter (bipolar-reduced) electrode MNI to good channels
-    if len(electrode_mni_bp) == C:
-        electrode_mni_good = electrode_mni_bp[good_ch_indices]
-    else:
-        electrode_mni_good = np.full((int(good_ch.sum()), 3), np.nan, dtype=np.float32)
-
-    # 6. Maintenance window: t ∈ [T_EPOCH_PRE + T_PRE_MAINT, T_EPOCH_PRE + T_PRE_MAINT + T_POST_MAINT]
-    #    = [1.0 + 3.0, 1.0 + 3.0 + 3.0]s = [4.0, 7.0]s from epoch start
-    maint_start_s = int((T_EPOCH_PRE + T_PRE_MAINT) * SRATE)
-    maint_end_s   = int((T_EPOCH_PRE + T_PRE_MAINT + T_POST_MAINT) * SRATE)
-    hgp_maint = hgp[:, :, maint_start_s:maint_end_s]   # (N, C_good, T_maint)
-
-    # Times relative to maintenance onset (for consistency with Miller t=0 at stimulus)
-    T_maint = hgp_maint.shape[2]
-    times_maint = np.linspace(0.0, T_POST_MAINT, T_maint)
-
-    # Encoding-period window, same duration as maintenance — comparison
-    # epoch (letters are being presented sequentially here; imperfect as a
-    # negative control since set size trivially covaries with letter count
-    # during encoding, but still informative to compare against maintenance).
-    enc_start_s = int(T_EPOCH_PRE * SRATE)
-    hgp_enc = hgp[:, :, enc_start_s:enc_start_s + T_maint]
-
-    # Pre-stimulus baseline window — clean negative control: by task design
-    # no information about the upcoming set size can exist yet, so both
-    # diagonal and off-diagonal AUC should collapse to chance here. This
-    # directly rules out "the pipeline always returns a square matrix
-    # regardless of the underlying code."
-    hgp_baseline = hgp[:, :, :bl_samps]
-
-    # 6. PCA (fixed global basis — used for downstream geometry/drift/TES1,
-    #    NOT for the CTG significance test, which folds PCA into CV below)
-    print("  Fitting PCA...")
-    Z, V = fit_pca(hgp_maint, n_comp=N_COMPONENTS)
-    print(f"  Z shape: {Z.shape}")
-
-    N_tr, T_m, D = Z.shape
-    X_full = hgp_maint.transpose(0, 2, 1).reshape(-1, hgp_maint.shape[1])
-    X_full -= X_full.mean(0)
-    total_var = np.linalg.norm(X_full) ** 2
-    proj_var  = np.linalg.norm(X_full @ V) ** 2
-    var_ratio = float(proj_var / (total_var + 1e-10))
-    print(f"  Variance in 8 PCs: {100*var_ratio:.1f}%")
-
-    # 7. PR per set size — cross-validated spatiotemporal PR in the native
-    #    (pre-PCA) channel space, the same method used for Miller, rather
-    #    than PR of the pooled 8-D latent (which caps PR at 8 by construction).
-    pr_per_set = {}
-    for ss in [4, 6, 8]:
-        mask = set_sizes == ss
-        if mask.sum() < 5:
-            pr_per_set[ss] = {"pr_cv": np.nan}
+        data = load_subject_sessions(subj)
+        if data is None:
+            print(f"  SKIP {subj} — no valid epochs")
             continue
-        pr_per_set[ss] = spatiotemporal_participation_ratio(
-            hgp_maint[mask], n_splits=2, rng=np.random.default_rng(stable_seed(f"{subj}_pr_set{ss}"))
+
+        epochs        = data["epochs"]        # (N, C, T_epoch)
+        set_sizes     = data["set_sizes"]
+        correct       = data["correct"]
+        response_time = data["response_time"]
+        electrode_mni = data["electrode_mni"]       # (C_ieeg, 3)
+        electrode_labels = data["electrode_labels"] # list[str] len C_ieeg
+
+        N, C_raw, T_total = epochs.shape
+        print(f"  Epochs: {N} trials, {C_raw} channels, {T_total} samples")
+        print(f"  Set sizes: 4={((set_sizes==4).sum())}, 6={((set_sizes==6).sum())}, 8={((set_sizes==8).sum())}")
+        print(f"  Accuracy: {100*correct.mean():.1f}%")
+
+        # 1. Line-noise notch (50 Hz Zurich mains + harmonics), per trial -- a
+        #    temporal filter, must not blend across trial boundaries. The HGP
+        #    band (70-150 Hz) straddles the 100/150 Hz mains harmonics, so
+        #    this notch is required, not optional.
+        print("  Notch (50/100/150 Hz)...")
+        for n in range(N):
+            epochs[n] = line_noise_notch(epochs[n].T, SRATE, fundamental=50.0, n_harmonics=3).T
+
+        # 2. Bipolar re-reference along each depth shank -- a spatial operation,
+        #    safe to vectorize across all trials/timepoints at once. Bipolar
+        #    (adjacent-contact) referencing is the sEEG field standard for
+        #    depth electrodes, as opposed to a global per-trial median-CAR.
+        print("  Bipolar re-reference by shank...")
+        X_flat = epochs.transpose(0, 2, 1).reshape(-1, C_raw)          # (N*T, C_raw)
+        X_bp, bp_labels = bipolar_reference_by_shank(X_flat, electrode_labels)
+        epochs = X_bp.reshape(N, T_total, -1).transpose(0, 2, 1).astype(np.float32)  # (N, C, T)
+        bp_pairs, bp_orphans = shank_bipolar_index_pairs(electrode_labels)
+        electrode_mni_bp = np.array(
+            [(electrode_mni[i0] + electrode_mni[i1]) / 2 for i0, i1, _ in bp_pairs]
+            + [electrode_mni[i] for i in bp_orphans], dtype=np.float32
         )
-    pr_cv_str = ", ".join(f"{k}: {v.get('pr_cv', float('nan')):.2f}" for k, v in pr_per_set.items())
-    print(f"  PR (cv, native {hgp_maint.shape[1]}-channel space): {{{pr_cv_str}}}")
+        C = epochs.shape[1]
+        print(f"  Channels after bipolar reref: {C} (from {C_raw}, {len(bp_pairs)} bipolar pairs "
+              f"+ {len(bp_orphans)} CAR orphans)")
 
-    # 8. CTG (set4 vs set8) with PCA folded into CV and a label-shuffle
-    #    permutation null (valid: refits the whole matrix per permutation,
-    #    not a t-test/bootstrap over non-independent off-diagonal cells).
-    mask_ctg = (set_sizes == 4) | (set_sizes == 8)
-    X_ctg = hgp_maint[mask_ctg]
-    y_ctg = (set_sizes[mask_ctg] == 8).astype(int)
-    t_idx = np.arange(0, T_maint, CTG_STEP)
-    print(f"  CTG: {mask_ctg.sum()} trials ({(y_ctg==0).sum()} set4, {(y_ctg==1).sum()} set8), "
-          f"{len(t_idx)} timepoints, nested-CV + {CTG_N_PERM}-perm label-shuffle null...")
-    ctg_rng = np.random.default_rng(stable_seed(subj))
-    ctg_res = ctg_label_permutation_null(
-        X_ctg, y_ctg, t_idx, n_components=N_COMPONENTS,
-        n_splits=CTG_N_SPLITS, n_perm=CTG_N_PERM, rng=ctg_rng,
-    )
-    auc_mat = ctg_res["auc_mat"]
-    tau_info = temporal_stability_tau(auc_mat)
-    print(f"  τ={tau_info['tau']:.4f} (interpretable={tau_info['interpretable']}), "
-          f"offdiag_effect={ctg_res['mean_offdiag_auc_minus_chance']:.4f}, "
-          f"p(label-shuffle)={ctg_res['p_value']:.4f}")
+        # 3. HGP
+        print("  Computing HGP...")
+        hgp = compute_hgp_epochs(epochs)   # (N, C, T)
 
-    # Dynamic-code negative control: identical CTG pipeline, same labels,
-    # applied to the encoding-period window instead of maintenance.
-    X_enc = hgp_enc[mask_ctg]
-    enc_ctg_rng = np.random.default_rng(stable_seed(subj + "_1"))
-    enc_res = ctg_label_permutation_null(
-        X_enc, y_ctg, t_idx, n_components=N_COMPONENTS,
-        n_splits=CTG_N_SPLITS, n_perm=50, rng=enc_ctg_rng,
-    )
-    enc_tau_info = temporal_stability_tau(enc_res["auc_mat"])
-    print(f"  Comparison epoch (encoding period): τ={enc_tau_info['tau']:.4f}, "
-          f"offdiag_effect={enc_res['mean_offdiag_auc_minus_chance']:.4f}, "
-          f"p={enc_res['p_value']:.4f}")
+        # 4. Baseline normalize (first 1s = T_EPOCH_PRE)
+        bl_samps = int(T_EPOCH_PRE * SRATE)
+        hgp = baseline_normalize(hgp, bl_samps)
 
-    # Clean negative control: pre-stimulus baseline (chance expected)
-    X_bl = hgp_baseline[mask_ctg]
-    t_idx_bl = np.arange(0, hgp_baseline.shape[2], max(1, CTG_STEP // 2))
-    bl_ctg_rng = np.random.default_rng(stable_seed(subj + "_2"))
-    bl_res = ctg_label_permutation_null(
-        X_bl, y_ctg, t_idx_bl, n_components=N_COMPONENTS,
-        n_splits=CTG_N_SPLITS, n_perm=50, rng=bl_ctg_rng,
-    )
-    bl_tau_info = temporal_stability_tau(bl_res["auc_mat"])
-    print(f"  Negative control (pre-stimulus baseline): "
-          f"offdiag_effect={bl_res['mean_offdiag_auc_minus_chance']:.4f}, "
-          f"p={bl_res['p_value']:.4f} (expect ~chance)")
+        # 5. Channel rejection
+        good_ch = channel_rejection(hgp)
+        n_rej = int((~good_ch).sum())
+        print(f"  Channels: {good_ch.sum()}/{C} kept ({n_rej} rejected)")
+        hgp = hgp[:, good_ch, :]
+        good_ch_indices = np.where(good_ch)[0]  # indices of kept channels (into bipolar channel set)
+        # Filter (bipolar-reduced) electrode MNI to good channels
+        if len(electrode_mni_bp) == C:
+            electrode_mni_good = electrode_mni_bp[good_ch_indices]
+        else:
+            electrode_mni_good = np.full((int(good_ch.sum()), 3), np.nan, dtype=np.float32)
 
-    # Does the load/context code itself destabilize on error trials? Splits
-    # the same set4-vs-8 CTG by trial outcome (correct-only vs error-only),
-    # a direct test of code stability rather than distance-to-centroid.
-    correct_ctg = data["correct"][mask_ctg]
-    code_stability_outcome = None
-    for outcome_name, outcome_mask in [("correct", correct_ctg), ("error", ~correct_ctg)]:
-        y_o = y_ctg[outcome_mask]
-        if min((y_o == 0).sum(), (y_o == 1).sum()) < 5:
-            code_stability_outcome = None
-            break
-    else:
-        oc_rng = np.random.default_rng(stable_seed(subj + "_correct"))
-        oc_res = ctg_label_permutation_null(
-            X_ctg[correct_ctg], y_ctg[correct_ctg], t_idx, n_components=N_COMPONENTS,
-            n_splits=min(CTG_N_SPLITS, int(correct_ctg.sum()) // 2), n_perm=50, rng=oc_rng,
+        # 6. Maintenance window: t ∈ [T_EPOCH_PRE + T_PRE_MAINT, T_EPOCH_PRE + T_PRE_MAINT + T_POST_MAINT]
+        #    = [1.0 + 3.0, 1.0 + 3.0 + 3.0]s = [4.0, 7.0]s from epoch start
+        maint_start_s = int((T_EPOCH_PRE + T_PRE_MAINT) * SRATE)
+        maint_end_s   = int((T_EPOCH_PRE + T_PRE_MAINT + T_POST_MAINT) * SRATE)
+        hgp_maint = hgp[:, :, maint_start_s:maint_end_s]   # (N, C_good, T_maint)
+
+        # Times relative to maintenance onset (for consistency with Miller t=0 at stimulus)
+        T_maint = hgp_maint.shape[2]
+        times_maint = np.linspace(0.0, T_POST_MAINT, T_maint)
+
+        # Encoding-period window, same duration as maintenance — comparison
+        # epoch (letters are being presented sequentially here; imperfect as a
+        # negative control since set size trivially covaries with letter count
+        # during encoding, but still informative to compare against maintenance).
+        enc_start_s = int(T_EPOCH_PRE * SRATE)
+        hgp_enc = hgp[:, :, enc_start_s:enc_start_s + T_maint]
+
+        # Pre-stimulus baseline window — clean negative control: by task design
+        # no information about the upcoming set size can exist yet, so both
+        # diagonal and off-diagonal AUC should collapse to chance here. This
+        # directly rules out "the pipeline always returns a square matrix
+        # regardless of the underlying code."
+        hgp_baseline = hgp[:, :, :bl_samps]
+
+        # 6. PCA (fixed global basis — used for downstream geometry/drift/TES1,
+        #    NOT for the CTG significance test, which folds PCA into CV below)
+        print("  Fitting PCA...")
+        Z, V = fit_pca(hgp_maint, n_comp=N_COMPONENTS)
+        print(f"  Z shape: {Z.shape}")
+
+        N_tr, T_m, D = Z.shape
+        X_full = hgp_maint.transpose(0, 2, 1).reshape(-1, hgp_maint.shape[1])
+        X_full -= X_full.mean(0)
+        total_var = np.linalg.norm(X_full) ** 2
+        proj_var  = np.linalg.norm(X_full @ V) ** 2
+        var_ratio = float(proj_var / (total_var + 1e-10))
+        print(f"  Variance in 8 PCs: {100*var_ratio:.1f}%")
+
+        # 7. PR per set size — cross-validated spatiotemporal PR in the native
+        #    (pre-PCA) channel space, the same method used for Miller, rather
+        #    than PR of the pooled 8-D latent (which caps PR at 8 by construction).
+        pr_per_set = {}
+        for ss in [4, 6, 8]:
+            mask = set_sizes == ss
+            if mask.sum() < 5:
+                pr_per_set[ss] = {"pr_cv": np.nan}
+                continue
+            pr_per_set[ss] = spatiotemporal_participation_ratio(
+                hgp_maint[mask], n_splits=2, rng=np.random.default_rng(stable_seed(f"{subj}_pr_set{ss}"))
+            )
+        pr_cv_str = ", ".join(f"{k}: {v.get('pr_cv', float('nan')):.2f}" for k, v in pr_per_set.items())
+        print(f"  PR (cv, native {hgp_maint.shape[1]}-channel space): {{{pr_cv_str}}}")
+
+        # 8. CTG (set4 vs set8) with PCA folded into CV and a label-shuffle
+        #    permutation null (valid: refits the whole matrix per permutation,
+        #    not a t-test/bootstrap over non-independent off-diagonal cells).
+        mask_ctg = (set_sizes == 4) | (set_sizes == 8)
+        X_ctg = hgp_maint[mask_ctg]
+        y_ctg = (set_sizes[mask_ctg] == 8).astype(int)
+        t_idx = np.arange(0, T_maint, CTG_STEP)
+        print(f"  CTG: {mask_ctg.sum()} trials ({(y_ctg==0).sum()} set4, {(y_ctg==1).sum()} set8), "
+              f"{len(t_idx)} timepoints, nested-CV + {CTG_N_PERM}-perm label-shuffle null...")
+        ctg_rng = np.random.default_rng(stable_seed(subj))
+        ctg_res = ctg_label_permutation_null(
+            X_ctg, y_ctg, t_idx, n_components=N_COMPONENTS,
+            n_splits=CTG_N_SPLITS, n_perm=CTG_N_PERM, rng=ctg_rng,
         )
-        oe_rng = np.random.default_rng(stable_seed(subj + "_error"))
-        oe_res = ctg_label_permutation_null(
-            X_ctg[~correct_ctg], y_ctg[~correct_ctg], t_idx, n_components=N_COMPONENTS,
-            n_splits=min(CTG_N_SPLITS, int((~correct_ctg).sum()) // 2), n_perm=50, rng=oe_rng,
+        auc_mat = ctg_res["auc_mat"]
+        tau_info = temporal_stability_tau(auc_mat)
+        print(f"  τ={tau_info['tau']:.4f} (interpretable={tau_info['interpretable']}), "
+              f"offdiag_effect={ctg_res['mean_offdiag_auc_minus_chance']:.4f}, "
+              f"p(label-shuffle)={ctg_res['p_value']:.4f}")
+
+        # Dynamic-code negative control: identical CTG pipeline, same labels,
+        # applied to the encoding-period window instead of maintenance.
+        X_enc = hgp_enc[mask_ctg]
+        enc_ctg_rng = np.random.default_rng(stable_seed(subj + "_1"))
+        enc_res = ctg_label_permutation_null(
+            X_enc, y_ctg, t_idx, n_components=N_COMPONENTS,
+            n_splits=CTG_N_SPLITS, n_perm=50, rng=enc_ctg_rng,
         )
-        code_stability_outcome = {
-            "offdiag_effect_correct": oc_res["mean_offdiag_auc_minus_chance"],
-            "offdiag_effect_error": oe_res["mean_offdiag_auc_minus_chance"],
-            "n_correct": int(correct_ctg.sum()), "n_error": int((~correct_ctg).sum()),
+        enc_tau_info = temporal_stability_tau(enc_res["auc_mat"])
+        print(f"  Comparison epoch (encoding period): τ={enc_tau_info['tau']:.4f}, "
+              f"offdiag_effect={enc_res['mean_offdiag_auc_minus_chance']:.4f}, "
+              f"p={enc_res['p_value']:.4f}")
+
+        # Clean negative control: pre-stimulus baseline (chance expected)
+        X_bl = hgp_baseline[mask_ctg]
+        t_idx_bl = np.arange(0, hgp_baseline.shape[2], max(1, CTG_STEP // 2))
+        bl_ctg_rng = np.random.default_rng(stable_seed(subj + "_2"))
+        bl_res = ctg_label_permutation_null(
+            X_bl, y_ctg, t_idx_bl, n_components=N_COMPONENTS,
+            n_splits=CTG_N_SPLITS, n_perm=50, rng=bl_ctg_rng,
+        )
+        bl_tau_info = temporal_stability_tau(bl_res["auc_mat"])
+        print(f"  Negative control (pre-stimulus baseline): "
+              f"offdiag_effect={bl_res['mean_offdiag_auc_minus_chance']:.4f}, "
+              f"p={bl_res['p_value']:.4f} (expect ~chance)")
+
+        # Does the load/context code itself destabilize on error trials? Splits
+        # the same set4-vs-8 CTG by trial outcome (correct-only vs error-only),
+        # a direct test of code stability rather than distance-to-centroid.
+        correct_ctg = data["correct"][mask_ctg]
+        code_stability_outcome = None
+        for outcome_name, outcome_mask in [("correct", correct_ctg), ("error", ~correct_ctg)]:
+            y_o = y_ctg[outcome_mask]
+            if min((y_o == 0).sum(), (y_o == 1).sum()) < 5:
+                code_stability_outcome = None
+                break
+        else:
+            oc_rng = np.random.default_rng(stable_seed(subj + "_correct"))
+            oc_res = ctg_label_permutation_null(
+                X_ctg[correct_ctg], y_ctg[correct_ctg], t_idx, n_components=N_COMPONENTS,
+                n_splits=min(CTG_N_SPLITS, int(correct_ctg.sum()) // 2), n_perm=50, rng=oc_rng,
+            )
+            oe_rng = np.random.default_rng(stable_seed(subj + "_error"))
+            oe_res = ctg_label_permutation_null(
+                X_ctg[~correct_ctg], y_ctg[~correct_ctg], t_idx, n_components=N_COMPONENTS,
+                n_splits=min(CTG_N_SPLITS, int((~correct_ctg).sum()) // 2), n_perm=50, rng=oe_rng,
+            )
+            code_stability_outcome = {
+                "offdiag_effect_correct": oc_res["mean_offdiag_auc_minus_chance"],
+                "offdiag_effect_error": oe_res["mean_offdiag_auc_minus_chance"],
+                "n_correct": int(correct_ctg.sum()), "n_error": int((~correct_ctg).sum()),
+            }
+            print(f"  Code stability by outcome: offdiag_effect correct={oc_res['mean_offdiag_auc_minus_chance']:.4f} "
+                  f"(N={int(correct_ctg.sum())}) vs error={oe_res['mean_offdiag_auc_minus_chance']:.4f} "
+                  f"(N={int((~correct_ctg).sum())})")
+
+        # 9. Phase distribution (2D endpoint at maintenance end)
+        mask_set8 = set_sizes == 8
+        t_end_idx = -1
+        Z_end = Z[mask_set8][:, t_end_idx, :2]
+        phases = np.arctan2(Z_end[:, 1], Z_end[:, 0]) % (2 * np.pi)
+        rayleigh = rayleigh_test(phases)
+        print(f"  Rayleigh: R={rayleigh['R']:.3f}, p={rayleigh['p_value']:.4f}")
+
+        # 10. Correct vs. error: per-trial drift (pooled across subjects for an
+        #     LME test below) and per-subject spatiotemporal PR split by outcome.
+        drift = geometric_drift(Z, set_sizes, times_maint, maint_window=(0.0, T_POST_MAINT))
+        pooled_drift.extend(drift.tolist())
+        pooled_correct.extend(correct.astype(int).tolist())
+        pooled_subj.extend([subj] * len(drift))
+        pooled_set_size.extend(set_sizes.tolist())
+        pooled_rt.extend(response_time.tolist())
+
+        pr_correct_error = {"n_correct": int(correct.sum()), "n_error": int((~correct).sum())}
+        if correct.sum() >= PR_MIN_TRIALS_PER_GROUP and (~correct).sum() >= PR_MIN_TRIALS_PER_GROUP:
+            pr_correct_error["pr_correct"] = spatiotemporal_participation_ratio(
+                hgp_maint[correct], n_splits=2, rng=np.random.default_rng(stable_seed(subj + "_pr_correct"))
+            )
+            pr_correct_error["pr_error"] = spatiotemporal_participation_ratio(
+                hgp_maint[~correct], n_splits=2, rng=np.random.default_rng(stable_seed(subj + "_pr_error"))
+            )
+            print(f"  PR correct={pr_correct_error['pr_correct']['pr_cv']:.2f} vs "
+                  f"error={pr_correct_error['pr_error']['pr_cv']:.2f} "
+                  f"(n={pr_correct_error['n_correct']}/{pr_correct_error['n_error']})")
+        else:
+            print(f"  Correct/error PR skipped — too few error trials "
+                  f"(n_error={pr_correct_error['n_error']})")
+
+        # 11. Save geometry file (includes V for TES1 B-matrix projection)
+        np.savez_compressed(
+            RESULTS / f"boran_geometry_{subj}.npz",
+            Z=Z.astype(np.float32),
+            V=V.astype(np.float32),              # (C_good, 8) — for B_latent = V.T @ B_electrode
+            electrode_mni=electrode_mni_good,     # (C_good, 3) MNI coords of good channels
+            good_ch_indices=good_ch_indices,
+            set_sizes=set_sizes,
+            correct=correct,
+            response_time=response_time,
+            drift=drift,
+            times=times_maint,
+            var_ratio=var_ratio,
+            pr_per_set=pr_per_set,
+            n_trials=N,
+            n_channels_good=int(good_ch.sum()),
+        )
+
+        # 12. Save CTG file
+        np.savez_compressed(
+            RESULTS / f"boran_ctg_{subj}.npz",
+            auc_mat=auc_mat,
+            t_idx=t_idx,
+            times_ctg=times_maint[t_idx],
+            y_labels=y_ctg,
+            null=ctg_res["null"],
+            auc_mat_encoding_control=enc_res["auc_mat"],
+            auc_mat_baseline_control=bl_res["auc_mat"],
+        )
+
+        summary[subj] = {
+            "n_trials":    int(N),
+            "n_channels":  int(good_ch.sum()),
+            "accuracy":    float(correct.mean()),
+            "var_ratio":   float(var_ratio),
+            "pr_per_set":  {int(k): v for k, v in pr_per_set.items()},
+            "tau":         tau_info["tau"],
+            "tau_interpretable":  tau_info["interpretable"],
+            "mean_diag_auc":      tau_info["mean_diag_auc"],
+            "mean_offdiag_auc":   tau_info["mean_offdiag_auc"],
+            "offdiag_effect":     ctg_res["mean_offdiag_auc_minus_chance"],
+            "p_offdiag_vs_chance": ctg_res["p_value"],
+            "comparison_epoch_encoding": {
+                "tau": enc_tau_info["tau"],
+                "offdiag_effect": enc_res["mean_offdiag_auc_minus_chance"],
+                "p_value": enc_res["p_value"],
+            },
+            "negative_control_baseline": {
+                "offdiag_effect": bl_res["mean_offdiag_auc_minus_chance"],
+                "p_value": bl_res["p_value"],
+            },
+            "pr_correct_error": pr_correct_error,
+            "code_stability_by_outcome": code_stability_outcome,
+            "rayleigh":    rayleigh,
         }
-        print(f"  Code stability by outcome: offdiag_effect correct={oc_res['mean_offdiag_auc_minus_chance']:.4f} "
-              f"(N={int(correct_ctg.sum())}) vs error={oe_res['mean_offdiag_auc_minus_chance']:.4f} "
-              f"(N={int((~correct_ctg).sum())})")
+        print(f"  Saved boran_geometry_{subj}.npz, boran_ctg_{subj}.npz")
 
-    # 9. Phase distribution (2D endpoint at maintenance end)
-    mask_set8 = set_sizes == 8
-    t_end_idx = -1
-    Z_end = Z[mask_set8][:, t_end_idx, :2]
-    phases = np.arctan2(Z_end[:, 1], Z_end[:, 0]) % (2 * np.pi)
-    rayleigh = rayleigh_test(phases)
-    print(f"  Rayleigh: R={rayleigh['R']:.3f}, p={rayleigh['p_value']:.4f}")
-
-    # 10. Correct vs. error: per-trial drift (pooled across subjects for an
-    #     LME test below) and per-subject spatiotemporal PR split by outcome.
-    drift = geometric_drift(Z, set_sizes, times_maint, maint_window=(0.0, T_POST_MAINT))
-    pooled_drift.extend(drift.tolist())
-    pooled_correct.extend(correct.astype(int).tolist())
-    pooled_subj.extend([subj] * len(drift))
-    pooled_set_size.extend(set_sizes.tolist())
-    pooled_rt.extend(response_time.tolist())
-
-    pr_correct_error = {"n_correct": int(correct.sum()), "n_error": int((~correct).sum())}
-    if correct.sum() >= PR_MIN_TRIALS_PER_GROUP and (~correct).sum() >= PR_MIN_TRIALS_PER_GROUP:
-        pr_correct_error["pr_correct"] = spatiotemporal_participation_ratio(
-            hgp_maint[correct], n_splits=2, rng=np.random.default_rng(stable_seed(subj + "_pr_correct"))
-        )
-        pr_correct_error["pr_error"] = spatiotemporal_participation_ratio(
-            hgp_maint[~correct], n_splits=2, rng=np.random.default_rng(stable_seed(subj + "_pr_error"))
-        )
-        print(f"  PR correct={pr_correct_error['pr_correct']['pr_cv']:.2f} vs "
-              f"error={pr_correct_error['pr_error']['pr_cv']:.2f} "
-              f"(n={pr_correct_error['n_correct']}/{pr_correct_error['n_error']})")
-    else:
-        print(f"  Correct/error PR skipped — too few error trials "
-              f"(n_error={pr_correct_error['n_error']})")
-
-    # 11. Save geometry file (includes V for TES1 B-matrix projection)
-    np.savez_compressed(
-        RESULTS / f"boran_geometry_{subj}.npz",
-        Z=Z.astype(np.float32),
-        V=V.astype(np.float32),              # (C_good, 8) — for B_latent = V.T @ B_electrode
-        electrode_mni=electrode_mni_good,     # (C_good, 3) MNI coords of good channels
-        good_ch_indices=good_ch_indices,
-        set_sizes=set_sizes,
-        correct=correct,
-        response_time=response_time,
-        drift=drift,
-        times=times_maint,
-        var_ratio=var_ratio,
-        pr_per_set=pr_per_set,
-        n_trials=N,
-        n_channels_good=int(good_ch.sum()),
-    )
-
-    # 12. Save CTG file
-    np.savez_compressed(
-        RESULTS / f"boran_ctg_{subj}.npz",
-        auc_mat=auc_mat,
-        t_idx=t_idx,
-        times_ctg=times_maint[t_idx],
-        y_labels=y_ctg,
-        null=ctg_res["null"],
-        auc_mat_encoding_control=enc_res["auc_mat"],
-        auc_mat_baseline_control=bl_res["auc_mat"],
-    )
-
-    summary[subj] = {
-        "n_trials":    int(N),
-        "n_channels":  int(good_ch.sum()),
-        "accuracy":    float(correct.mean()),
-        "var_ratio":   float(var_ratio),
-        "pr_per_set":  {int(k): v for k, v in pr_per_set.items()},
-        "tau":         tau_info["tau"],
-        "tau_interpretable":  tau_info["interpretable"],
-        "mean_diag_auc":      tau_info["mean_diag_auc"],
-        "mean_offdiag_auc":   tau_info["mean_offdiag_auc"],
-        "offdiag_effect":     ctg_res["mean_offdiag_auc_minus_chance"],
-        "p_offdiag_vs_chance": ctg_res["p_value"],
-        "comparison_epoch_encoding": {
-            "tau": enc_tau_info["tau"],
-            "offdiag_effect": enc_res["mean_offdiag_auc_minus_chance"],
-            "p_value": enc_res["p_value"],
-        },
-        "negative_control_baseline": {
-            "offdiag_effect": bl_res["mean_offdiag_auc_minus_chance"],
-            "p_value": bl_res["p_value"],
-        },
-        "pr_correct_error": pr_correct_error,
-        "code_stability_by_outcome": code_stability_outcome,
-        "rayleigh":    rayleigh,
-    }
-    print(f"  Saved boran_geometry_{subj}.npz, boran_ctg_{subj}.npz")
-
+    except Exception as e:
+        print(f"  SKIP {subj} -- unhandled error: {e}")
+        continue
 # Save summary
 with open(RESULTS / "boran_summary.json", "w") as f:
-    json.dump(summary, f, indent=2)
+    json.dump(_json_safe(summary), f, indent=2, allow_nan=False)
 
 # FDR correction across the 9-subject CTG-vs-chance test family
 p_vals = np.array([v["p_offdiag_vs_chance"] for v in summary.values()])
@@ -602,7 +608,7 @@ else:
                                                 "note": "fewer than 4 subjects with both outcomes powered"}
 
 with open(RESULTS / "all_statistics.json", "w") as f:
-    json.dump(stats, f, indent=2)
+    json.dump(_json_safe(stats), f, indent=2, allow_nan=False)
 
 print("\n" + "="*55)
 print("BORAN PIPELINE COMPLETE")

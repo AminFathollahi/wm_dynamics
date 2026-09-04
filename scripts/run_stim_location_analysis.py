@@ -16,16 +16,17 @@ Two independent signals are computed per subject and cross-checked:
      much a perturbation delivered there would project onto v*.
 
   2. TES1-informed per-electrode input strength: for the dynamically-best
-     TES1 CCEP donor already identified in run_divergence_analysis.py
+     TES1 donor already identified in run_divergence_analysis.py
      (argmax alignment of donor B with v*), we rebuild the per-electrode
      induced-voltage field B_electrode at the subject's own electrode
      positions (build_tes1_input_matrix) and rank electrodes by |B_i|.
 
 Both signals are geometric proxies, not causal evidence — no dataset in
 hand delivers real intracranial stimulation with a WM behavioral outcome
-at cortical sites during maintenance (TES1 gives CCEP transfer functions,
-not behavior; FR3 gives free-recall stimulation but only during episodic
-encoding — see Discussion). They are reported as a hypothesis-generating
+at cortical sites during maintenance (TES1 gives scalp-tES-induced
+intracranial voltage field magnitudes, not behavior; FR3 gives free-recall
+stimulation but only during episodic encoding — see Discussion). They are
+reported as a hypothesis-generating
 localization signal, cross-validated by (i) agreement between the two
 independent scores and (ii) consistency of the anatomical gradient across
 subjects within a dataset (Miller PFC ECoG, Boran MTL iEEG).
@@ -43,11 +44,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
+from project_config import data_root, dataset_path, executable, project_path
 
 from preprocessing import load_tes1_stimulation, build_tes1_input_matrix
+from statistics import pearson_permutation_test, spearman_permutation_test
+from provenance import _json_safe
 
 RESULTS  = ROOT / "results"
-EXT_DATA = Path("/media/amin/EXTERNAL_USB/SMAF/Research/Representation/Working Memory/data")
+EXT_DATA = data_root()
 TES1_ZIP = EXT_DATA / "Tes1" / "HuangLiu2016dataset.zip"
 
 MILLER_SUBJECTS = ["al", "ca", "cc", "ug"]
@@ -62,13 +66,21 @@ def electrode_scores(V: np.ndarray, v_star: np.ndarray) -> np.ndarray:
     return np.abs(V_hat @ v_hat)
 
 
-def axis_gradient(mni: np.ndarray, score: np.ndarray) -> dict:
-    """Correlate per-electrode score with each MNI axis (x=lateral, y=AP, z=SI)."""
+def axis_gradient(mni: np.ndarray, score: np.ndarray, rng: np.random.Generator | None = None) -> dict:
+    """Correlate per-electrode score with each MNI axis (x=lateral, y=AP, z=SI).
+
+    Reports a permutation p-value (primary -- valid at the small per-subject
+    electrode counts here) alongside the analytic pearsonr p-value
+    (`p_{name}_analytic`) for comparison.
+    """
+    if rng is None:
+        rng = np.random.default_rng(0)
     out = {}
     for ax, name in zip(range(3), ["x_lat", "y_ap", "z_si"]):
-        r, p = sstats.pearsonr(mni[:, ax], score)
-        out[f"r_{name}"] = float(r)
-        out[f"p_{name}"] = float(p)
+        res = pearson_permutation_test(mni[:, ax], score, rng=rng)
+        out[f"r_{name}"] = res["r"]
+        out[f"p_{name}"] = res["p_value"]
+        out[f"p_{name}_analytic"] = res["p_analytic"]
     return out
 
 
@@ -101,7 +113,9 @@ def process_dataset(label, subjects, out, all_rows, all_tes1):
         )[:, 0]
         score_tes1 = np.abs(B_el)
 
-        rho, p_rho = sstats.spearmanr(score_intrinsic, score_tes1)
+        rho_res = spearman_permutation_test(score_intrinsic, score_tes1)
+        rho, p_rho = rho_res["rho"], rho_res["p_value"]
+        _, p_rho_analytic = sstats.spearmanr(score_intrinsic, score_tes1)
 
         top_i = int(np.argmax(score_intrinsic))
         top_mni = mni[top_i]
@@ -128,6 +142,7 @@ def process_dataset(label, subjects, out, all_rows, all_tes1):
             "offset_norm_mm": float(np.linalg.norm(offset)),
             "rho_intrinsic_vs_tes1_informed": float(rho),
             "p_rho": float(p_rho),
+            "p_rho_analytic": float(p_rho_analytic),
             **grad,
         }
         all_rows[label.lower()][subj] = row
@@ -178,7 +193,7 @@ def main():
         all_stats = json.load(f)
     all_stats["stim_location"] = all_rows
     with open(all_stats_path, "w") as f:
-        json.dump(all_stats, f, indent=2)
+        json.dump(_json_safe(all_stats), f, indent=2, allow_nan=False)
     print("\n  Updated all_statistics.json")
 
 

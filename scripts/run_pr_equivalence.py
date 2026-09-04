@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Equivalence + Bayesian null for the PR-vs-load slope (Round 6, STEP B).
+"""Equivalence + Bayesian null for the PR-vs-load slope.
 
 A non-significant slope (p=0.87) is absence of evidence, not evidence of
 absence. This upgrades the load-null to an accept-the-null by testing that the
@@ -38,6 +38,7 @@ from scipy.stats import norm
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 from statistics import forest_meta, tost_equivalence, bf_null_slope  # noqa: E402
+from provenance import _json_safe
 
 RESULTS = ROOT / "results"
 SESOI = 0.5   # effective dimensions per load level (pre-stated; see module docstring)
@@ -95,9 +96,9 @@ def main():
         "bayes_prior_scale": bf["r_scale"],
         "per_dataset": per_dataset,
     }
-    json.dump(out, open(RESULTS / "pr_equivalence.json", "w"), indent=2)
+    json.dump(_json_safe(out), open(RESULTS / "pr_equivalence.json", "w"), indent=2, allow_nan=False)
     stats["pr_equivalence"] = out
-    json.dump(stats, open(RESULTS / "all_statistics.json", "w"), indent=2)
+    json.dump(_json_safe(stats), open(RESULTS / "all_statistics.json", "w"), indent=2, allow_nan=False)
 
     print(f"Pooled PR-vs-load slope = {pooled:+.4f} (SE {se_pooled:.4f}, "
           f"95% CI [{meta['ci_lo']:+.3f}, {meta['ci_hi']:+.3f}], p={meta['p_value']:.3f})")

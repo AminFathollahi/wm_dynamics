@@ -8,7 +8,7 @@ Two public functions:
     observation noise, and unmodeled nonlinearity.
 
 ANTI-CIRCULARITY GUARDRAILS (the point of this module; violating any one
-invalidates the result — see comments.txt STEP 3):
+invalidates the result):
   (1) The controller is designed on an ESTIMATED plant (A_hat, B_hat) and
       evaluated on a DIFFERENT "true" plant (A, B) that generates the
       simulated trajectories. Passing A_hat=A, B_hat=B (the defaults) is the
@@ -23,7 +23,7 @@ invalidates the result — see comments.txt STEP 3):
       bug, not a success.
 
 Reuses src/control.py (lqr_design -> dare_solve, controllability_gramian via
-is_controllable/unstable_eigenvector) for the LQR gain; does not
+is_controllable/dominant_eigenmode) for the LQR gain; does not
 re-implement Riccati-equation solving.
 """
 

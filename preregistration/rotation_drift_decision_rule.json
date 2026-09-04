@@ -1,0 +1,62 @@
+{
+  "schema_version": "1.0.0",
+  "title": "Held-out adjudication of deterministic rotation, confined drift, and switching",
+  "frozen_before_real_data_fit": true,
+  "base_git_commit": "33a3dc73065fe2cf3aa1355a6ba9728e91ee0aba",
+  "commit_status": "content frozen by file hash; no git commit created because the executor was not authorized to commit",
+  "independent_unit": "patient, with sessions nested within patient",
+  "outer_folds": {
+    "group": "trial within session; linked release views remain in the same fold and only one canonical view enters primary inference",
+    "n_splits": 5,
+    "preprocessing": "fit FrozenPSTHTransform, dimensionality, coding axes, hyperparameters, and latent transforms on outer-training data only",
+    "smoothing": "forbidden for drift models; permitted only for rotation sensitivity and visualization"
+  },
+  "models": {
+    "M0": "condition-by-time mean; no single-trial transition",
+    "M1": "M0 plus a trial-shared deterministic operator for coding-axis rotation",
+    "M2": "M0 plus a confined stochastic latent process with separate process and observation noise",
+    "M3": "M1 plus M2",
+    "M4": "recurrent switching linear dynamical system with an explicit state-transition model"
+  },
+  "primary_score": "held-out negative log likelihood in nats per observed scalar/bin, averaged within session then patient",
+  "secondary_scores": [
+    "held-out crossnobis content signal",
+    "held-out decoder AUROC",
+    "one-step latent-state R2",
+    "multi-step latent-state R2"
+  ],
+  "minimum_effect": {
+    "negative_log_likelihood_nats_per_observation": 0.01,
+    "latent_state_r2": 0.01,
+    "crossnobis_standardized_units": 0.05,
+    "rationale": "effects smaller than these thresholds do not materially alter a session-level held-out prediction and are treated as practically tied"
+  },
+  "winner_rule": "A model wins only if its patient-level mean primary-score improvement over every simpler nested alternative exceeds 0.01 nats/observation, its 95% patient-cluster bootstrap interval excludes zero, and it improves at least 60% of estimable patients. Otherwise the models are tied. Non-nested M4 is compared with the same primary threshold and interval rule; complexity is additionally checked by held-out likelihood and BIC.",
+  "rotation_test": {
+    "estimand": "held-out cross-temporal-generalization recovery after counter-rotating axes with a training-fit shared operator",
+    "positive_rule": "patient-level recovery exceeds the stationary-code matched null by at least 0.05 standardized crossnobis units and the 95% patient-cluster interval excludes zero"
+  },
+  "drift_test": {
+    "estimand": "held-out prediction advantage from a trial's own earlier residual beyond the condition-by-time mean",
+    "positive_rule": "advantage exceeds R2=0.01, the 95% patient-cluster interval excludes zero, and its lag-decay rate interval overlaps the independently fitted lambda interval"
+  },
+  "joint_outcomes": {
+    "rotation_only": "rotation test positive; drift test negative",
+    "drift_only": "drift test positive; rotation test negative",
+    "both": "both targeted tests positive",
+    "neither": "neither targeted test positive",
+    "switching": "M4 satisfies the non-nested winner rule against M2 and M3"
+  },
+  "nonestimable_policy": "Record non-convergence, failed identifiability, missing behavior, and insufficient independent units as explicit nonestimable outcomes; never encode them as zero effects.",
+  "multiplicity": {
+    "confirmatory_family": [
+      "human M1 versus M0",
+      "human M2 versus M0",
+      "human M3 versus max(M1,M2)",
+      "human M4 versus M3",
+      "lambda parallel versus permuted-axis matched null",
+      "probe residual versus accuracy"
+    ],
+    "correction": "Holm within the six-test confirmatory family; all other contrasts exploratory"
+  }
+}

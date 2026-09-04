@@ -14,25 +14,175 @@ from control import (
     minimum_energy_trajectory,
     lqr_simulate,
     energy_accuracy_pareto,
-    unstable_eigenvector,
+    dominant_eigenmode,
     average_controllability,
     modal_controllability,
     _normalize_adjacency,
+    invariant_subspace_basis,
+    subspace_alignment,
+    canonicalize_eigenvector_phase,
 )
 
 
-class TestUnstableEigenvector:
+class TestCanonicalizeEigenvectorPhase:
+    def test_stable_across_arbitrary_input_phase(self):
+        # Same physical mode, 10 random overall phases applied to the raw
+        # eigenvector before canonicalization -- affinity to the phi=0
+        # canonicalization must be 1.0 to 1e-10.
+        rng = np.random.default_rng(0)
+        v = rng.standard_normal(5) + 1j * rng.standard_normal(5)
+        v = v / np.linalg.norm(v)
+        ref = canonicalize_eigenvector_phase(v)
+        for phi in rng.uniform(0, 2 * np.pi, size=10):
+            v_rot = v * np.exp(1j * phi)
+            out = canonicalize_eigenvector_phase(v_rot)
+            assert abs(float(out @ ref)) == pytest.approx(1.0, abs=1e-10)
+
+    def test_real_eigenvector_only_fixes_sign(self):
+        # Largest-magnitude entry (index 2, value 4) is already real and
+        # positive, so no rotation is applied; just unit-normalize.
+        v = np.array([0.0, -3.0, 4.0], dtype=complex)
+        out = canonicalize_eigenvector_phase(v)
+        np.testing.assert_allclose(out, [0.0, -0.6, 0.8], atol=1e-10)
+
+        # Flip the largest entry negative -> canonicalization must rotate by
+        # pi (i.e. flip overall sign) to restore largest-entry-positive.
+        v2 = np.array([0.0, 3.0, -4.0], dtype=complex)
+        out2 = canonicalize_eigenvector_phase(v2)
+        np.testing.assert_allclose(out2, [0.0, -0.6, 0.8], atol=1e-10)
+
+    def test_unit_norm(self):
+        rng = np.random.default_rng(1)
+        v = rng.standard_normal(4) + 1j * rng.standard_normal(4)
+        out = canonicalize_eigenvector_phase(v)
+        assert np.linalg.norm(out) == pytest.approx(1.0)
+
+
+class TestInvariantSubspaceBasis:
+    def test_m1_real_mode_matches_dominant_eigenmode(self):
+        # Diagonal A: eigenvalue 1.5 dominates 0.5 in |lambda|; the m=1
+        # subspace must be the same span as dominant_eigenmode's v*.
+        A = np.diag([1.5, 0.5])
+        mode = dominant_eigenmode(A)
+        result = invariant_subspace_basis(A, m=1)
+        assert result.status == "ok"
+        assert result.basis.shape == (2, 1)
+        assert abs(float(np.abs(result.basis[:, 0] @ mode.v_star))) == pytest.approx(1.0, abs=1e-8)
+
+    def test_complex_pair_gives_2d_real_subspace(self):
+        theta = 0.4
+        A = 0.9 * np.array([[np.cos(theta), -np.sin(theta)],
+                            [np.sin(theta), np.cos(theta)]])
+        result = invariant_subspace_basis(A, m=1)  # one complex-conjugate PAIR = one mode = 2 real dims
+        assert result.status == "ok"
+        assert result.basis.shape == (2, 2)
+        np.testing.assert_allclose(result.basis.T @ result.basis, np.eye(2), atol=1e-8)
+
+    def test_basis_is_orthonormal(self):
+        rng = np.random.default_rng(0)
+        A = rng.standard_normal((5, 5)) * 0.3
+        result = invariant_subspace_basis(A, m=3)
+        np.testing.assert_allclose(result.basis.T @ result.basis, np.eye(result.dim), atol=1e-8)
+
+    def test_near_real_pair_flags_degeneracy_instead_of_arbitrary_second_column(self):
+        # A complex mode whose imaginary component is negligible relative to
+        # its real component (here: real eigenvalues perturbed by a tiny
+        # asymmetry so np.linalg.eig reports a barely-complex pair) must not
+        # silently receive a numerically-arbitrary second QR column.
+        eps = 1e-10
+        A = np.array([[1.5, eps], [-eps, 1.5]])
+        result = invariant_subspace_basis(A, m=1)
+        assert result.status == "near_real_pair"
+        assert result.dim == 1
+        assert len(result.notes) == 1
+
+    def test_unmatched_conjugate_status_present_in_notes(self):
+        # Directly exercise the degeneracy-reporting path without depending
+        # on a specific matrix construction: a note phrased as the
+        # "unmatched_conjugate" case must be classified as such.
+        from control import InvariantSubspaceBasis
+        result = InvariantSubspaceBasis(
+            basis=np.eye(2), dim=2, status="unmatched_conjugate",
+            notes=["mode 0: nearest candidate conjugate partner is 1.0e-02 away"],
+        )
+        assert result.status == "unmatched_conjugate"
+
+
+class TestSubspaceAlignment:
+    def test_in_subspace_gives_one(self):
+        Q = np.eye(3)[:, :2]
+        b = np.array([1.0, 1.0, 0.0])
+        assert subspace_alignment(Q, b) == pytest.approx(1.0, abs=1e-8)
+
+    def test_orthogonal_to_subspace_gives_zero(self):
+        Q = np.eye(3)[:, :2]
+        b = np.array([0.0, 0.0, 1.0])
+        assert subspace_alignment(Q, b) == pytest.approx(0.0, abs=1e-8)
+
+    def test_m1_matches_cos_to_vstar(self):
+        A = np.diag([1.5, 0.5])
+        mode = dominant_eigenmode(A)
+        result = invariant_subspace_basis(A, m=1)
+        b = np.array([0.6, 0.8])
+        expected = abs(float(b @ mode.v_star)) / np.linalg.norm(b)
+        assert subspace_alignment(result.basis, b) == pytest.approx(expected, abs=1e-8)
+
+
+class TestDominantEigenmode:
     def test_recovers_dominant_growth_direction(self):
         # Diagonal A: eigenvalue 1.5 dominates 0.5, eigenvector is e0.
         A = np.diag([1.5, 0.5])
-        v_star, max_re_eig = unstable_eigenvector(A)
-        np.testing.assert_allclose(np.abs(v_star), [1.0, 0.0], atol=1e-8)
-        assert max_re_eig == pytest.approx(1.5)
+        mode = dominant_eigenmode(A)
+        np.testing.assert_allclose(np.abs(mode.v_star), [1.0, 0.0], atol=1e-8)
+        assert mode.rho == pytest.approx(1.5)
+        assert mode.theta == pytest.approx(0.0)
+        assert not mode.is_complex
+        assert mode.classification == "unstable_real"
 
     def test_unit_norm(self, synthetic_system):
         A, _ = synthetic_system
-        v_star, _ = unstable_eigenvector(A)
-        assert np.linalg.norm(v_star) == pytest.approx(1.0)
+        mode = dominant_eigenmode(A)
+        assert np.linalg.norm(mode.v_star) == pytest.approx(1.0)
+
+    def test_discrete_mode_uses_modulus_not_real_part(self):
+        # The rotational mode has smaller real part than 0.8 but a larger
+        # discrete-time modulus (0.95), so it is the slowest-decaying mode.
+        theta = 0.5
+        A = np.array([
+            [0.95 * np.cos(theta), -0.95 * np.sin(theta), 0.0],
+            [0.95 * np.sin(theta),  0.95 * np.cos(theta), 0.0],
+            [0.0, 0.0, 0.8],
+        ])
+        mode = dominant_eigenmode(A)
+        assert mode.rho == pytest.approx(0.95)
+        # rho < 1 and complex: this must NOT be called unstable, even though
+        # a naive Re(lambda)-based selection would have preferred it over 0.8
+        # for the wrong reason.
+        assert mode.is_complex
+        assert mode.classification == "damped_rotation"
+
+    def test_real_eigenvalue_below_one_is_damped_not_unstable(self):
+        A = np.diag([0.5, 0.3])
+        mode = dominant_eigenmode(A)
+        assert mode.classification == "damped_real"
+
+    def test_complex_pair_near_unit_modulus_is_classified_as_rotation(self):
+        # A pure rotation (modulus exactly 1) must be classified as a
+        # rotation, never as "unstable", regardless of Re(lambda) sign.
+        theta = 1.2
+        A = np.array([[np.cos(theta), -np.sin(theta)],
+                      [np.sin(theta), np.cos(theta)]])
+        mode = dominant_eigenmode(A)
+        assert mode.is_complex
+        assert mode.classification == "rotation"
+        assert mode.theta == pytest.approx(theta, abs=1e-8) or mode.theta == pytest.approx(-theta, abs=1e-8)
+
+    def test_complex_pair_above_unit_modulus_is_growing_rotation(self):
+        theta = 0.7
+        A = 1.2 * np.array([[np.cos(theta), -np.sin(theta)],
+                            [np.sin(theta), np.cos(theta)]])
+        mode = dominant_eigenmode(A)
+        assert mode.classification == "growing_rotation"
 
 
 class TestControllabilityGramian:

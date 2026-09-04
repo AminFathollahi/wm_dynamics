@@ -22,6 +22,7 @@ from preprocessing import (
     build_tes1_input_matrix,
     line_noise_notch,
     bipolar_reference_by_shank,
+    PassbandExceedsNyquistError,
 )
 
 TES1_ZIP = Path(
@@ -68,6 +69,52 @@ class TestBandpassFilter:
         x_copy = x.copy()
         bandpass_filter(x, 70, 150, SRATE)
         np.testing.assert_array_equal(x, x_copy)
+
+
+class TestBandpassFilterNyquistGuard:
+    """A signal whose sampling rate puts the
+    requested high edge above (or at) Nyquist must raise the named error, and
+    a valid request must still return the same numbers it returns today."""
+
+    def test_high_edge_above_nyquist_raises_named_error(self, rng):
+        # DANDI 000574's own scalp-EEG effective rate (139.8 Hz) is too low
+        # for the project's standard 70-150 Hz high-gamma band -- the exact
+        # real case this guard exists for.
+        x = rng.standard_normal(500)
+        with pytest.raises(PassbandExceedsNyquistError):
+            bandpass_filter(x, 70.0, 150.0, srate=139.8)
+
+    def test_high_edge_exactly_at_nyquist_raises(self, rng):
+        x = rng.standard_normal(500)
+        with pytest.raises(PassbandExceedsNyquistError):
+            bandpass_filter(x, 10.0, 150.0, srate=300.0)  # nyquist == hi exactly
+
+    def test_low_edge_non_positive_raises(self, rng):
+        x = rng.standard_normal(500)
+        with pytest.raises(PassbandExceedsNyquistError):
+            bandpass_filter(x, 0.0, 100.0, srate=SRATE)
+
+    def test_error_message_reports_srate_band_and_nyquist(self):
+        with pytest.raises(PassbandExceedsNyquistError) as exc_info:
+            bandpass_filter(np.zeros(500), 70.0, 150.0, srate=139.8)
+        message = str(exc_info.value)
+        assert "139.8" in message
+        assert "70" in message and "150" in message
+        assert "69.9" in message  # nyquist = 139.8 / 2
+
+    def test_valid_request_is_not_clamped_or_narrowed(self, rng):
+        # A request whose high edge sits just below Nyquist must fit with the
+        # exact passband given, not silently narrowed to something that would fit.
+        x = rng.standard_normal(2000)
+        out = bandpass_filter(x, 8.0, 45.0, srate=139.8)
+        assert out.shape == x.shape
+        assert np.all(np.isfinite(out))
+
+    def test_valid_request_returns_unchanged_numbers(self, rng):
+        x = rng.standard_normal(1200)
+        before = bandpass_filter(x, 70, 150, SRATE)
+        after = bandpass_filter(x, 70, 150, SRATE)
+        np.testing.assert_array_equal(before, after)
 
 
 class TestNotchFilter:
@@ -152,6 +199,49 @@ class TestRejectBadChannels:
         good = reject_bad_channels(data)
         assert good.dtype == bool
         assert len(good) == 8
+
+    def test_line_noise_channel_is_a_variance_false_negative(self, rng):
+        """A channel with normal broadband variance but strong narrowband
+        line-noise contamination should pass the old variance-only criterion
+        (false negative) and fail once the line-noise criterion is added."""
+        srate = 1000.0
+        n_samples, n_channels = 8000, 10
+        t = np.arange(n_samples) / srate
+        target_var = 1.0
+        contaminated = 4
+        data = np.empty((n_samples, n_channels))
+        for c in range(n_channels):
+            if c == contaminated:
+                continue
+            scale = np.sqrt(target_var * rng.uniform(0.85, 1.2))
+            data[:, c] = scale * rng.standard_normal(n_samples)
+        # 70% of this channel's variance sits in a narrow band at the mains
+        # frequency; only 30% is broadband -- total variance stays typical.
+        line_var, broadband_var = 0.7 * target_var, 0.3 * target_var
+        amplitude = np.sqrt(2 * line_var)
+        line_signal = amplitude * np.sin(2 * np.pi * 60.0 * t + 0.3)
+        data[:, contaminated] = (
+            np.sqrt(broadband_var) * rng.standard_normal(n_samples) + line_signal
+        )
+
+        old_mask = reject_bad_channels(data, threshold_mad=3.0)
+        assert old_mask[contaminated], (
+            "variance-only criterion should miss this channel (the false negative)"
+        )
+
+        new_mask = reject_bad_channels(data, threshold_mad=3.0, srate=srate, mains_hz=60.0)
+        assert not new_mask[contaminated], (
+            "line-noise criterion should catch what the variance criterion missed"
+        )
+        # clean channels must not be collaterally rejected
+        assert new_mask.sum() >= n_channels - 1
+
+    def test_srate_none_reproduces_legacy_variance_only_behavior(self, rng):
+        data = rng.standard_normal((1000, 8)) * 50.0
+        data[:, 5] *= 100
+        legacy = reject_bad_channels(data, threshold_mad=3.0)
+        explicit_none = reject_bad_channels(data, threshold_mad=3.0, srate=None)
+        np.testing.assert_array_equal(legacy, explicit_none)
 
 
 class TestHighGammaPower:

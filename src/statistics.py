@@ -268,6 +268,110 @@ def spearman_permutation_test(
     return {"rho": obs, "p_value": p, "null": null, "n": int(len(x))}
 
 
+def pearson_permutation_test(
+    x: NDArray,
+    y: NDArray,
+    n_perm: int = 10000,
+    rng: np.random.Generator | None = None,
+) -> dict:
+    """Pearson correlation with a label-permutation null (small-N safe),
+    reported alongside scipy's analytic pearsonr for comparison -- the
+    analytic p-value assumes bivariate normality and enough points for its
+    t-distribution approximation to hold, which is unreliable for the small
+    per-subject electrode counts typical of this project.
+
+    Returns
+    -------
+    dict: r (observed Pearson correlation), p_value, r_analytic, p_analytic, n
+    """
+    from scipy.stats import pearsonr
+
+    if rng is None:
+        rng = np.random.default_rng(0)
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    obs, p_analytic = pearsonr(x, y)
+    obs = float(obs)
+
+    null = np.empty(n_perm)
+    for i in range(n_perm):
+        null[i] = pearsonr(x, rng.permutation(y))[0]
+
+    p = permutation_pvalue(np.abs(null) >= np.abs(obs))
+    return {"r": obs, "p_value": p, "r_analytic": obs, "p_analytic": float(p_analytic), "n": int(len(x))}
+
+
+def partial_correlation_permutation_test(
+    outcome: NDArray,
+    covariate: NDArray,
+    controls: list[NDArray] | tuple[NDArray, ...] = (),
+    n_perm: int = 10000,
+    rng: np.random.Generator | None = None,
+) -> dict:
+    """Partial Pearson correlation between ``outcome`` and ``covariate``,
+    controlling for zero or more ``controls``, by the residual method:
+    regress both ``outcome`` and ``covariate`` on [intercept, *controls] by
+    ordinary least squares, then Pearson-correlate the two residual series.
+    With no controls this is the ordinary Pearson correlation (and, for a
+    0/1 ``outcome``, the ordinary point-biserial correlation -- scipy's
+    pointbiserialr is itself a Pearson correlation on a binary variable, so
+    no separate binary-specific code path is needed).
+
+    Significance is a permutation test that shuffles ``outcome`` only,
+    leaving ``covariate`` and every control fixed: this breaks any
+    relationship ``outcome`` has with ``covariate`` or the controls while
+    preserving the covariate structure the partial correlation is
+    conditioning on, which is the appropriate null for "does outcome relate
+    to covariate after conditioning on controls" (Kennedy 1995, one of
+    several valid permutation schemes for a partial correlation). An
+    analytic reference p-value (Student's t on the partial correlation,
+    df = n - 2 - len(controls)) is reported alongside for comparison, per
+    this module's standing rule against reporting only the small-sample-
+    unsafe analytic figure.
+
+    Returns
+    -------
+    dict: r (observed partial correlation), p_value (permutation, two-
+    sided), r_analytic (same r, named for symmetry with the other
+    permutation tests in this module), p_analytic, n, n_controls.
+    """
+    from scipy.stats import t as t_distribution
+
+    if rng is None:
+        rng = np.random.default_rng(0)
+    outcome = np.asarray(outcome, dtype=float)
+    covariate = np.asarray(covariate, dtype=float)
+    control_list = [np.asarray(c, dtype=float) for c in controls]
+    n = len(outcome)
+
+    def _partial_r(y: NDArray) -> float:
+        if control_list:
+            design = np.column_stack([np.ones(n), *control_list])
+            y_resid = y - design @ np.linalg.lstsq(design, y, rcond=None)[0]
+            x_resid = covariate - design @ np.linalg.lstsq(design, covariate, rcond=None)[0]
+        else:
+            y_resid, x_resid = y - y.mean(), covariate - covariate.mean()
+        if np.std(y_resid) == 0.0 or np.std(x_resid) == 0.0:
+            return float("nan")
+        return float(np.corrcoef(y_resid, x_resid)[0, 1])
+
+    obs = _partial_r(outcome)
+    null = np.array([_partial_r(rng.permutation(outcome)) for _ in range(n_perm)])
+    if np.isnan(obs):
+        return {"status": "not_computable", "reason": "zero-variance residual", "n": int(n), "n_controls": len(control_list)}
+    p = permutation_pvalue(np.abs(null[~np.isnan(null)]) >= np.abs(obs))
+
+    df = n - 2 - len(control_list)
+    if df > 0 and abs(obs) < 1.0:
+        t_stat = obs * np.sqrt(df / (1.0 - obs ** 2))
+        p_analytic = float(2.0 * t_distribution.sf(np.abs(t_stat), df))
+    else:
+        p_analytic = float("nan")
+
+    return {"status": "computed", "r": obs, "p_value": p, "r_analytic": obs, "p_analytic": p_analytic,
+            "n": int(n), "n_controls": len(control_list)}
+
+
 def temporal_cluster_permutation(
     x_time: NDArray,
     y_time: NDArray,
@@ -314,19 +418,23 @@ def temporal_cluster_permutation(
         return (mu_a - mu_b) / se
 
     def _clusters(t_vec, threshold):
-        above = np.abs(t_vec) > threshold
+        """Return sign-homogeneous supra-threshold runs.
+
+        Opposite-sign neighbouring samples must never be merged: summing them
+        cancels the cluster mass and invalidates the max-cluster null.
+        """
         clusters = []
-        in_cluster = False
-        for i, a in enumerate(above):
-            if a and not in_cluster:
-                start = i
-                in_cluster = True
-            elif not a and in_cluster:
-                clusters.append((start, i))
-                in_cluster = False
-        if in_cluster:
-            clusters.append((start, T))
-        return clusters
+        for sign, active in ((1, t_vec > threshold), (-1, t_vec < -threshold)):
+            start = None
+            for i, is_active in enumerate(active):
+                if is_active and start is None:
+                    start = i
+                elif not is_active and start is not None:
+                    clusters.append((start, i, sign))
+                    start = None
+            if start is not None:
+                clusters.append((start, T, sign))
+        return sorted(clusters, key=lambda item: item[0])
 
     # Critical t-value (df ≈ nx + ny - 2, two-tailed)
     from scipy.stats import t as t_dist
@@ -344,7 +452,7 @@ def temporal_cluster_permutation(
             "times": times,
         }
 
-    obs_cluster_stats = [t_obs[s:e].sum() for s, e in obs_clusters]
+    obs_cluster_stats = [abs(t_obs[s:e].sum()) for s, e, _ in obs_clusters]
 
     # Null distribution
     null_max_stats = np.zeros(n_perm)
@@ -355,15 +463,16 @@ def temporal_cluster_permutation(
         t_p = _tstat(a_p, b_p)
         clust_p = _clusters(t_p, t_crit)
         if clust_p:
-            null_max_stats[i] = max(abs(t_p[s:e].sum()) for s, e in clust_p)
+            null_max_stats[i] = max(abs(t_p[s:e].sum()) for s, e, _ in clust_p)
 
     results_clusters = []
-    for (s, e), stat in zip(obs_clusters, obs_cluster_stats):
-        p = permutation_pvalue(null_max_stats >= abs(stat))
+    for (s, e, sign), stat in zip(obs_clusters, obs_cluster_stats):
+        p = permutation_pvalue(null_max_stats >= stat)
         results_clusters.append({
             "start_s": float(times[s]),
-            "end_s": float(times[min(e, T - 1)]),
-            "cluster_stat": float(stat),
+            "end_s": float(times[e - 1]),
+            "cluster_stat": float(sign * stat),
+            "sign": "positive" if sign > 0 else "negative",
             "p_value": float(p),
         })
 
@@ -419,18 +528,25 @@ def temporal_cluster_permutation_auroc(
     def _auc_minus_chance(t: int, y: NDArray) -> float:
         return auroc(y, scores_time[:, t]) - 0.5
 
-    def _clusters(vec: NDArray, threshold: float) -> list[tuple[int, int]]:
-        above = np.abs(vec) > threshold
-        clusters, in_cluster, start = [], False, 0
-        for i, a in enumerate(above):
-            if a and not in_cluster:
-                start, in_cluster = i, True
-            elif not a and in_cluster:
-                clusters.append((start, i))
-                in_cluster = False
-        if in_cluster:
-            clusters.append((start, T))
-        return clusters
+    def _clusters(vec: NDArray, threshold: float) -> list[tuple[int, int, int]]:
+        """Return sign-homogeneous supra-threshold runs.
+
+        Opposite-sign neighbouring samples must never be merged: summing them
+        cancels the cluster mass and invalidates the max-cluster null (see
+        temporal_cluster_permutation, same fix).
+        """
+        clusters = []
+        for sign, active in ((1, vec > threshold), (-1, vec < -threshold)):
+            start = None
+            for i, is_active in enumerate(active):
+                if is_active and start is None:
+                    start = i
+                elif not is_active and start is not None:
+                    clusters.append((start, i, sign))
+                    start = None
+            if start is not None:
+                clusters.append((start, T, sign))
+        return sorted(clusters, key=lambda item: item[0])
 
     auc_obs = np.array([_auc_minus_chance(t, outcome) for t in range(T)])
 
@@ -443,7 +559,7 @@ def temporal_cluster_permutation_auroc(
     obs_clusters = _clusters(auc_obs, auc_threshold)
 
     null_max_stats = np.array([
-        max((abs(null_auc[p, s:e].sum()) for s, e in _clusters(null_auc[p], auc_threshold)),
+        max((abs(null_auc[p, s:e].sum()) for s, e, _ in _clusters(null_auc[p], auc_threshold)),
             default=0.0)
         for p in range(n_perm)
     ])
@@ -453,12 +569,14 @@ def temporal_cluster_permutation_auroc(
                 "auc_threshold": auc_threshold}
 
     results_clusters = []
-    for s, e in obs_clusters:
-        stat = float(auc_obs[s:e].sum())
-        p_value = permutation_pvalue(null_max_stats >= abs(stat))
+    for s, e, sign in obs_clusters:
+        stat = abs(float(auc_obs[s:e].sum()))
+        p_value = permutation_pvalue(null_max_stats >= stat)
         results_clusters.append({
-            "start_s": float(times[s]), "end_s": float(times[min(e, T - 1)]),
-            "cluster_stat": stat, "p_value": p_value,
+            "start_s": float(times[s]), "end_s": float(times[e - 1]),
+            "cluster_stat": float(sign * stat),
+            "sign": "positive" if sign > 0 else "negative",
+            "p_value": p_value,
         })
 
     significant = [c for c in results_clusters if c["p_value"] < alpha_threshold]
@@ -507,7 +625,14 @@ def gated_outcome_cluster_test(
 # ── AUROC and decoding accuracy ────────────────────────────────────────────────
 
 def auroc(y_true: NDArray, scores: NDArray) -> float:
-    """Area under the ROC curve (trapezoidal rule).
+    """Area under the ROC curve.
+
+    Delegates to sklearn's roc_auc_score, which handles tied scores via the
+    Mann-Whitney U equivalence (a tied positive/negative pair contributes 0.5,
+    not 0 or 1). A hand-rolled trapezoidal integral over an argsort of the
+    scores is not order-independent under ties -- the tied entries land on
+    either side of the threshold depending on argsort's arbitrary tie-break,
+    so the same data can score 0.0 or 1.0 for a single tied pair.
 
     Parameters
     ----------
@@ -516,19 +641,15 @@ def auroc(y_true: NDArray, scores: NDArray) -> float:
 
     Returns
     -------
-    auc : float in [0, 1]
+    auc : float in [0, 1], or nan if either class is absent
     """
-    order = np.argsort(-scores)
-    y_sorted = y_true[order]
-    n_pos = y_true.sum()
-    n_neg = len(y_true) - n_pos
-    if n_pos == 0 or n_neg == 0:
-        return np.nan
+    from sklearn.metrics import roc_auc_score
 
-    tpr = np.cumsum(y_sorted) / n_pos
-    fpr = np.cumsum(1 - y_sorted) / n_neg
-    trapz = np.trapezoid if hasattr(np, "trapezoid") else np.trapz
-    return float(trapz(tpr, fpr))
+    y_true = np.asarray(y_true)
+    n_pos = y_true.sum()
+    if n_pos == 0 or n_pos == len(y_true):
+        return np.nan
+    return float(roc_auc_score(y_true, scores))
 
 
 def permutation_test_auroc(
@@ -635,80 +756,137 @@ def linear_mixed_effects_test(
     rng: np.random.Generator | None = None,
     covariates: NDArray | None = None,
 ) -> dict:
-    """Permutation-based test for a condition effect accounting for subject.
+    """Mixed-effects test for a condition effect, subject as random intercept.
 
-    Approximates a linear mixed-effects model (condition as fixed, subject as
-    random) via permutation: within each subject, condition labels are permuted
-    independently so the null distribution preserves subject-level structure.
+    Fits metric ~ condition [+ covariates] by restricted maximum likelihood
+    (statsmodels MixedLM) with a per-subject random intercept, and reports the
+    model-based Wald statistics for the condition coefficient. This replaces
+    an earlier version of this function that only subject-demeaned the data
+    and permuted residuals -- that procedure never fit a mixed-effects model
+    at all, despite the name.
+
+    `n_perm` and `rng` are accepted for backward compatibility with existing
+    call sites but are no longer used: a fitted mixed model has an analytic
+    sampling distribution for its coefficients, so there is nothing left to
+    permute.
 
     Parameters
     ----------
     metric     : (N,) — dependent variable (e.g., PR per trial)
     condition  : (N,) — numeric condition code (e.g., 0, 1, 2 for N-back load)
-    subject    : (N,) — subject identifier
+    subject    : (N,) — subject identifier (random-effect grouping variable)
     covariates : (N,) or (N, k) — optional nuisance regressors (e.g. set size,
-                 response time) partialled out of both metric and condition via
-                 OLS (Frisch-Waugh-Lovell) before subject-demeaning, so the
-                 reported beta is the condition effect adjusted for them.
+                 response time) added as additional fixed effects alongside
+                 condition, so the reported beta is adjusted for them.
 
     Returns
     -------
     dict:
-      beta       : observed slope (regression of metric on condition)
-      p_value    : permutation p-value
-      r_squared  : fraction of between-subject-residualised variance explained
+      beta       : condition fixed-effect coefficient (nan if not converged)
+      se         : its standard error (nan if not converged)
+      p_value    : Wald test p-value, H0: beta == 0 (nan if not converged)
+      r_squared  : squared correlation between the fixed-effects-predicted
+                   values and metric (nan if not converged)
+      converged  : whether MixedLM reported a stable fit
+      reason     : None on success; a human-readable explanation of the
+                   failure when converged is False (e.g. too few subject
+                   groups, or the optimizer's Hessian was not positive
+                   definite) -- a failed fit is never silently reported as a
+                   zero effect
+      n          : number of trials used in the fit
+      n_subjects : number of unique subject groups
     """
-    if rng is None:
-        rng = np.random.default_rng(0)
+    from statsmodels.regression.mixed_linear_model import MixedLM
 
     metric = np.asarray(metric, dtype=float)
     condition = np.asarray(condition, dtype=float)
     subject = np.asarray(subject)
+    n = len(metric)
+    n_subjects = len(np.unique(subject))
 
+    def _failure(reason: str) -> dict:
+        return {
+            "beta": float("nan"), "se": float("nan"), "p_value": float("nan"),
+            "r_squared": float("nan"), "converged": False, "reason": reason,
+            "n": n, "n_subjects": n_subjects,
+        }
+
+    if n_subjects < 2:
+        return _failure("fewer than 2 subject groups: no random-effect structure to estimate")
+
+    X_cols = [np.ones(n), condition]
     if covariates is not None:
         C = np.atleast_2d(np.asarray(covariates, dtype=float))
-        if C.shape[0] != len(metric):
+        if C.shape[0] != n:
             C = C.T
-        C = np.column_stack([np.ones(len(metric)), C])
+        if C.shape[0] != n:
+            return _failure("covariate rows do not match the outcome length")
+        scales = np.std(C, axis=0)
+        if np.any(~np.isfinite(scales)) or np.any(scales < 1e-12):
+            return _failure("covariate design contains a non-finite or zero-variance column")
+        C = (C - np.mean(C, axis=0)) / scales
+        X_cols.extend(C[:, j] for j in range(C.shape[1]))
+    X = np.column_stack(X_cols)
+    if not np.all(np.isfinite(X)) or not np.all(np.isfinite(metric)):
+        return _failure("outcome or fixed-effect design contains non-finite values")
+    if np.linalg.matrix_rank(X) < X.shape[1]:
+        return _failure("fixed-effect design matrix is rank deficient")
 
-        def _residualize(v: NDArray) -> NDArray:
-            beta_cov, *_ = np.linalg.lstsq(C, v, rcond=None)
-            return v - C @ beta_cov
+    # A random-effect variance estimated at (or near) zero is a normal,
+    # valid MLE outcome -- statsmodels raises ConvergenceWarning for that
+    # boundary solution too, so a bare "did a warning fire" check would
+    # reject perfectly good fits. What actually matters for this function is
+    # whether the *condition* coefficient itself was identified: check
+    # result.converged and that its own SE/p-value came out finite, rather
+    # than reacting to every warning the variance-component estimate emits.
+    fit_errors: list[str] = []
+    valid_results = []
+    for method in ("lbfgs", "powell", "bfgs", "cg"):
+        try:
+            candidate = MixedLM(metric, X, groups=subject).fit(
+                reml=True, method=method, disp=False,
+            )
+        except Exception as exc:
+            fit_errors.append(f"{method}: {exc}")
+            continue
+        coefficient_is_finite = (
+            np.isfinite(candidate.params[1])
+            and np.isfinite(candidate.bse[1])
+            and np.isfinite(candidate.pvalues[1])
+        )
+        if candidate.converged and coefficient_is_finite:
+            valid_results.append(candidate)
+            break
+        fit_errors.append(
+            f"{method}: converged={candidate.converged}, "
+            f"condition_coefficient_finite={coefficient_is_finite}"
+        )
 
-        metric = _residualize(metric)
-        condition = _residualize(condition)
+    if not valid_results:
+        detail = "; ".join(fit_errors[:4])
+        return _failure(f"MixedLM did not produce an identified converged fit ({detail})")
+    result = valid_results[0]
 
-    # Remove subject means (partial out random intercept)
-    metric_resid = metric.copy()
-    cond_resid = condition.copy()
-    for s in np.unique(subject):
-        mask = subject == s
-        metric_resid[mask] -= metric[mask].mean()
-        cond_resid[mask] -= condition[mask].mean()
+    beta = float(result.params[1])
+    se = float(result.bse[1])
+    p_value = float(result.pvalues[1])
 
-    def _beta(m, c):
-        denom = (c**2).sum()
-        return float((m * c).sum() / denom) if denom > 1e-15 else 0.0
+    # result.fittedvalues additionally predicts the random effects, which
+    # requires inverting the random-effect covariance and raises whenever
+    # that covariance is singular -- a near-zero between-subject variance
+    # that has no bearing on whether the condition effect itself was
+    # identified (checked above). Use the fixed-effects-only prediction
+    # instead: it only needs the part of the fit we already validated.
+    fixed_effects_fitted = X @ np.asarray(result.params[:X.shape[1]])
+    if np.std(fixed_effects_fitted) < 1e-12 or np.std(metric) < 1e-12:
+        r_squared = 0.0
+    else:
+        r_squared = float(np.corrcoef(fixed_effects_fitted, metric)[0, 1] ** 2)
 
-    obs = _beta(metric_resid, cond_resid)
-
-    null = np.zeros(n_perm)
-    for i in range(n_perm):
-        perm_m = metric_resid.copy()
-        for s in np.unique(subject):
-            mask = subject == s
-            perm_m[mask] = rng.permutation(metric_resid[mask])
-        null[i] = _beta(perm_m, cond_resid)
-
-    p = permutation_pvalue(np.abs(null) >= np.abs(obs))
-
-    # R² on residualised data
-    ss_tot = ((metric_resid - metric_resid.mean()) ** 2).sum()
-    predicted = cond_resid * obs
-    ss_res = ((metric_resid - predicted) ** 2).sum()
-    r2 = float(1.0 - ss_res / (ss_tot + 1e-15))
-
-    return {"beta": obs, "p_value": p, "r_squared": r2}
+    return {
+        "beta": beta, "se": se, "p_value": p_value, "r_squared": r_squared,
+        "converged": True, "reason": None, "n": n, "n_subjects": n_subjects,
+    }
 
 
 # ── Circular statistics ────────────────────────────────────────────────────────
@@ -750,6 +928,57 @@ def rayleigh_test(phases: NDArray) -> dict:
     p = float(np.clip(p, 0.0, 1.0))
     mean_dir = float(np.arctan2(S, C))
     return {"R": float(R), "Z": float(Z), "p_value": p, "mean_direction": mean_dir, "N": N}
+
+
+def circular_anova_permutation_test(
+    phases: NDArray,
+    groups: NDArray,
+    n_perm: int = 2000,
+    rng: np.random.Generator | None = None,
+) -> dict:
+    """Permutation-based multi-sample test for a common circular mean across groups.
+
+    Uses the classical Watson-Williams statistic (common-kappa one-way circular
+    ANOVA: pooled within-group resultant length vs. the total resultant length)
+    as the test statistic, but calibrates its null by permuting group labels
+    rather than relying on the classical F-distribution approximation (which
+    assumes a von Mises distribution with kappa >= ~1) -- consistent with this
+    project's general preference for permutation over parametric approximation.
+
+    Parameters
+    ----------
+    phases : (N,) angles in radians
+    groups : (N,) group labels
+    n_perm : number of label permutations
+    rng    : random number generator
+
+    Returns
+    -------
+    dict: statistic (observed), p_value, n_groups, N
+    """
+    if rng is None:
+        rng = np.random.default_rng(0)
+    phases = np.asarray(phases, dtype=float)
+    groups = np.asarray(groups)
+    N = len(phases)
+
+    def _stat(ph, gr):
+        labels_u = np.unique(gr)
+        R_sum = 0.0
+        for g in labels_u:
+            m = gr == g
+            n_g = m.sum()
+            R_sum += n_g * np.sqrt(np.cos(ph[m]).mean() ** 2 + np.sin(ph[m]).mean() ** 2)
+        R_total = N * np.sqrt(np.cos(ph).mean() ** 2 + np.sin(ph).mean() ** 2)
+        return float(R_sum - R_total)  # higher = groups more separated in mean direction
+
+    obs = _stat(phases, groups)
+    null = np.empty(n_perm)
+    for i in range(n_perm):
+        null[i] = _stat(phases, rng.permutation(groups))
+    p_value = permutation_pvalue(null >= obs)
+
+    return {"statistic": obs, "p_value": p_value, "n_groups": len(np.unique(groups)), "N": N}
 
 
 def ctg_offdiagonal_test(
@@ -840,11 +1069,15 @@ def mantel_test(
     b_vec = rdm_b[idx]
     obs_r, _ = spearmanr(a_vec, b_vec)
 
-    null = np.array([
-        spearmanr(rng.permutation(a_vec), b_vec)[0]
-        for _ in range(n_perm)
-    ])
-    p = permutation_pvalue(null >= obs_r)
+    # A valid Mantel null jointly permutes row/column labels of one complete
+    # RDM.  Permuting only its lower triangle treats the dependent distances as
+    # exchangeable observations and grossly understates uncertainty.
+    null = np.empty(n_perm)
+    for i in range(n_perm):
+        perm = rng.permutation(rdm_a.shape[0])
+        b_perm = rdm_b[np.ix_(perm, perm)]
+        null[i] = spearmanr(a_vec, b_perm[idx])[0]
+    p = permutation_pvalue(np.abs(null) >= abs(obs_r))
     return {
         "r": float(obs_r),
         "p_value": p,
@@ -858,8 +1091,10 @@ def fisher_z_transform(r: float) -> float:
     return float(0.5 * np.log((1 + r + 1e-8) / (1 - r + 1e-8)))
 
 
-def group_test_auroc(aurocs: NDArray, chance: float = 0.5) -> dict:
-    """One-sample t-test against chance and bootstrap CI for a vector of AUROCs.
+def group_test_auroc(
+    aurocs: NDArray, chance: float = 0.5, n_boot: int = 2000, rng: np.random.Generator | None = None
+) -> dict:
+    """Group-level AUROC summary with bootstrap CI and sign-flip p-value.
 
     Parameters
     ----------
@@ -868,27 +1103,60 @@ def group_test_auroc(aurocs: NDArray, chance: float = 0.5) -> dict:
 
     Returns
     -------
-    dict: mean, ci_lo, ci_hi, t_stat, p_value
+      dict: mean, std, ci_lo, ci_hi, p_value -- sign-flip randomization;
+          t_stat, ci_lo_analytic, ci_hi_analytic, p_value_analytic -- one-sample
+          t-test against chance, reported alongside for comparison; n
     """
     from scipy.stats import ttest_1samp
-    t, p = ttest_1samp(aurocs, chance)
-    ci_lo, ci_hi = (
-        aurocs.mean() - 1.96 * aurocs.std() / np.sqrt(len(aurocs)),
-        aurocs.mean() + 1.96 * aurocs.std() / np.sqrt(len(aurocs)),
+
+    if rng is None:
+        rng = np.random.default_rng(0)
+    aurocs = np.asarray(aurocs, dtype=float)
+    n = len(aurocs)
+    centered = aurocs - chance
+
+    t, p_analytic = ttest_1samp(aurocs, chance)
+    ci_lo_analytic, ci_hi_analytic = (
+        aurocs.mean() - 1.96 * aurocs.std(ddof=1) / np.sqrt(n),
+        aurocs.mean() + 1.96 * aurocs.std(ddof=1) / np.sqrt(n),
     )
+
+    if n < 2:
+        raise ValueError("group_test_auroc requires at least two independent units")
+    boot = np.array([centered[rng.integers(0, n, size=n)].mean() for _ in range(n_boot)])
+    ci_lo, ci_hi = np.percentile(boot, [2.5, 97.5]) + chance
+    signs = rng.choice([-1.0, 1.0], size=(n_boot, n))
+    null = (signs * centered[None, :]).mean(axis=1)
+    p_value = permutation_pvalue(np.abs(null) >= abs(float(centered.mean())))
+
     return {
         "mean": float(aurocs.mean()),
         "std": float(aurocs.std()),
         "ci_lo": float(ci_lo),
         "ci_hi": float(ci_hi),
+        "p_value": float(p_value),
         "t_stat": float(t),
-        "p_value": float(p),
-        "n": len(aurocs),
+        "ci_lo_analytic": float(ci_lo_analytic),
+        "ci_hi_analytic": float(ci_hi_analytic),
+        "p_value_analytic": float(p_analytic),
+        "n": n,
     }
 
 
 def stouffer_combine(p_values: NDArray, weights: NDArray | None = None) -> dict:
     """Stouffer's Z-score method for combining independent p-values.
+
+    WARNING -- INDEPENDENCE ASSUMPTION: this method is valid only when every
+    p-value in `p_values` comes from a STATISTICALLY INDEPENDENT unit. It
+    must not be called across dependent units -- e.g. multiple sessions from
+    the same patient, or the same recording appearing under two release IDs
+    -- without first collapsing each dependent cluster to a single row (one
+    p-value per independent unit). Feeding it dependent p-values overstates
+    the combined evidence: the same true effect gets counted once per
+    duplicate, so z_combined grows and p_combined shrinks even though no new
+    independent information was added. This function does not detect or
+    correct for that on its own; the caller is responsible for the input
+    being one row per independent unit.
 
     Used to pool per-session significance tests (e.g. item-identity CTG
     computed independently in many low-trial-count sessions) into one
@@ -900,21 +1168,29 @@ def stouffer_combine(p_values: NDArray, weights: NDArray | None = None) -> dict:
     p_values : (K,) — independent one-sided p-values (small p = evidence for
                the effect); values are clipped away from 0/1 to avoid
                infinite z-scores.
-    weights  : (K,) optional weights (e.g. sqrt(n_trials) per session);
-               defaults to equal weighting.
+    weights  : (K,) optional weights (e.g. sqrt(n_trials) per session, for
+               effective-sample-size weighting); defaults to equal weighting.
 
     Returns
     -------
-    dict: z_combined, p_combined
+    dict: z_combined, p_combined, k (number of units combined)
     """
+    import warnings
+
     from scipy.stats import norm
 
     p = np.clip(np.asarray(p_values, dtype=float), 1e-12, 1 - 1e-12)
+    if len(p) < 2:
+        warnings.warn(
+            "stouffer_combine called with fewer than 2 p-values; there is "
+            "nothing to combine and the result is just the input restated "
+            "as a z-score.", stacklevel=2,
+        )
     w = np.ones_like(p) if weights is None else np.asarray(weights, dtype=float)
     z = norm.isf(p)  # inverse survival function: z s.t. P(Z>z)=p
     z_combined = float(np.sum(w * z) / np.sqrt(np.sum(w**2)))
     p_combined = float(norm.sf(z_combined))
-    return {"z_combined": z_combined, "p_combined": p_combined}
+    return {"z_combined": z_combined, "p_combined": p_combined, "k": int(len(p))}
 
 
 # ── Multiple comparisons ───────────────────────────────────────────────────────
@@ -1147,11 +1423,24 @@ def bf_null_slope(estimate: float, se: float, r_scale: float | None = None) -> d
 
     Complements TOST with an evidential measure: BF01 is how much more likely
     the data are under H0 (slope = 0) than under a Jeffreys-Zellner-Siow
-    alternative placing a Cauchy(0, r_scale) prior on the standardized slope
-    (Rouder et al. 2009; Rouder & Morey 2012). Computed by Savage-Dickey: the
-    prior/posterior density ratio at 0, with the posterior approximated as
-    Normal(estimate, se) — exact in the large-sample / known-variance limit
-    this pooled estimate lives in. BF01 > 1 favours the null.
+    alternative placing a Cauchy(0, r_scale) prior on the slope (Rouder et al.
+    2009; Rouder & Morey 2012). Computed by Savage-Dickey: BF01 is the ratio
+    of the posterior to the prior density at slope = 0.
+
+    A Cauchy prior combined with a Gaussian likelihood does not have a closed-
+    form Normal posterior, so the posterior density at 0 is obtained from the
+    Savage-Dickey identity in its likelihood/marginal-likelihood form instead
+    of approximating the posterior directly:
+
+        BF01 = p(0 | data) / p(0)  =  L(data | theta=0) / m(data)
+
+    where L(data | theta) is the Gaussian sampling density of `estimate`
+    around theta with standard error `se`, and m(data) is L(data | theta)
+    averaged over the Cauchy(0, r_scale) prior on theta, obtained by
+    numerical integration. (An earlier version of this function treated
+    Normal(estimate, se) itself as the posterior, i.e. ignored the prior
+    entirely when forming the ratio -- that is not a valid Bayes factor.)
+    BF01 > 1 favours the null.
 
     Parameters
     ----------
@@ -1166,13 +1455,114 @@ def bf_null_slope(estimate: float, se: float, r_scale: float | None = None) -> d
     -------
     dict: bf_01 (evidence for null over effect), bf_10, r_scale
     """
+    from scipy.integrate import quad
     from scipy.stats import cauchy, norm
 
     r = se if r_scale is None else float(r_scale)
-    prior_at_0 = cauchy.pdf(0.0, loc=0.0, scale=r)
-    post_at_0 = norm.pdf(0.0, loc=estimate, scale=se)
-    bf_01 = float(post_at_0 / prior_at_0)   # Savage-Dickey: posterior/prior at 0
+
+    def _likelihood(theta: float) -> float:
+        return norm.pdf(estimate, loc=theta, scale=se)
+
+    marginal, _ = quad(lambda theta: _likelihood(theta) * cauchy.pdf(theta, loc=0.0, scale=r),
+                        -np.inf, np.inf)
+    likelihood_at_null = _likelihood(0.0)
+    bf_01 = float(likelihood_at_null / marginal)
     return {"bf_01": bf_01, "bf_10": float(1.0 / bf_01), "r_scale": r}
+
+
+def minimum_detectable_paired_difference(
+    values: NDArray | list[float], alpha: float = 0.05, power: float = 0.80,
+) -> dict:
+    """Smallest true mean paired difference a one-sample (paired) two-sided
+    test could have detected at the given power, from the OBSERVED
+    between-unit spread of ``values`` (e.g. one difference per session) and
+    the number of units actually available -- the complement to a
+    non-significant p-value, which on its own says nothing about how large an
+    effect the design could have ruled out (Lakens 2013). Uses the standard
+    normal approximation to the paired t-test's power (adequate once n is
+    more than a handful of units; this project's paired sign-flip test's own
+    exact small-sample behaviour is not reproduced here, so this bound is
+    reported as an approximation, not a substitute for the sign-flip test's
+    own p-value and CI).
+
+        mdd = (z_(1-alpha/2) + z_power) * sd(values) / sqrt(n)
+
+    Parameters
+    ----------
+    values : one difference (or any paired scalar) per unit; only its count
+             and sample standard deviation are used
+    alpha  : two-sided test size (default 0.05)
+    power  : target power (default 0.80)
+
+    Returns
+    -------
+    dict: n, sd (sample standard deviation, ddof=1), mdd, alpha, power, or a
+          ``not_computable`` status if fewer than 2 values are supplied.
+    """
+    from scipy.stats import norm
+
+    arr = np.asarray(values, dtype=float)
+    n = len(arr)
+    if n < 2:
+        return {"status": "not_computable", "n": n, "reason": "fewer than 2 values -- no spread to estimate"}
+    sd = float(np.std(arr, ddof=1))
+    z = float(norm.ppf(1.0 - alpha / 2.0) + norm.ppf(power))
+    mdd = z * sd / np.sqrt(n)
+    return {"status": "computed", "n": n, "sd": sd, "alpha": alpha, "power": power, "z_factor": z, "mdd": float(mdd)}
+
+
+def power_to_detect_effect(
+    effect: float, values: NDArray | list[float], alpha: float = 0.05,
+) -> dict:
+    """Power of a one-sample (or paired) two-sided t-test, run on ``values``,
+    to detect a true effect of the given magnitude -- the complement question
+    to :func:`minimum_detectable_paired_difference` ("what effect could this
+    design detect at 80% power" versus "what is this design's power against a
+    SPECIFIC effect size"). Exact, via the noncentral t distribution (unlike
+    :func:`minimum_detectable_paired_difference`'s normal approximation):
+    under a true mean ``effect`` with the observed standard deviation
+    ``sd(values)`` and ``n = len(values)``, the test statistic is
+    noncentral-t distributed with ``n - 1`` degrees of freedom and
+    noncentrality ``effect / (sd / sqrt(n))``; power is the probability that
+    statistic falls outside the central test's two-sided critical region.
+
+    A non-significant result on ``values`` is otherwise ambiguous between "no
+    effect" and "underpowered to see the effect the comparison arm shows" --
+    this quantity distinguishes them by naming a concrete effect size (e.g.
+    another arm's observed mean) and reporting the design's power against it.
+
+    Parameters
+    ----------
+    effect : the true effect size to compute power against (e.g. another
+        arm's observed mean difference)
+    values : the sample whose count and standard deviation set this test's
+        sensitivity (one value per unit -- session, subject, etc.)
+    alpha  : two-sided test size (default 0.05)
+
+    Returns
+    -------
+    dict: n, sd (ddof=1), effect, alpha, noncentrality, power, or a
+          ``not_computable`` status if fewer than 2 values are supplied or
+          the sample has zero spread.
+    """
+    from scipy.stats import nct, t as t_dist
+
+    arr = np.asarray(values, dtype=float)
+    n = len(arr)
+    if n < 2:
+        return {"status": "not_computable", "n": n, "reason": "fewer than 2 values -- no spread to estimate"}
+    sd = float(np.std(arr, ddof=1))
+    if sd <= 0:
+        return {"status": "not_computable", "n": n, "sd": sd, "reason": "zero spread -- noncentrality is undefined"}
+    df = n - 1
+    se = sd / np.sqrt(n)
+    ncp = float(effect / se)
+    t_crit = float(t_dist.ppf(1.0 - alpha / 2.0, df))
+    power = float(nct.sf(t_crit, df, ncp) + nct.cdf(-t_crit, df, ncp))
+    return {
+        "status": "computed", "n": n, "sd": sd, "effect": float(effect), "alpha": alpha,
+        "df": df, "noncentrality": ncp, "power": power,
+    }
 
 
 # ── Geometric biomarker summary table ─────────────────────────────────────────

@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Round-8 Part 4: DMD/dynamics rank extension on the three dataset-coverage
-gap cohorts (boran_units, dandi001187, dandi000673).
+"""DMD/dynamics rank extension on the three dataset-coverage gap cohorts
+(boran_units, dandi001187, dandi000673).
 
-Round 7 (run_divergence_analysis.py process_boran_units / process_dandi001187
-/ process_dandi000673, "STEP K2") already ran axis-rotation and a SINGLE-rank
-(full latent dim, matching their siblings) DMD divergence/tangling fit on
-these three cohorts. What was NOT done for them (unlike the primary Soldado
-fit in run_dmd_rank_selection.py) is the cv-R^2-by-rank sweep this script
-adds, reusing dynamics.ensemble_dmd exactly as run_dmd_rank_selection.py
-does, per subject/session, at r in {4,5,6,7,8}.
+run_divergence_analysis.py (process_boran_units / process_dandi001187 /
+process_dandi000673) already ran axis-rotation and a SINGLE-rank (full
+latent dim, matching their siblings) DMD divergence/tangling fit on these
+three cohorts. What was NOT done for them (unlike the primary macaque PFC microstimulation fit in
+run_dmd_rank_selection.py) is the cv-R^2-by-rank sweep this script adds,
+reusing dynamics.ensemble_dmd exactly as run_dmd_rank_selection.py does, per
+subject/session, at r in {4,5,6,7,8}.
 
 No targeting/LQR benchmark is computed here for any of the three cohorts:
 none has TES1 stimulation-field coverage (Boran/Rutishauser MTL implants have
@@ -16,10 +16,10 @@ no DLPFC electrodes TES1 maps to) -- this is the SAME principled exclusion
 already recorded in DATASET_ANALYSIS_MATRIX.md, restated in each cohort's
 output rather than silently omitted.
 
-High-load trial selection matches the existing K2 convention exactly
-(process_boran_units: set_size==8; _process_load1v3_dynamics: loads==3),
-so results are directly comparable to the Round-7 single-rank numbers already
-in results/divergence_analysis.npz.
+High-load trial selection matches run_divergence_analysis.py's own
+convention exactly (process_boran_units: set_size==8;
+_process_load1v3_dynamics: loads==3), so results are directly comparable to
+the single-rank numbers already in results/divergence_analysis.npz.
 
 Outputs: results/dmd_extension_boran_units.json,
          results/dmd_extension_dandi001187.json,

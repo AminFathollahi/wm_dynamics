@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Round-8 Part 6: cross-subject/-session targeting heterogeneity -- a POOLED
+"""Cross-subject/-session targeting heterogeneity -- a POOLED
 moderator regression, not n-of-1 debugging of a single failing subject.
 
-EFFECT CHOICE (pre-specified here, before fitting -- see comments.txt 6A
-"choose one, justify"): per-session behavior-CTG diagonal AUC
+EFFECT CHOICE (pre-specified here, before fitting, and justified below):
+per-session behavior-CTG diagonal AUC
 (results/behavior_ctg_per_session.json), NOT the v*-alignment targeting-
 benchmark CATE. Reasons:
   1. The targeting-benchmark CATE (results/targeting_benchmark_boran.json)
@@ -36,19 +36,18 @@ listed-but-dropped items are stated up front, not cut after seeing p-values):
     "latent PR/dimensionality" proxy.
   - max_abs_lambda     : plant stability, max|eigenvalue(A)| at the shared
     r=7 rank convention (boran_ieeg/dandi000469: results/divergence_analysis.npz;
-    boran_units/dandi001187/dandi000673: results/dmd_extension_<cohort>.json,
-    Round-8 Part 4).
+    boran_units/dandi001187/dandi000673: results/dmd_extension_<cohort>.json).
   DROPPED (pre-specified, not cherry-picked): "SNR or mean firing rate" and
   "decoder accuracy" (a load/context decoder, distinct from the outcome
   decoder whose AUC is the effect here) -- neither has a session-level
   number already computed uniformly across all four cohorts without a new
   per-session decoder-fitting pass; adding one would risk a rushed, unaudited
-  covariate under this round's time budget. Noted as a gap, not fabricated.
+  covariate under the available time budget. Noted as a gap, not fabricated.
 
 Model: per-covariate univariate OLS slope (effect ~ covariate), permutation
 p-value (shuffle covariate across sessions, 5000 perms), BH-FDR across the 6
-covariates. <8 sessions with a computable effect -> underpowered, STOP
-(comments.txt 6A). The single most extreme session (boran_ieeg, the only
+covariates. <8 sessions with a computable effect -> underpowered, STOP,
+the project's standing power floor. The single most extreme session (boran_ieeg, the only
 cohort clearing the behavior-CTG bound) may illustrate a covariate's story in
 prose, but conclusions are drawn ONLY from the pooled fit, never from it alone.
 

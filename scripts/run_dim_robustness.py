@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Latent-dimensionality selection (A1) and headline robustness sweep (A3).
+"""Latent-dimensionality selection and headline robustness sweep.
 
-Round 6, STEP A. Two deliverables, one shared raw loader:
+Two deliverables, one shared raw loader:
 
   results/latent_dim_selection.json — for each dataset, the data-selected latent
     dim by two principled rules (cross-validated participation ratio, and Horn's
@@ -39,20 +39,22 @@ import numpy as np
 warnings.filterwarnings("ignore")
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
+from project_config import data_root, dataset_path, executable, project_path
 
 import h5py  # noqa: E402
 from spike_pipeline import (  # noqa: E402
     load_spike_times, build_psth, fit_pca_psth, low_rate_unit_mask,
     load_vs_load_ctg, item_identity_ctg,
-    MIN_SESSION_ACCURACY,
+    MIN_SESSION_ACCURACY, FrozenPSTHTransform,
 )
 from geometry import (  # noqa: E402
     select_latent_dim, coding_direction_stability, temporal_stability_tau,
 )
 from statistics import paired_sign_flip_test, forest_meta, stable_seed  # noqa: E402
+from provenance import _json_safe
 
 RESULTS = ROOT / "results"
-DATA_ROOT = Path("/media/amin/EXTERNAL_USB/SMAF/Research/Representation/Working Memory/data")
+DATA_ROOT = data_root()
 
 BIN_MS = 100
 SMOOTH_MS = 200
@@ -113,9 +115,7 @@ def load_sternberg_sessions(dataset: str):
             continue
         spike_lists = [spk for spk, keep in zip(spike_lists, rate_mask) if keep]
         psth = build_psth(spike_lists, t_maint, bin_ms=BIN_MS, smooth_ms=SMOOTH_MS, window_s=MAINT_WIN)
-        mu = psth.mean(axis=0, keepdims=True)
-        sd = psth.std(axis=0, keepdims=True) + 1e-8
-        yield key, (psth - mu) / sd, loads, pic_id
+        yield key, FrozenPSTHTransform().fit_transform(psth), loads, pic_id
 
 
 # ── A1: selection table ───────────────────────────────────────────────────────
@@ -262,20 +262,20 @@ def dim_robustness(sessions_469: list) -> dict:
 def main():
     print("A1: latent dimensionality selection ...")
     table = latent_dim_selection()
-    json.dump(table, open(RESULTS / "latent_dim_selection.json", "w"), indent=2)
+    json.dump(_json_safe(table), open(RESULTS / "latent_dim_selection.json", "w"), indent=2, allow_nan=False)
     print(f"  wrote results/latent_dim_selection.json ({len(table)} datasets)")
 
     print("\nA3: caching DANDI 000469 raw sessions once for the k-sweep ...")
     sessions_469 = list(load_sternberg_sessions("dandi000469"))
     print(f"  {len(sessions_469)} sessions")
     out = dim_robustness(sessions_469)
-    json.dump(out, open(RESULTS / "dim_robustness.json", "w"), indent=2)
+    json.dump(_json_safe(out), open(RESULTS / "dim_robustness.json", "w"), indent=2, allow_nan=False)
     print("\n  wrote results/dim_robustness.json")
 
     stats = json.load(open(RESULTS / "all_statistics.json"))
     stats["latent_dim_selection"] = table
     stats["dim_robustness"] = out
-    json.dump(stats, open(RESULTS / "all_statistics.json", "w"), indent=2)
+    json.dump(_json_safe(stats), open(RESULTS / "all_statistics.json", "w"), indent=2, allow_nan=False)
     print("  updated all_statistics.json")
 
 

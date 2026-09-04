@@ -48,6 +48,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from closed_loop import simulate_closed_loop, robustness_sweep, _b_hat_at_angle
 from statistics import bootstrap_ci, stable_seed
+from provenance import _json_safe
 
 RESULTS = ROOT / "results"
 DECODER_VALID_MARGIN = 0.03   # decoder_cv_acc must beat chance (1/n_cls) by this much
@@ -158,10 +159,10 @@ def _run_cohort(bundle: dict, dynamic_best_idx: int, decoder, horizon_real: int,
     proc_noise = 0.05 * state_scale
     obs_noise = 0.10 * state_scale
 
-    # res_seed is drawn from the shared `rng` (as before A2/A4 — preserves the
-    # exact rng-consumption sequence downstream cohorts' B_hat draws depend
-    # on, so the stored Round-4 continuous numbers stay bit-for-bit
-    # unchanged); the on-demand run's seed is DERIVED, not drawn, so it adds
+    # res_seed is drawn from the shared `rng` -- preserves the exact
+    # rng-consumption sequence downstream cohorts' B_hat draws depend on, so
+    # previously-stored continuous-condition numbers stay bit-for-bit
+    # unchanged; the on-demand run's seed is DERIVED, not drawn, so it adds
     # no extra call to the shared stream.
     res_seed = int(rng.integers(0, 2**31 - 1))
     res = simulate_closed_loop(
@@ -339,9 +340,9 @@ def main():
 
     demo_out["pooled"] = pooled
     with open(RESULTS / "closed_loop.json", "w") as f:
-        json.dump(demo_out, f, indent=2)
+        json.dump(_json_safe(demo_out), f, indent=2, allow_nan=False)
     with open(RESULTS / "closed_loop_robustness.json", "w") as f:
-        json.dump(sweep_out, f, indent=2)
+        json.dump(_json_safe(sweep_out), f, indent=2, allow_nan=False)
 
     stats_path = RESULTS / "all_statistics.json"
     with open(stats_path) as f:
@@ -349,7 +350,7 @@ def main():
     stats["closed_loop"] = demo_out
     stats["closed_loop_robustness"] = sweep_out
     with open(stats_path, "w") as f:
-        json.dump(stats, f, indent=2)
+        json.dump(_json_safe(stats), f, indent=2, allow_nan=False)
     print("\nSaved results/closed_loop.json, results/closed_loop_robustness.json, updated all_statistics.json")
 
 

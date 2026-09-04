@@ -25,6 +25,7 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from statistics import temporal_cluster_permutation, stable_seed
+from provenance import _json_safe
 
 RESULTS = ROOT / "results"
 N_PERM = 5000
@@ -60,7 +61,7 @@ def main():
         "clusters": res["clusters"],
     }
     with open(stats_path, "w") as f:
-        json.dump(stats, f, indent=2)
+        json.dump(_json_safe(stats), f, indent=2, allow_nan=False)
     print("\nSaved results/03_cluster_q.npz, updated all_statistics.json")
 
 

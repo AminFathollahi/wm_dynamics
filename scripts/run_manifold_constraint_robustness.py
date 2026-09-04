@@ -1,19 +1,18 @@
 #!/usr/bin/env python3
-"""Round-11 PART 19B (correction pass): cluster-robust apples-to-apples test
-of within_frac / outside_frac (Sadtler et al. 2014 within-manifold
-constraint) against vstar_alignment, on the SAME Soldado rows/sessions/
-exclusions as run_soldado_headline_robustness.py's settled vstar/min_energy
-result.
+"""Cluster-robust, matched-design comparison of within_frac / outside_frac
+(Sadtler et al. 2014 within-manifold constraint) against vstar_alignment, on
+the SAME macaque PFC microstimulation rows/sessions/exclusions as
+run_macaque_pfc_microstimulation_headline_robustness.py's settled vstar/min_energy result.
 
-WHY this script exists: scripts/run_manifold_constraint.py (Part 19A/19B as
-first executed) scored within_frac/outside_frac with benchmark_modifiers'
-built-in trial-level permutation p (n=15670 clustered trials) -- this
-violates the spec's binding K2 apples-to-apples rule ("cluster-robust,
-apples-to-apples with vstar_alignment ... NOT a trial-level p"). This script
-supplies the missing cluster-robust bootstrap, mirroring
-run_amplification_robustness.py's method exactly, without touching the
-degeneracy-gate result already in results/manifold_constraint.json (19A
-stands: within_frac varies, nanstd=0.033 >> 1e-9, gate passed).
+WHY this script exists: scripts/run_manifold_constraint.py scored
+within_frac/outside_frac with benchmark_modifiers' built-in trial-level
+permutation p (n=5880 clustered trials, post shorted-channel exclusion) -- this is not comparable to
+vstar_alignment's cluster-robust number (a trial-level p cannot stand in for
+a session-clustered one). This script supplies the missing cluster-robust
+bootstrap, mirroring run_amplification_robustness.py's method exactly,
+without touching the degeneracy-gate result already in
+results/manifold_constraint.json (within_frac varies, nanstd=0.033 >> 1e-9,
+gate passed).
 
 Run:
     /home/amin/miniconda3/envs/wm_dynamics/bin/python scripts/run_manifold_constraint_robustness.py
@@ -31,7 +30,7 @@ warnings.filterwarnings("ignore")
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-import run_soldado_pipeline as soldado  # noqa: E402
+import run_macaque_pfc_microstimulation_pipeline as macaque_pfc_microstimulation  # noqa: E402
 from causal import benchmark_modifiers  # noqa: E402
 from statistics import stable_seed  # noqa: E402
 
@@ -42,11 +41,11 @@ N_BOOT = 2000
 
 def _build_all_rows() -> tuple[list[dict], list[str]]:
     """Identical construction to run_amplification_robustness.py's
-    _build_all_rows / run_soldado_headline_robustness.py's _build_all_rows."""
+    _build_all_rows / run_macaque_pfc_microstimulation_headline_robustness.py's _build_all_rows."""
     all_rows, session_order = [], []
-    for prefix in soldado.SESSIONS:
+    for prefix in macaque_pfc_microstimulation.SESSIONS:
         try:
-            feat = soldado.build_session_features(prefix, structural_ctrl=None)
+            feat = macaque_pfc_microstimulation.build_session_features(prefix, structural_ctrl=None)
         except Exception as e:
             print(f"  {prefix} FAILED: {e}")
             feat = None
@@ -99,10 +98,10 @@ def _cluster_robust_result(phi, modifier, session_idx, n_sessions, rng) -> dict:
 
 
 def main() -> None:
-    print("Rebuilding all_rows exactly as run_soldado_pipeline.main() does ...")
+    print("Rebuilding all_rows exactly as run_macaque_pfc_microstimulation_pipeline.main() does ...")
     all_rows, session_order = _build_all_rows()
     if not all_rows:
-        print("No usable Soldado sessions -- stopping without a result.")
+        print("No usable macaque PFC microstimulation sessions -- stopping without a result.")
         return
     n_sessions = len(session_order)
 

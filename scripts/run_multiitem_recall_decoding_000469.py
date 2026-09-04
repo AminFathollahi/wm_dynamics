@@ -24,13 +24,15 @@ from pathlib import Path
 warnings.filterwarnings("ignore")
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
+from project_config import data_root, dataset_path, executable, project_path
 
 import h5py
-from spike_pipeline import load_spike_times, build_psth
+from spike_pipeline import load_spike_times, build_psth, low_rate_unit_mask, FrozenPSTHTransform
 from geometry import time_resolved_content_decoding
 from statistics import stable_seed, paired_sign_flip_test
+from provenance import _json_safe
 
-DATA_DIR = Path("/media/amin/EXTERNAL_USB/SMAF/Research/Representation/Working Memory/data/000469")
+DATA_DIR = dataset_path("dandi_000469")
 RESULTS = ROOT / "results"
 
 BIN_MS = 100
@@ -38,6 +40,8 @@ SMOOTH_MS = 200
 N_PC = 8
 N_PERM = 200
 MIN_TRIALS_PER_CLASS = 6
+MIN_UNITS = 15
+MAINT_WIN = 2.3  # matches run_000469_pipeline.py's true-delay-bounded window
 
 FIX_PRE_S, FIX_POST_S = 0.5, 9.5      # fixation-aligned window, covers load-3's longer trial
 RESP_PRE_S, RESP_POST_S = 2.0, 2.0    # response-aligned window
@@ -47,12 +51,6 @@ ITEM_FIELDS = {
     "item2": ("loadsEnc2_PicIDs", "timestamps_Encoding2"),
     "item3": ("loadsEnc3_PicIDs", "timestamps_Encoding3"),
 }
-
-
-def _zscore(psth: np.ndarray) -> np.ndarray:
-    mu = psth.mean(axis=0, keepdims=True)
-    sd = psth.std(axis=0, keepdims=True) + 1e-8
-    return (psth - mu) / sd
 
 
 def _class_counts_ok(labels: np.ndarray) -> bool:
@@ -66,7 +64,7 @@ def process_subject(subj: str) -> dict | None:
         return None
     with h5py.File(str(nwb_path), "r") as f:
         n_units = int(f["units/id"].shape[0])
-        if n_units < 15:
+        if n_units < MIN_UNITS:
             return None
         spike_lists = load_spike_times(f)
         trials = f["intervals/trials"]
@@ -77,6 +75,15 @@ def process_subject(subj: str) -> dict | None:
         t_probe = trials["timestamps_Probe"][:]
         item_labels = {name: trials[field][:].astype(int) for name, (field, _) in ITEM_FIELDS.items()}
         item_onsets = {name: trials[onset_field][:] for name, (_, onset_field) in ITEM_FIELDS.items()}
+
+    # Same firing-rate QC floor as run_000469_pipeline.py (Daume et al. 2024),
+    # applied here too since this script re-reads raw spike trains directly
+    # rather than reusing that script's already-QC'd geometry output.
+    rate_mask = low_rate_unit_mask(spike_lists, t_maint, MAINT_WIN)
+    if rate_mask.sum() < MIN_UNITS:
+        return None
+    spike_lists = [spk for spk, keep in zip(spike_lists, rate_mask) if keep]
+    n_units = int(rate_mask.sum())
 
     mask = loads == 3
     if mask.sum() < MIN_TRIALS_PER_CLASS * 2:
@@ -92,11 +99,13 @@ def process_subject(subj: str) -> dict | None:
     fix_post_s = max(FIX_POST_S, mean_probe_rel + 2.5)
 
     fix_onsets = t_fix[mask] - FIX_PRE_S
-    psth_fix = _zscore(build_psth(spike_lists, fix_onsets, bin_ms=BIN_MS, smooth_ms=SMOOTH_MS,
-                                  window_s=FIX_PRE_S + fix_post_s))
+    psth_fix = FrozenPSTHTransform().fit_transform(
+        build_psth(spike_lists, fix_onsets, bin_ms=BIN_MS, smooth_ms=SMOOTH_MS,
+                   window_s=FIX_PRE_S + fix_post_s))
     resp_onsets = t_resp[mask] - RESP_PRE_S
-    psth_resp = _zscore(build_psth(spike_lists, resp_onsets, bin_ms=BIN_MS, smooth_ms=SMOOTH_MS,
-                                   window_s=RESP_PRE_S + RESP_POST_S))
+    psth_resp = FrozenPSTHTransform().fit_transform(
+        build_psth(spike_lists, resp_onsets, bin_ms=BIN_MS, smooth_ms=SMOOTH_MS,
+                   window_s=RESP_PRE_S + RESP_POST_S))
 
     times_fix = np.arange(psth_fix.shape[2]) * (BIN_MS / 1000.0) - FIX_PRE_S
     times_resp = np.arange(psth_resp.shape[2]) * (BIN_MS / 1000.0) - RESP_PRE_S
@@ -181,13 +190,13 @@ def main():
 
     out = {"per_subject": per_subject, "tests": tests}
     with open(RESULTS / "multiitem_recall_decoding_000469.json", "w") as f:
-        json.dump(out, f, indent=2)
+        json.dump(_json_safe(out), f, indent=2, allow_nan=False)
 
     with open(RESULTS / "all_statistics.json") as f:
         stats = json.load(f)
     stats["multiitem_recall_decoding_000469"] = out
     with open(RESULTS / "all_statistics.json", "w") as f:
-        json.dump(stats, f, indent=2)
+        json.dump(_json_safe(stats), f, indent=2, allow_nan=False)
     print("\nSaved results/multiitem_recall_decoding_000469.json, updated all_statistics.json")
 
 

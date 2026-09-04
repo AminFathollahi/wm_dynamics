@@ -23,8 +23,8 @@ Datasets:
     context; item identity within load 1, as content)
   - content only: CRCNS pfc-3 (nine-way spatial location)
   - context only: Miller (0-back versus 2-back), Boran iEEG (set size 4 versus 8),
-    Boran units (set size 4 versus 8, Round-7 STEP K1), DANDI 001187 and DANDI
-    000673 (load 1 versus load 3, Round-7 STEP K1 — no repeated items in either,
+    Boran units (set size 4 versus 8), DANDI 001187 and DANDI
+    000673 (load 1 versus load 3 — no repeated items in either,
     so context-axis only, matching the DATASET_ANALYSIS_MATRIX.md exclusion that
     keeps content-axis-rotation DANDI-000469-only, per the Fig-7 dissociation).
 
@@ -46,13 +46,14 @@ from geometry import coding_direction_stability
 from dynamics import ensemble_dmd
 from spike_pipeline import fit_pca_psth
 from statistics import spearman_permutation_test
+from provenance import _json_safe
 
 RESULTS = ROOT / "results"
 STEP_000469 = 3
 STEP_PFC3 = 2
 STEP_MILLER = 40
 STEP_BORAN = 280
-DMD_RANK = 7   # Round-7 STEP A: CV-selected primary rank (results/dmd_rank_selection.json)
+DMD_RANK = 7   # CV-selected primary rank (results/dmd_rank_selection.json)
 
 
 def axis_rotation_index(cos_sim: np.ndarray) -> float:
@@ -145,7 +146,7 @@ def run_boran() -> dict:
     return per_subject
 
 
-# ── Round-7 STEP K1: fillable gaps (context-axis only; see module docstring) ──
+# ── Previously-uncovered cohorts (context-axis only; see module docstring) ──
 STEP_BINNED = 3   # same stride convention as STEP_000469 — these are all
                   # 100ms-bin PSTH latents (T~23-30), not raw-sample iEEG.
 BIN_DT_S = 0.1
@@ -154,7 +155,7 @@ BIN_DT_S = 0.1
 def run_boran_units() -> dict:
     """Boran units (DANDI 000574): set-size 4 vs 8, same context contrast as
     Boran iEEG, from the SAME subjects/trials — the within-subject spiking-vs-
-    LFP dynamics comparison payoff (K3) needs this run at the matching contrast."""
+    LFP dynamics comparison needs this run at the matching contrast."""
     per_subject = {}
     for path in sorted(RESULTS.glob("dandi000574_units_geometry_sub-*.npz")):
         key = path.stem.replace("dandi000574_units_geometry_", "")
@@ -171,7 +172,7 @@ def run_boran_units() -> dict:
 
 
 def _run_load1v3_context(glob_pattern: str, key_prefix: str) -> dict:
-    """Shared K1 loader for DANDI 001187 / 000673: load-1-vs-load-3 context
+    """Shared loader for DANDI 001187 / 000673: load-1-vs-load-3 context
     axis-rotation, same contrast run_000469's context axis uses. No repeated
     items in either cohort -> context only (see module docstring)."""
     per_session = {}
@@ -204,44 +205,44 @@ def main():
     print("DANDI 000469 (content + context)...")
     d469 = run_000469()
     with open(RESULTS / "axis_rotation_dandi000469.json", "w") as f:
-        json.dump(d469, f, indent=2)
+        json.dump(_json_safe(d469), f, indent=2, allow_nan=False)
     stats["axis_rotation_dandi000469"] = d469
 
     print("pfc-3 (content)...")
     pfc3 = run_pfc3()
     with open(RESULTS / "axis_rotation_pfc3.json", "w") as f:
-        json.dump(pfc3, f, indent=2)
+        json.dump(_json_safe(pfc3), f, indent=2, allow_nan=False)
     stats["axis_rotation_pfc3"] = pfc3
 
     print("Miller (context)...")
     miller = run_miller()
     with open(RESULTS / "axis_rotation_miller.json", "w") as f:
-        json.dump(miller, f, indent=2)
+        json.dump(_json_safe(miller), f, indent=2, allow_nan=False)
     stats["axis_rotation_miller"] = miller
 
     print("Boran iEEG (context)...")
     boran = run_boran()
     with open(RESULTS / "axis_rotation_boran.json", "w") as f:
-        json.dump(boran, f, indent=2)
+        json.dump(_json_safe(boran), f, indent=2, allow_nan=False)
     stats["axis_rotation_boran"] = boran
 
-    # Round-7 STEP K1: fillable gaps (context-axis only; see module docstring)
-    print("Boran units (context, STEP K1)...")
+    # Previously-uncovered cohorts (context-axis only; see module docstring)
+    print("Boran units (context)...")
     boran_units = run_boran_units()
     with open(RESULTS / "axis_rotation_boran_units.json", "w") as f:
-        json.dump(boran_units, f, indent=2)
+        json.dump(_json_safe(boran_units), f, indent=2, allow_nan=False)
     stats["axis_rotation_boran_units"] = boran_units
 
-    print("DANDI 001187 (context, STEP K1)...")
+    print("DANDI 001187 (context)...")
     d001187 = run_dandi001187()
     with open(RESULTS / "axis_rotation_dandi001187.json", "w") as f:
-        json.dump(d001187, f, indent=2)
+        json.dump(_json_safe(d001187), f, indent=2, allow_nan=False)
     stats["axis_rotation_dandi001187"] = d001187
 
-    print("DANDI 000673 (context, STEP K1)...")
+    print("DANDI 000673 (context)...")
     d000673 = run_dandi000673()
     with open(RESULTS / "axis_rotation_dandi000673.json", "w") as f:
-        json.dump(d000673, f, indent=2)
+        json.dump(_json_safe(d000673), f, indent=2, allow_nan=False)
     stats["axis_rotation_dandi000673"] = d000673
 
     # Predict content > context axis-rotation index
@@ -285,7 +286,7 @@ def main():
               f"rho={corr_result['rho']:.3f}, p={corr_result['p_value']:.4f}")
     stats["axis_rotation_vs_dmd_frequency_dandi000469"] = corr_result
 
-    # Round-7 STEP K3: Boran units vs Boran iEEG -- spiking-vs-LFP within-subject
+    # Boran units vs Boran iEEG -- spiking-vs-LFP within-subject
     # context-axis-rotation comparison (same subjects/trials, same set4v8 contrast).
     # Boran units is keyed per-session (sub-XX_ses-YY); average sessions to one
     # value per subject before pairing against Boran iEEG's per-subject values.
@@ -306,18 +307,18 @@ def main():
         spiking_vs_lfp["subjects"] = shared_subjs
         spiking_vs_lfp["units_mean"] = float(units_vals.mean())
         spiking_vs_lfp["ieeg_mean"] = float(ieeg_vals.mean())
-        print(f"\nSTEP K3 spiking-vs-LFP (Boran units vs Boran iEEG, context ARI, "
+        print(f"\nSpiking-vs-LFP (Boran units vs Boran iEEG, context ARI, "
               f"N={len(shared_subjs)} shared subjects): units_mean={units_vals.mean():.4f} "
               f"ieeg_mean={ieeg_vals.mean():.4f} diff={res_k3['mean_diff']:+.4f} "
               f"[{res_k3['ci_lower']:.4f}, {res_k3['ci_upper']:.4f}] p={res_k3['p_value']:.4f} "
               f"({'AGREE (no reliable diff)' if res_k3['p_value'] >= 0.05 else 'DIVERGE'})")
     else:
-        print(f"\nSTEP K3 spiking-vs-LFP: only {len(shared_subjs)} shared subjects "
+        print(f"\nSpiking-vs-LFP: only {len(shared_subjs)} shared subjects "
               f"(<4) -- underpowered, STOP-and-report, not computed.")
     stats["axis_rotation_spiking_vs_lfp_boran"] = spiking_vs_lfp
 
     with open(RESULTS / "all_statistics.json", "w") as f:
-        json.dump(stats, f, indent=2)
+        json.dump(_json_safe(stats), f, indent=2, allow_nan=False)
     print("\nSaved axis_rotation_*.json, updated all_statistics.json")
 
 

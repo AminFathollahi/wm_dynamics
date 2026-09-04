@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Part 8B diagnostic (comments.txt): for the 3 macrosignal_pac subjects whose
+"""Diagnostic for the 3 macrosignal_pac subjects whose
 argmax-alignment TES1 donor destabilizes the plant (sub-02, sub-03, sub-05),
 check whether a NEAR-TIE donor (pre-specified tolerance, defined BELOW before
 looking at any result: alignment >= 0.90 * max_alignment) exists that does
-NOT destabilize. This is the ONE legitimate lever named in the spec -- if
+NOT destabilize. This is the ONE legitimate lever this project's targeting-benchmark rules permit -- if
 found, the same tolerance-based "prefer non-destabilizing among near-ties"
 rule must be applied uniformly to every arm, not just PAC. If not found for
 any of the 3 subjects, PAC's direction is genuinely destabilizing and stays

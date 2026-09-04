@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Round-11 PART 18 -- does the v* target transfer across sessions/days?
+"""Does the v* target transfer across sessions/days?
 
-18A (feasibility gate, verified this round): the Wa monkey's 10 sessions
+Feasibility gate (verified): the Wa monkey's 10 sessions
 (Wa220801_s549 .. Wa220812_s558, consecutive days in Aug 2022) all report
-IDENTICAL channel_ids = {1..96} from run_soldado_pipeline.load_soldado_session
+IDENTICAL channel_ids = {1..96} from run_macaque_pfc_microstimulation_pipeline.load_macaque_pfc_microstimulation_session
 -- a single chronic 96-channel Utah array (consistent with the dataset
 docstring's "single-channel stim, 96 ch (1 array)"), not per-day re-sorted
 units. The recording BASIS is shared -- gate PASSES. Sa (1 session, a
@@ -25,7 +25,7 @@ in this project (always in the stimulating session's own latent).
 Score with the SAME cate_vs_modifier_slope/benchmark_modifiers machinery as
 every other arm (src/causal.py untouched); compare, apples-to-apples on the
 10 held-out Wa sessions, against each session's OWN-session vstar_alignment
-slope already in results/soldado_headline_robustness.json's per_session
+slope already in results/macaque_pfc_microstimulation_headline_robustness.json's per_session
 block. Aggregate with a cluster/bootstrap over the 10 held-out sessions
 (not a trial-level p).
 
@@ -47,13 +47,13 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from geometry import pca_decompose
 from dynamics import dmd_reconstruction_error
-from control import unstable_eigenvector
+from control import dominant_eigenmode
 from causal import benchmark_modifiers, _dr_slope
 from statistics import stable_seed
 
 sys.path.insert(0, str(ROOT / "scripts"))
-from run_soldado_pipeline import (
-    load_soldado_session, crop_trial, SESSIONS, N_PC, DMD_RANK, N_BINS, BIN_S,
+from run_macaque_pfc_microstimulation_pipeline import (
+    load_macaque_pfc_microstimulation_session, crop_trial, SESSIONS, N_PC, DMD_RANK, N_BINS, BIN_S,
     build_session_features,
 )
 
@@ -66,7 +66,7 @@ def _channel_basis_check() -> bool:
     """18A gate: do the Wa sessions share channel_ids?"""
     chan_sets = {}
     for s in WA_SESSIONS:
-        d = load_soldado_session(s, correct=True)
+        d = load_macaque_pfc_microstimulation_session(s, correct=True)
         if d is None:
             return False
         chan_sets[s] = tuple(sorted(d["channel_ids"].tolist()))
@@ -77,7 +77,7 @@ def _channel_basis_check() -> bool:
 def _fit_session_v_and_V(prefix: str) -> dict | None:
     """Same PCA+DMD+eigenvector fit as build_session_features (Part 1), plus
     V and v_star returned (not exposed by build_session_features itself)."""
-    corr = load_soldado_session(prefix, correct=True)
+    corr = load_macaque_pfc_microstimulation_session(prefix, correct=True)
     if corr is None or corr["control_idx"] is None:
         return None
     control_idx = corr["control_idx"]
@@ -100,7 +100,7 @@ def _fit_session_v_and_V(prefix: str) -> dict | None:
     r_use = min(DMD_RANK, k, N_BINS - 2)
     dmd = dmd_reconstruction_error(Z_ctrl_mean, r=r_use, dt=BIN_S)
     A = dmd["A"]
-    v_star, _ = unstable_eigenvector(A)
+    v_star = dominant_eigenmode(A).v_star
 
     return {"V": V, "v_star": v_star, "channel_ids": channel_ids}
 
@@ -165,7 +165,7 @@ def main() -> None:
 
     v_star_chan = {s: fits[s]["V"] @ fits[s]["v_star"] for s in fits}  # (C,) each, C shared=96
 
-    with open(RESULTS / "soldado_headline_robustness.json") as f:
+    with open(RESULTS / "macaque_pfc_microstimulation_headline_robustness.json") as f:
         robustness = json.load(f)
     own_per_session = robustness["per_session"]
 
@@ -195,7 +195,7 @@ def main() -> None:
         # session's own cond_features via B_lat recovered geometrically is
         # not exposed -- instead reload the raw stim-channel one-hot exactly
         # as build_session_features does, in the SAME latent space V_ho).
-        corr = load_soldado_session(held_out, correct=True)
+        corr = load_macaque_pfc_microstimulation_session(held_out, correct=True)
         control_idx = corr["control_idx"]
         channel_ids = corr["channel_ids"]
         C = len(channel_ids)
@@ -232,7 +232,7 @@ def main() -> None:
                     out.append((cropped, label_correct, tr["angle_idx"]))
             return out
 
-        err = load_soldado_session(held_out, correct=False)
+        err = load_macaque_pfc_microstimulation_session(held_out, correct=False)
         ctrl_all = _epochs_for(corr, control_idx, 1) + (
             _epochs_for(err, control_idx, 0) if err is not None else [])
         for c, talign in transfer_align_by_cond.items():

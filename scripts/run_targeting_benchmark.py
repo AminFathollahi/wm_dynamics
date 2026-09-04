@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""Nine-arm targeting benchmark (Round-7, STEP E): ADDS macrosignal_pac to the
+"""Nine-arm targeting benchmark: ADDS macrosignal_pac to the
 EXISTING 8-arm results/causal_benchmark.json leaderboard. DOES NOT SHRINK IT.
 
-FRAMING (mandatory, see comments.txt STEP E): the leaderboard has 8 existing
-arms scored on the Soldado-Magraner macaque uStim causal design (the only
+FRAMING (mandatory): the leaderboard has 8 existing
+arms scored on the macaque uStim causal design (the only
 dataset with delivered stimulation + a designed propensity -- see
-run_soldado_pipeline.py). "anatomical vs manifold vs macro-signal" is a
+run_macaque_pfc_microstimulation_pipeline.py). "anatomical vs manifold vs macro-signal" is a
 THREE-FAMILY narrative grouping, not a reduction to 3 entries. This script
-ADDS a 9th arm; run_soldado_pipeline.py (already re-run at r=7 for Step A)
+ADDS a 9th arm; run_macaque_pfc_microstimulation_pipeline.py (already re-run at r=7 for Step A)
 is untouched and its 8 existing arms are copied through unchanged.
 
 DATA-AVAILABILITY CONSTRAINT (why macrosignal_pac is scored differently from
-the other 8, and why that is not an error): Soldado is macaque intracortical
+the other 8, and why that is not an error): macaque PFC microstimulation is macaque intracortical
 SPIKE-RATE data -- it has no LFP, so no theta-phase / gamma-amplitude PAC
 signal exists there to compute. E1 explicitly requires PAC on the LFP
 datasets (Boran iEEG, DANDI 000673, Miller ECoG); of those, only Boran iEEG
@@ -20,7 +20,7 @@ MATRIX.md exclusion #2: TES1 covers DLPFC only, and among the LFP cohorts only
 Miller+Boran have TES1 coverage; Miller has no usable outcome label -- see
 run_behavior_ctg.py). So macrosignal_pac is constructed and scored on Boran
 iEEG's OWN closed-loop targeting-benchmark (below), NOT by fabricating a PAC
-signal for the Soldado rows. Its slope/CI/p in the final leaderboard trace to
+signal for the macaque PFC microstimulation rows. Its slope/CI/p in the final leaderboard trace to
 this Boran construction; agent_report.md documents this plainly.
 
 BORAN TARGETING BENCHMARK (all 9 arms, drift-reduction AND flip-rate):
@@ -29,14 +29,14 @@ run_closed_loop_analysis.py and run_closed_loop_behavior_flip.py already use
 -- construct all NINE candidate latent steering directions as a REAL TES1
 donor (or, where no better anatomical target exists, a directly-computed
 vector) selected by each arm's own criterion, exactly mirroring how
-run_soldado_pipeline.py builds v_star / v_stable / random_dirs / min_energy_dir:
+run_macaque_pfc_microstimulation_pipeline.py builds v_star / v_stable / random_dirs / min_energy_dir:
   vstar_alignment          : TES1 donor maximizing |cos(B_i, v*)|            (= dynamic_best_idx, reused)
   gramian_trace            : TES1 donor maximizing its own Gramian trace     (= static_best_idx, reused)
   stable_alignment         : TES1 donor maximizing |cos(B_i, v_stable)| (slowest/most-stable eigenvector)
-  random_alignment         : a fixed-seed random unit direction in latent space (Soldado's own convention)
+  random_alignment         : a fixed-seed random unit direction in latent space (macaque PFC microstimulation's own convention)
   input_norm                : TES1 donor maximizing ||B_i|| (norm-matched, weakest prior)
   min_energy_dir_alignment : TES1 donor maximizing |cos(B_i, Gramian's top eigenvector)|
-  anat_avg_ctrl/anat_modal_ctrl : DEGENERATE here (same principled reason the existing Soldado
+  anat_avg_ctrl/anat_modal_ctrl : DEGENERATE here (same principled reason the existing macaque PFC microstimulation
       arms are already degenerate -- see module docstring below); Boran electrodes are MTL/
       temporal, and no macaque-Markov-connectome mapping applies to human MTL, so there is no
       non-fabricated way to assign a differentiated anatomical-controllability value per TES1
@@ -76,6 +76,7 @@ import numpy as np
 warnings.filterwarnings("ignore")
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
+from project_config import data_root, dataset_path, executable, project_path
 
 import h5py
 import scipy.signal as sig
@@ -88,9 +89,10 @@ from preprocessing import (phase_amplitude_coupling, bandpass_filter,
 from statistics import bootstrap_ci, stable_seed
 from run_closed_loop_behavior_flip import _fit_outcome_decoder_and_margin, _flip_one_trial
 from io_utils import locked_json_update
+from provenance import _json_safe
 
 RESULTS = ROOT / "results"
-DATA_ROOT = Path("/media/amin/EXTERNAL_USB/SMAF/Research/Representation/Working Memory/data")
+DATA_ROOT = data_root()
 BORAN_SUBJECTS = [f"sub-{i:02d}" for i in range(1, 10)]
 B_HAT_MISMATCH_DEG = 20.0
 N_RANDOM_DIRS = 20
@@ -98,7 +100,7 @@ GRAMIAN_HORIZON = 20
 ARM_NAMES = ["vstar_alignment", "gramian_trace", "stable_alignment", "random_alignment",
             "input_norm", "anat_avg_ctrl", "anat_modal_ctrl", "min_energy_dir_alignment",
             "macrosignal_pac"]
-# Part 8B (comments.txt): pre-specified BEFORE inspecting any donor's
+# Pre-specified BEFORE inspecting any donor's
 # destabilization (see results/pac_donor_diagnostic.json, which established
 # with this exact tolerance that all 3 originally-destabilized macrosignal_pac
 # subjects have a non-destabilizing near-tie donor). Applied uniformly to
@@ -156,7 +158,7 @@ def _pac_channel_weights(subj: str, good_ch_indices: np.ndarray) -> np.ndarray |
     if len(all_epochs) < 10:
         return None
 
-    # Notch (50/100/150 Hz) + bipolar-by-shank reref -- Round-8 7A/7B fix.
+    # Notch (50/100/150 Hz) + bipolar-by-shank reref.
     # Must exactly match run_boran_pipeline.py's channel reduction, since
     # good_ch_indices (below) indexes into that same bipolar channel set,
     # not the raw monopolar channels.
@@ -213,14 +215,14 @@ def _build_arm_directions(A: np.ndarray, B_bank: np.ndarray, gramian_traces: np.
     random_dirs = rng.standard_normal((N_RANDOM_DIRS, k))
     random_dirs /= np.linalg.norm(random_dirs, axis=1, keepdims=True) + 1e-12
     random_align = np.mean(np.abs(random_dirs @ v_star))   # scalar summary, matches
-                                                            # run_soldado_pipeline's convention
+                                                            # run_macaque_pfc_microstimulation_pipeline's convention
 
     input_norms = np.linalg.norm(B_bank[:, :, 0], axis=1)
     stable_align = np.abs(B_units @ v_stable)
 
     # Gramian's own top eigenvector (min-energy steering direction), using
     # the RAW argmax-align_vstar donor's own B for a representative Gramian
-    # (matches run_soldado_pipeline's M6 construction: one Gramian per
+    # (matches run_macaque_pfc_microstimulation_pipeline's M6 construction: one Gramian per
     # session, not per-donor, since it is a plant-level not donor-level
     # quantity -- unaffected by rescue selection downstream).
     dyn_idx_tmp = int(np.argmax(align_vstar))
@@ -249,7 +251,7 @@ def _build_arm_directions(A: np.ndarray, B_bank: np.ndarray, gramian_traces: np.
     # per-donor anatomical-controllability differentiation exists for Boran's
     # MTL electrodes, so they always take the SAME donor as vstar_alignment's
     # final (possibly rescued) pick, resolved in the caller. random_alignment:
-    # not a single-donor criterion -- Soldado's own arm is "mean |cos| to 20
+    # not a single-donor criterion -- macaque PFC microstimulation's own arm is "mean |cos| to 20
     # random directions," a scalar exposure with no natural single B to
     # simulate; it also rides vstar_alignment's final donor for the ROLLOUT
     # (so its drift/flip numbers are comparable in scale) while random_align
@@ -469,13 +471,13 @@ def main():
 
     out_full = {"per_subject": per_subject, "leaderboard": leaderboard_boran}
     with open(RESULTS / "targeting_benchmark_boran.json", "w") as f:
-        json.dump(out_full, f, indent=2)
+        json.dump(_json_safe(out_full), f, indent=2, allow_nan=False)
 
     # Extend the EXISTING 9-... wait, 8-arm results/causal_benchmark.json with
     # macrosignal_pac as the 9th key. The other 8 keys are copied through
-    # UNCHANGED (already re-scored at r=7 by run_soldado_pipeline.py, Step A).
+    # UNCHANGED (already re-scored at r=7 by run_macaque_pfc_microstimulation_pipeline.py, Step A).
     # Every existing arm ALSO gains a "flip_rate" field per spec E2/E3: for the
-    # 8 Soldado arms this is None (Soldado has no outcome-decoder flip
+    # 8 macaque PFC microstimulation arms this is None (macaque PFC microstimulation has no outcome-decoder flip
     # construction -- WP-CAUSAL's Y is trial correct/error directly, not a
     # simulated closed-loop rollout; adding a fabricated flip_rate for those
     # 8 would violate the anti-fabrication contract). macrosignal_pac's own
@@ -493,7 +495,7 @@ def main():
             "n": pac_dr["n"] if pac_dr else 0,
             "flip_rate": leaderboard_boran["macrosignal_pac"]["mean_flip_rate"],
             "flip_rate_dml": pac_flip,
-            "scored_on": "boran_ieeg_targeting_benchmark",   # NOT the Soldado pooled
+            "scored_on": "boran_ieeg_targeting_benchmark",   # NOT the macaque PFC microstimulation pooled
                                                               # rows the other 8 arms use
                                                               # (see module docstring)
         }

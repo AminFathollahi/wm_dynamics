@@ -31,6 +31,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from geometry import representational_dissimilarity_matrix
 from statistics import mantel_test, fdr_bh
+from provenance import _json_safe
 
 RESULTS = ROOT / "results"
 CONDITION_LABELS = ["low-early", "low-late", "high-early", "high-late"]
@@ -181,13 +182,13 @@ def main():
         "n_significant_pairs_fdr": n_significant_fdr,
     }
     with open(RESULTS / "context_code_cross_dataset_rsa.json", "w") as f:
-        json.dump(out, f, indent=2)
+        json.dump(_json_safe(out), f, indent=2, allow_nan=False)
 
     with open(RESULTS / "all_statistics.json") as f:
         stats = json.load(f)
     stats["context_code_cross_dataset_rsa"] = out
     with open(RESULTS / "all_statistics.json", "w") as f:
-        json.dump(stats, f, indent=2)
+        json.dump(_json_safe(stats), f, indent=2, allow_nan=False)
     print("\nSaved results/context_code_cross_dataset_rsa.json, updated all_statistics.json")
 
 

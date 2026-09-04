@@ -10,6 +10,7 @@ data/
 *.hdf5
 
 # ── Python ─────────────────────────────────────────────────────────────────────
+.venv_dpad/
 __pycache__/
 *.py[cod]
 *.so
@@ -49,6 +50,14 @@ results/
 *.svg
 !environment.yml
 
+# ── Graphify (generated knowledge graph, rebuild with `graphify update .`) ─────
+graphify-out/
+
+# ── Scratch / working notes (not deliverables) ─────────────────────────────────
+comments.txt
+RESPONSE.md
+Audit A controllable code.txt
+
 # ── IDE ─────────────────────────────────────────────────────────────────────────
 .vscode/
 .idea/
@@ -58,3 +67,6 @@ results/
 # ── OS ──────────────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
+
+# Learning folder - personal study materials
+learning/

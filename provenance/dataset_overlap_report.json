@@ -1,0 +1,1523 @@
+{
+  "canonical_view_rule": "Prefer 001187 for a verified 001187/000673 shared recording; retain 000673 as a linked sensitivity view.",
+  "data_root": "/media/amin/EXTERNAL_USB/SMAF/Research/Representation/Working Memory/data",
+  "n_primary_records": 129,
+  "n_records": 168,
+  "overlap_groups": [
+    [
+      {
+        "acquisition_time": "2018-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 745833239,
+        "native_identifier": "sub-1_ses-1_P55CS",
+        "path": "000673/sub-1/sub-1_ses-1_ecephys+image.nwb",
+        "patient": "P55CS",
+        "release": "000673",
+        "session": "ses-1",
+        "task_groups": [
+          "trials"
+        ],
+        "trial_table_hashes": [
+          "dbc08d888b85769a207918769435f619e0de240fcf39f3600f14191f4baccbfa"
+        ],
+        "unit_metadata_hash": "5d609ddc31f8f5403b63dab207c4f5e0d11b736a590777f7b7511c0d09bbec4e"
+      },
+      {
+        "acquisition_time": "2018-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 567164017,
+        "native_identifier": "sub-2_ses-1_P55CS",
+        "path": "001187/sub-2/sub-2_ses-1_ecephys+image.nwb",
+        "patient": "P55CS",
+        "release": "001187",
+        "session": "ses-1",
+        "task_groups": [
+          "LTM_trials",
+          "WM_trials"
+        ],
+        "trial_table_hashes": [
+          "eb63a2171a0a0e848bd7357c1ca1e8fb57a11b6c09ac57fa8a90348c391df459",
+          "81eee1d8b2d5b2fcbedfe3a594a9b3ceafe9fbaa58c8ff27bf49a77ccbfd1951"
+        ],
+        "unit_metadata_hash": "4dfeae844b248a903760301bc949286e8f0664be39b7fbf6defcc9aebc96be55"
+      }
+    ],
+    [
+      {
+        "acquisition_time": "2018-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 690528032,
+        "native_identifier": "sub-1_ses-2_P55CS",
+        "path": "000673/sub-1/sub-1_ses-2_ecephys+image.nwb",
+        "patient": "P55CS",
+        "release": "000673",
+        "session": "ses-2",
+        "task_groups": [
+          "trials"
+        ],
+        "trial_table_hashes": [
+          "749262a52889e22c782011cdf7276090f5d28bbd16d93d8bb33fc16fd1cc656b"
+        ],
+        "unit_metadata_hash": "76d297e6c410db425533b03f9f9576b2a3570e9b619deb2bbf16fad2d00ea6eb"
+      },
+      {
+        "acquisition_time": "2018-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 587080425,
+        "native_identifier": "sub-2_ses-2_P55CS",
+        "path": "001187/sub-2/sub-2_ses-2_ecephys+image.nwb",
+        "patient": "P55CS",
+        "release": "001187",
+        "session": "ses-2",
+        "task_groups": [
+          "LTM_trials",
+          "WM_trials"
+        ],
+        "trial_table_hashes": [
+          "d25c4ed6f648de281f103000cacd9687fd3708eacfda451676f0ebe39b2abeb3",
+          "a74f72df2f725b071297942f5a2c78243aff4deef588c9514df9819e4dbc7f00"
+        ],
+        "unit_metadata_hash": "9e95d702835c2c6d527999a6675070af3b88363c80fc69da879b028b22d6ed5c"
+      }
+    ],
+    [
+      {
+        "acquisition_time": "2020-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 519312053,
+        "native_identifier": "sub-10_ses-1_P68CS",
+        "path": "000673/sub-10/sub-10_ses-1_ecephys+image.nwb",
+        "patient": "P68CS",
+        "release": "000673",
+        "session": "ses-1",
+        "task_groups": [
+          "trials"
+        ],
+        "trial_table_hashes": [
+          "a224424fa931f19bbfab2f0627b0d9a8c452b3df5f0fdc967776063ae09b3aa8"
+        ],
+        "unit_metadata_hash": "462272df4fbc6952d74a0ca985414b9cf81a3fd5cb9e2442dbd8163c07850843"
+      },
+      {
+        "acquisition_time": "2020-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 557495908,
+        "native_identifier": "sub-10_ses-1_P68CS",
+        "path": "001187/sub-10/sub-10_ses-1_ecephys+image.nwb",
+        "patient": "P68CS",
+        "release": "001187",
+        "session": "ses-1",
+        "task_groups": [
+          "LTM_trials",
+          "WM_trials"
+        ],
+        "trial_table_hashes": [
+          "a3b315eb3932df55adf6701e5728c06fed2b3dceea7c1ff94843a3874a64bc37",
+          "48b9f7050bcaa65a06b57e074d75f57b2348d3dc02544f1aae6ff577222470e2"
+        ],
+        "unit_metadata_hash": "521cecb97efdfb7d7d4642166db76bdf94a9f163489414fbd0e5e2a41e179b43"
+      }
+    ],
+    [
+      {
+        "acquisition_time": "2020-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 679215592,
+        "native_identifier": "sub-11_ses-1_P69CS",
+        "path": "000673/sub-11/sub-11_ses-1_ecephys+image.nwb",
+        "patient": "P69CS",
+        "release": "000673",
+        "session": "ses-1",
+        "task_groups": [
+          "trials"
+        ],
+        "trial_table_hashes": [
+          "d00282a9958f1c8c19267fe21cd90308525f2ec8d1b0d9ed9205213a2d1fd867"
+        ],
+        "unit_metadata_hash": "4f7ebacdd2de5e8dcb6a7d0b890975adeaf780de2a0d07faad01c3141df71dab"
+      },
+      {
+        "acquisition_time": "2020-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 341393952,
+        "native_identifier": "sub-11_ses-1_P69CS",
+        "path": "001187/sub-11/sub-11_ses-1_ecephys+image.nwb",
+        "patient": "P69CS",
+        "release": "001187",
+        "session": "ses-1",
+        "task_groups": [
+          "LTM_trials",
+          "WM_trials"
+        ],
+        "trial_table_hashes": [
+          "b213ac61eae4b341d39be3fc3e8a758fd8c86aa438d9aa5a38b11decf7ed8cf7",
+          "5115e409c4caafebd0f91660ca1fd32fe9b1ab0498d9f8f054b7fa268af15c9b"
+        ],
+        "unit_metadata_hash": "91b23126652decf922dd91dbbca0c2ca1295aa6678098938ef9cce30e6563bea"
+      }
+    ],
+    [
+      {
+        "acquisition_time": "2020-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 518882687,
+        "native_identifier": "sub-12_ses-1_P70CS",
+        "path": "000673/sub-12/sub-12_ses-1_ecephys+image.nwb",
+        "patient": "P70CS",
+        "release": "000673",
+        "session": "ses-1",
+        "task_groups": [
+          "trials"
+        ],
+        "trial_table_hashes": [
+          "f0d6f9eb21e4a4a45e716ae08c88f1161ed9b7089cd2e431346e4c3aebaabd8d"
+        ],
+        "unit_metadata_hash": "68a10900fe5853f1d951b22a9fa2932d6e426aa619dc099451aea40b61595743"
+      },
+      {
+        "acquisition_time": "2020-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 369896985,
+        "native_identifier": "sub-12_ses-1_P70CS",
+        "path": "001187/sub-12/sub-12_ses-1_ecephys+image.nwb",
+        "patient": "P70CS",
+        "release": "001187",
+        "session": "ses-1",
+        "task_groups": [
+          "LTM_trials",
+          "WM_trials"
+        ],
+        "trial_table_hashes": [
+          "75e7a988321bbee56a7283b349ab03aac53c773396a25a1065c53ef8208ec6dc",
+          "b26c3284fb93cb2a566829be1bf598a8af3bf2d41d7ec3216fd1b7bd319daffd"
+        ],
+        "unit_metadata_hash": "7df0df54c9a9ad8c1531802ad601840d5cbd6cdd95a2da36c4a66cc6fe153cc3"
+      }
+    ],
+    [
+      {
+        "acquisition_time": "2020-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 405388453,
+        "native_identifier": "sub-12_ses-2_P70CS",
+        "path": "000673/sub-12/sub-12_ses-2_ecephys+image.nwb",
+        "patient": "P70CS",
+        "release": "000673",
+        "session": "ses-2",
+        "task_groups": [
+          "trials"
+        ],
+        "trial_table_hashes": [
+          "668777f966662cf09fa666089501fb6dc5feb4bbb90921193ec5ea53e5910d90"
+        ],
+        "unit_metadata_hash": "5ffa3ae92666029a9c79a7b74acda14a8212c7e8dade0b2bd8745edb4afc324f"
+      },
+      {
+        "acquisition_time": "2020-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 195230083,
+        "native_identifier": "sub-12_ses-2_P70CS",
+        "path": "001187/sub-12/sub-12_ses-2_ecephys+image.nwb",
+        "patient": "P70CS",
+        "release": "001187",
+        "session": "ses-2",
+        "task_groups": [
+          "LTM_trials",
+          "WM_trials"
+        ],
+        "trial_table_hashes": [
+          "eb22089f7a80399694ae2043c1e9570fee701c837610fe169faded18b9a4bba0",
+          "748ba344bd03e6f0fcaeb77fd9bb1fec6f3173414b8d24f465a7bee2e9bd4941"
+        ],
+        "unit_metadata_hash": "dbb2443b7befc829e12dedc1d4467415fb037dbecca92ad2e59e7902c42c7198"
+      }
+    ],
+    [
+      {
+        "acquisition_time": "2020-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 549568265,
+        "native_identifier": "sub-13_ses-1_P71CS",
+        "path": "000673/sub-13/sub-13_ses-1_ecephys+image.nwb",
+        "patient": "P71CS",
+        "release": "000673",
+        "session": "ses-1",
+        "task_groups": [
+          "trials"
+        ],
+        "trial_table_hashes": [
+          "23812647161a7dc63fcd535a79d97e4757af67fc320b939cb6dd733c382804be"
+        ],
+        "unit_metadata_hash": "2524855e9b1153e59eaa676d0a73581c08bbd927609c51eab0b48446409e9425"
+      },
+      {
+        "acquisition_time": "2020-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 228460864,
+        "native_identifier": "sub-13_ses-1_P71CS",
+        "path": "001187/sub-13/sub-13_ses-1_ecephys+image.nwb",
+        "patient": "P71CS",
+        "release": "001187",
+        "session": "ses-1",
+        "task_groups": [
+          "LTM_trials",
+          "WM_trials"
+        ],
+        "trial_table_hashes": [
+          "2c6f0f5065e33c699a1a8a0dc9fa6fb036a13cb0b3fca7aaa540807288d4ba79",
+          "7fe96b9c7119c55f2a30feccd45318f6fc30df6b9a86c3a6009172035a7c8bd8"
+        ],
+        "unit_metadata_hash": "04ab8f605cd01c31f1cd156e2d8dcd5d6ff7cb3d54b389fb91d025729063abb2"
+      }
+    ],
+    [
+      {
+        "acquisition_time": "2021-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 764160300,
+        "native_identifier": "sub-15_ses-1_P73CS",
+        "path": "000673/sub-15/sub-15_ses-1_ecephys+image.nwb",
+        "patient": "P73CS",
+        "release": "000673",
+        "session": "ses-1",
+        "task_groups": [
+          "trials"
+        ],
+        "trial_table_hashes": [
+          "9362b46acfe61808c6d43ddad252ebcb6cba1d5b830ba35d9875624f3af49d6c"
+        ],
+        "unit_metadata_hash": "f1ecee5126969ca2696b9ee753be9658555643d2910caadb665cda7cb9d98483"
+      },
+      {
+        "acquisition_time": "2021-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 474862648,
+        "native_identifier": "sub-14_ses-1_P73CS",
+        "path": "001187/sub-14/sub-14_ses-1_ecephys+image.nwb",
+        "patient": "P73CS",
+        "release": "001187",
+        "session": "ses-1",
+        "task_groups": [
+          "LTM_trials",
+          "WM_trials"
+        ],
+        "trial_table_hashes": [
+          "005e3f0cf2291e4ea0c6bdacf4bcdb1c60ecc5eac3cf08ee62f51b80da1f823e",
+          "b43a3b0d917989fef8bd440b26977b8dc75c8c2df3f6a2fe0cad04303aeb372b"
+        ],
+        "unit_metadata_hash": "416d4c30f87c310797e54a2ded861992bac0dbd2a91a177a2d8fcd49c318c3f0"
+      }
+    ],
+    [
+      {
+        "acquisition_time": "2021-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 893755892,
+        "native_identifier": "sub-16_ses-1_P76CS",
+        "path": "000673/sub-16/sub-16_ses-1_ecephys+image.nwb",
+        "patient": "P76CS",
+        "release": "000673",
+        "session": "ses-1",
+        "task_groups": [
+          "trials"
+        ],
+        "trial_table_hashes": [
+          "8af9d56880b956a22b6e6c69ba8ce241f9b3a7d3449ad0e171010879f8016279"
+        ],
+        "unit_metadata_hash": "137530b7f81e790d22512f88793e85b4774b35745eb5d5e6ed40d7b3cbf64f5f"
+      },
+      {
+        "acquisition_time": "2021-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 696668695,
+        "native_identifier": "sub-16_ses-1_P76CS",
+        "path": "001187/sub-16/sub-16_ses-1_ecephys+image.nwb",
+        "patient": "P76CS",
+        "release": "001187",
+        "session": "ses-1",
+        "task_groups": [
+          "LTM_trials",
+          "WM_trials"
+        ],
+        "trial_table_hashes": [
+          "e3546b9c9723768c04e14597871254fcad4d232e051cbc76d1f31f252270c00f",
+          "0f0e096dccdfadaa3d8ecbb75696c7c8ee0d09a73c4d08c6340c4ec42c830bf0"
+        ],
+        "unit_metadata_hash": "6ad21346a33da940186447c183fdbbf57778b4ef2a956f9a23ef661f44afd341"
+      }
+    ],
+    [
+      {
+        "acquisition_time": "2021-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 1019994792,
+        "native_identifier": "sub-17_ses-1_P77CS",
+        "path": "000673/sub-17/sub-17_ses-1_ecephys+image.nwb",
+        "patient": "P77CS",
+        "release": "000673",
+        "session": "ses-1",
+        "task_groups": [
+          "trials"
+        ],
+        "trial_table_hashes": [
+          "3f03ea47406abfaf0db54f2963b22f59235441b062f9c16e6a8c32b06224dfc9"
+        ],
+        "unit_metadata_hash": "6ecee3440d7c6061350a1fcb5403a6fe9e8fd2a4f00d63afed00ef82147773a7"
+      },
+      {
+        "acquisition_time": "2021-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 620711241,
+        "native_identifier": "sub-17_ses-1_P77CS",
+        "path": "001187/sub-17/sub-17_ses-1_ecephys+image.nwb",
+        "patient": "P77CS",
+        "release": "001187",
+        "session": "ses-1",
+        "task_groups": [
+          "LTM_trials",
+          "WM_trials"
+        ],
+        "trial_table_hashes": [
+          "3e2bfe45c5564393f8c8553b6e45caf3b3586db7c5642c3f2c343ad210dabde7",
+          "bfa3496b1da6efe5131485b9c28257364a36e33f9d1a58fcfb959de1c528ee30"
+        ],
+        "unit_metadata_hash": "90af35b0d0e2d3b208d405edfb91a627436ba7f11b58ac62600a0ff9cdc921da"
+      }
+    ],
+    [
+      {
+        "acquisition_time": "2022-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 360908172,
+        "native_identifier": "sub-18_ses-1_P78CS",
+        "path": "000673/sub-18/sub-18_ses-1_ecephys+image.nwb",
+        "patient": "P78CS",
+        "release": "000673",
+        "session": "ses-1",
+        "task_groups": [
+          "trials"
+        ],
+        "trial_table_hashes": [
+          "6f2f6edbadc8bec21e8abd68d81b5ef9a413e3b660de10cf61ffa3a1b0dad5d6"
+        ],
+        "unit_metadata_hash": "38d9fb9156c93c572a99261ba157de500c96eafe54cc6b25ade043888a4b312d"
+      },
+      {
+        "acquisition_time": "2022-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 597143280,
+        "native_identifier": "sub-18_ses-1_P78CS",
+        "path": "001187/sub-18/sub-18_ses-1_ecephys+image.nwb",
+        "patient": "P78CS",
+        "release": "001187",
+        "session": "ses-1",
+        "task_groups": [
+          "LTM_trials",
+          "WM_trials"
+        ],
+        "trial_table_hashes": [
+          "ce6347dd5511b575eb3b3ab6bb5cb88b9fa6a6ca3cb88f03bc05b9d594bae61c",
+          "30602a3d668b39ae232d2b1058fa28e0536909c4604f5a510f17ca50d74dfaaa"
+        ],
+        "unit_metadata_hash": "4b555a5ad5f248ff487c55e9be9a3fa8c393fb9d0f780b166be7e1b514d9ffb1"
+      }
+    ],
+    [
+      {
+        "acquisition_time": "2022-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 1288392806,
+        "native_identifier": "sub-19_ses-1_P79CS",
+        "path": "000673/sub-19/sub-19_ses-1_ecephys+image.nwb",
+        "patient": "P79CS",
+        "release": "000673",
+        "session": "ses-1",
+        "task_groups": [
+          "trials"
+        ],
+        "trial_table_hashes": [
+          "21805bb295296883cad0d07f00ca2256fc92bbbbf5bf85b1de7fd87f8b8dd703"
+        ],
+        "unit_metadata_hash": "3571f749c058c7d7b4149449f6a91f93c0c747de0b7989f7f47ae597db23c8ae"
+      },
+      {
+        "acquisition_time": "2022-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 1048143284,
+        "native_identifier": "sub-19_ses-1_P79CS",
+        "path": "001187/sub-19/sub-19_ses-1_ecephys+image.nwb",
+        "patient": "P79CS",
+        "release": "001187",
+        "session": "ses-1",
+        "task_groups": [
+          "LTM_trials",
+          "WM_trials"
+        ],
+        "trial_table_hashes": [
+          "af2663f6b514defca620f0e6e6ef88793788f68eb34326f88f3eed0ce69c10a3",
+          "9ae95463628c8796c6f5b8b102b0f112ba1464680d3d5559e72c53dcb1a85e60"
+        ],
+        "unit_metadata_hash": "2132d75d205c88d1b8179f5552532eb60562af66f35c99a2ea1b500c55f1356f"
+      }
+    ],
+    [
+      {
+        "acquisition_time": "2022-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 931052497,
+        "native_identifier": "sub-19_ses-2_P79CS",
+        "path": "000673/sub-19/sub-19_ses-2_ecephys+image.nwb",
+        "patient": "P79CS",
+        "release": "000673",
+        "session": "ses-2",
+        "task_groups": [
+          "trials"
+        ],
+        "trial_table_hashes": [
+          "a76e59762386050a169f3171f91c39637ef18d05a06de34f1b820b8ef0020041"
+        ],
+        "unit_metadata_hash": "749b1809a2b9c6f5081bcffa55a33bdc270ffc38d390ed0a1b55e12232432ef9"
+      },
+      {
+        "acquisition_time": "2022-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 614014812,
+        "native_identifier": "sub-19_ses-2_P79CS",
+        "path": "001187/sub-19/sub-19_ses-2_ecephys+image.nwb",
+        "patient": "P79CS",
+        "release": "001187",
+        "session": "ses-2",
+        "task_groups": [
+          "LTM_trials",
+          "WM_trials"
+        ],
+        "trial_table_hashes": [
+          "132efadc0a6bdfb4e7754ae5d4c420a7af519d08b0bf969266889f63ccf1551f",
+          "443d0b35d7fe9485278439895cdea3449af60671783705cab0d9a955e55bd083"
+        ],
+        "unit_metadata_hash": "cf493deeac1ccccf29462759b791feac9fcbf3b2ffa7012a7ceb0553fe46265f"
+      }
+    ],
+    [
+      {
+        "acquisition_time": "2018-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 219922064,
+        "native_identifier": "sub-20_ses-1_P088TWH",
+        "path": "000673/sub-20/sub-20_ses-1_ecephys+image.nwb",
+        "patient": "P088TWH",
+        "release": "000673",
+        "session": "ses-1",
+        "task_groups": [
+          "trials"
+        ],
+        "trial_table_hashes": [
+          "286361ae510d8e9fe3c3c99ea7256b8b8f41112f2cd719cc9dcc52cc4731d72c"
+        ],
+        "unit_metadata_hash": "c71809f7259283240c6a17c67d499f8a1e1c924b9743574b2fb793b412ea33f9"
+      },
+      {
+        "acquisition_time": "2018-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 359988496,
+        "native_identifier": "sub-22_ses-1_P088TWH",
+        "path": "001187/sub-22/sub-22_ses-1_ecephys+image.nwb",
+        "patient": "P088TWH",
+        "release": "001187",
+        "session": "ses-1",
+        "task_groups": [
+          "LTM_trials",
+          "WM_trials"
+        ],
+        "trial_table_hashes": [
+          "b8f0554bfd96ae487790a995fcbc415b2c8bf0f35437d8d092bbbe2ea07778ce",
+          "b39b9930710c7ec845a11c7e7edbd28989f10c11e4d688ca7be588d8f47024cd"
+        ],
+        "unit_metadata_hash": "efb23505eaea7c1ec477694687695f77db63c0a4f7698ed749d25487d1775dfa"
+      }
+    ],
+    [
+      {
+        "acquisition_time": "2018-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 555029396,
+        "native_identifier": "sub-21_ses-1_P089TWH",
+        "path": "000673/sub-21/sub-21_ses-1_ecephys+image.nwb",
+        "patient": "P089TWH",
+        "release": "000673",
+        "session": "ses-1",
+        "task_groups": [
+          "trials"
+        ],
+        "trial_table_hashes": [
+          "c449d48647e6518b983d9945a4133762f57e0cb3eb271addc92751deabc8eaa3"
+        ],
+        "unit_metadata_hash": "61eaa5c18262b87f63f5b1517b9c75ad41a72ac9b45de1b0f882a27ba343ca1d"
+      },
+      {
+        "acquisition_time": "2018-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 566896889,
+        "native_identifier": "sub-23_ses-1_P089TWH",
+        "path": "001187/sub-23/sub-23_ses-1_ecephys+image.nwb",
+        "patient": "P089TWH",
+        "release": "001187",
+        "session": "ses-1",
+        "task_groups": [
+          "LTM_trials",
+          "WM_trials"
+        ],
+        "trial_table_hashes": [
+          "ecbbaa0a4211a34a5fc428d3619d497a3d443681e686f88bfa372f8d8704364b",
+          "f4b740113174b5e52c0a5ec68dcb7cf950b214476f71215a7500cc5cb68938b6"
+        ],
+        "unit_metadata_hash": "92b39ef7b76d436703acfab06b159c76216ba89ca82d132efdf6dd162a2225db"
+      }
+    ],
+    [
+      {
+        "acquisition_time": "2018-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 315553276,
+        "native_identifier": "sub-22_ses-2_P090TWH",
+        "path": "000673/sub-22/sub-22_ses-2_ecephys+image.nwb",
+        "patient": "P090TWH",
+        "release": "000673",
+        "session": "ses-2",
+        "task_groups": [
+          "trials"
+        ],
+        "trial_table_hashes": [
+          "0d60aac80ac3d46ddbb59aa2b16338e40d5f68ce57ec3a242a088155f12a9697"
+        ],
+        "unit_metadata_hash": "ddb63f489f3b98219098382ef483adb610df80718e15f4bca61038c1c50de323"
+      },
+      {
+        "acquisition_time": "2018-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 301764656,
+        "native_identifier": "sub-24_ses-2_P090TWH",
+        "path": "001187/sub-24/sub-24_ses-2_ecephys+image.nwb",
+        "patient": "P090TWH",
+        "release": "001187",
+        "session": "ses-2",
+        "task_groups": [
+          "LTM_trials",
+          "WM_trials"
+        ],
+        "trial_table_hashes": [
+          "5cf256245a81b0b4493b0a21f2b6eecfef4232d094e7fe5a71e636aa72a74c26",
+          "6f183bfe5aafe1f8fc61ac7082dabbf046be9e4e021168d72d88fb60f4667648"
+        ],
+        "unit_metadata_hash": "f80dc9bf564e5d530ea32ab3e499339040529c46498c6ca7370458254dcd7f1e"
+      }
+    ],
+    [
+      {
+        "acquisition_time": "2018-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 294837848,
+        "native_identifier": "sub-22_ses-3_P090TWH",
+        "path": "000673/sub-22/sub-22_ses-3_ecephys+image.nwb",
+        "patient": "P090TWH",
+        "release": "000673",
+        "session": "ses-3",
+        "task_groups": [
+          "trials"
+        ],
+        "trial_table_hashes": [
+          "a332e3567670d37273f19e1554ff6637973658ab39639138fffccf9dcba8c601"
+        ],
+        "unit_metadata_hash": "1250d1cfa76bddd7b323ff3871605ad931f4bb1336df55a3f2fb30e259c37bae"
+      },
+      {
+        "acquisition_time": "2018-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 267202890,
+        "native_identifier": "sub-24_ses-3_P090TWH",
+        "path": "001187/sub-24/sub-24_ses-3_ecephys+image.nwb",
+        "patient": "P090TWH",
+        "release": "001187",
+        "session": "ses-3",
+        "task_groups": [
+          "LTM_trials",
+          "WM_trials"
+        ],
+        "trial_table_hashes": [
+          "aba317d6005b6702b84039a80ea6acfb5a70c56662e5d2d1640ac18979aa7da3",
+          "9e73fabc0b537acf63b4c1bcdc3b2cfd3f031be506d67a176893e326ffea6822"
+        ],
+        "unit_metadata_hash": "35e303a62cdfdee912617caae004a0f9476e1031567805dc3a520c9fc870e3a4"
+      }
+    ],
+    [
+      {
+        "acquisition_time": "2018-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 262514453,
+        "native_identifier": "sub-24_ses-1_P093TWH",
+        "path": "000673/sub-24/sub-24_ses-1_ecephys+image.nwb",
+        "patient": "P093TWH",
+        "release": "000673",
+        "session": "ses-1",
+        "task_groups": [
+          "trials"
+        ],
+        "trial_table_hashes": [
+          "f5c67038d8cfae2690f708071eb2f37fbc7671dbd885e31c2d6a3d31bc43dc71"
+        ],
+        "unit_metadata_hash": "6697d86990363cca183e2937941ede94e2c615c2afeb5b12bb78ddf47951d7c0"
+      },
+      {
+        "acquisition_time": "2018-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 416148647,
+        "native_identifier": "sub-25_ses-1_P093TWH",
+        "path": "001187/sub-25/sub-25_ses-1_ecephys+image.nwb",
+        "patient": "P093TWH",
+        "release": "001187",
+        "session": "ses-1",
+        "task_groups": [
+          "LTM_trials",
+          "WM_trials"
+        ],
+        "trial_table_hashes": [
+          "4ad7bff397758183b65e5d221db4b5775084e0807be379c16f64d06e2bc0791f",
+          "7e35fd5fa3abba9b308b1b3fe426928adb443221ac5a800783882fdb3fddce3f"
+        ],
+        "unit_metadata_hash": "2611450c24e3963679ab6edccf347245bd10f3c36b244a2d425bc255434df8b9"
+      }
+    ],
+    [
+      {
+        "acquisition_time": "2018-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 241194650,
+        "native_identifier": "sub-25_ses-1_P096TWH",
+        "path": "000673/sub-25/sub-25_ses-1_ecephys+image.nwb",
+        "patient": "P096TWH",
+        "release": "000673",
+        "session": "ses-1",
+        "task_groups": [
+          "trials"
+        ],
+        "trial_table_hashes": [
+          "158696ea5e1e7753063291eda778aa1c10655d953fc5c92da858c846212b8c21"
+        ],
+        "unit_metadata_hash": "3b0ecd2a9ce63b7c2ae7cdec6ebb0295994c4fa6806c17cc4e8143e616036483"
+      },
+      {
+        "acquisition_time": "2018-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 279674825,
+        "native_identifier": "sub-26_ses-1_P096TWH",
+        "path": "001187/sub-26/sub-26_ses-1_ecephys+image.nwb",
+        "patient": "P096TWH",
+        "release": "001187",
+        "session": "ses-1",
+        "task_groups": [
+          "LTM_trials",
+          "WM_trials"
+        ],
+        "trial_table_hashes": [
+          "74e2c663cb6716ebdeff710685954ed8f2ad3f94a6a9ccafdea199f196df1b24",
+          "f65b22b5c3cf6528dba19eecc5f1fe4cc77ac2ed4430b3b99fdb93d99760869f"
+        ],
+        "unit_metadata_hash": "2ded1d1b2983b5f308d9f79a3a7491bdfddbca2c70b29572fabecad9c29887b5"
+      }
+    ],
+    [
+      {
+        "acquisition_time": "2018-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 419905428,
+        "native_identifier": "sub-26_ses-1_P101TWH",
+        "path": "000673/sub-26/sub-26_ses-1_ecephys+image.nwb",
+        "patient": "P101TWH",
+        "release": "000673",
+        "session": "ses-1",
+        "task_groups": [
+          "trials"
+        ],
+        "trial_table_hashes": [
+          "dff3645499ca99f34c5a7593cfa63429a96e32eb2168dfb83b43f12196f76afd"
+        ],
+        "unit_metadata_hash": "464db2254d70524bb2eb281b86a2a2cbd57f0fdf2bd20cfae7d4636e1aa8f27e"
+      },
+      {
+        "acquisition_time": "2018-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 476474746,
+        "native_identifier": "sub-27_ses-1_P101TWH",
+        "path": "001187/sub-27/sub-27_ses-1_ecephys+image.nwb",
+        "patient": "P101TWH",
+        "release": "001187",
+        "session": "ses-1",
+        "task_groups": [
+          "LTM_trials",
+          "WM_trials"
+        ],
+        "trial_table_hashes": [
+          "a3d3425eee8a2deb7f1a21e885e53c299a3a53bf33990b372858992a6dc28b6b",
+          "0f094dbab4dddbf2bb4620fc778730eb1974bd1fd4ba4682bcdcc348329ea83c"
+        ],
+        "unit_metadata_hash": "cca02be7d290663da69d27157151c479375c5761380cae56c7b9f7dbc4f8b397"
+      }
+    ],
+    [
+      {
+        "acquisition_time": "2018-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 304329197,
+        "native_identifier": "sub-26_ses-2_P101TWH",
+        "path": "000673/sub-26/sub-26_ses-2_ecephys+image.nwb",
+        "patient": "P101TWH",
+        "release": "000673",
+        "session": "ses-2",
+        "task_groups": [
+          "trials"
+        ],
+        "trial_table_hashes": [
+          "c0cd7aad8317b754728607f9d89aceacf6041e299feb312dbc0d37a5f7be6fcf"
+        ],
+        "unit_metadata_hash": "ea2c571e361983757e60409e1e5c618b16df0be60908f78082fec2aecf0f92e2"
+      },
+      {
+        "acquisition_time": "2018-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 282432835,
+        "native_identifier": "sub-27_ses-2_P101TWH",
+        "path": "001187/sub-27/sub-27_ses-2_ecephys+image.nwb",
+        "patient": "P101TWH",
+        "release": "001187",
+        "session": "ses-2",
+        "task_groups": [
+          "LTM_trials",
+          "WM_trials"
+        ],
+        "trial_table_hashes": [
+          "169e38ed59f10ff2d80e6377ed03fa5a4da5313d815152abaed4da302a5cb97d",
+          "a1687635dbf64ff5cc17ac174302dcad134bc80e6c4d637aa72adb1afa565746"
+        ],
+        "unit_metadata_hash": "3b0d0d508314deb5a63df91e871c56ceb2f0eccda4fcc642ce932585392a1313"
+      }
+    ],
+    [
+      {
+        "acquisition_time": "2018-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 336619435,
+        "native_identifier": "sub-27_ses-1_P103TWH",
+        "path": "000673/sub-27/sub-27_ses-1_ecephys+image.nwb",
+        "patient": "P103TWH",
+        "release": "000673",
+        "session": "ses-1",
+        "task_groups": [
+          "trials"
+        ],
+        "trial_table_hashes": [
+          "f83e07ba845e9ea8aedf2e512c86100c64dac8ac7f28788b763cccd8b125c30a"
+        ],
+        "unit_metadata_hash": "1a46a3495a1848177b66f3ef66aa0dd15ef4cbcc550ef227b1d4c6880e6693cc"
+      },
+      {
+        "acquisition_time": "2018-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 748678197,
+        "native_identifier": "sub-28_ses-1_P103TWH",
+        "path": "001187/sub-28/sub-28_ses-1_ecephys+image.nwb",
+        "patient": "P103TWH",
+        "release": "001187",
+        "session": "ses-1",
+        "task_groups": [
+          "LTM_trials",
+          "WM_trials"
+        ],
+        "trial_table_hashes": [
+          "baaa1da521884f2424cc760a3f3f6aa50dc26c6771b491e3c19094faae1483ef",
+          "404be782cb9a9c2f02476ab8ab6a7bb13e8f019e7a6e2ee13b6e509f833626f5"
+        ],
+        "unit_metadata_hash": "b36870afd29e0d61cd411f34633fb31b1bde40a376eb696b6f188bad21f7e047"
+      }
+    ],
+    [
+      {
+        "acquisition_time": "2018-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 350278064,
+        "native_identifier": "sub-28_ses-1_P106TWH",
+        "path": "000673/sub-28/sub-28_ses-1_ecephys+image.nwb",
+        "patient": "P106TWH",
+        "release": "000673",
+        "session": "ses-1",
+        "task_groups": [
+          "trials"
+        ],
+        "trial_table_hashes": [
+          "1479157fab4a4e6e1e6902065c7c77de72d76fb819eabba551239209fdf03ade"
+        ],
+        "unit_metadata_hash": "6d878abb5de10a53f5af2a0f593f5667afbdf0000e5442f307ca45821ee3faee"
+      },
+      {
+        "acquisition_time": "2018-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 510275147,
+        "native_identifier": "sub-29_ses-1_P106TWH",
+        "path": "001187/sub-29/sub-29_ses-1_ecephys+image.nwb",
+        "patient": "P106TWH",
+        "release": "001187",
+        "session": "ses-1",
+        "task_groups": [
+          "LTM_trials",
+          "WM_trials"
+        ],
+        "trial_table_hashes": [
+          "f42d86fef3bf1c81553628cc7da41dc64caed8255ad469ae7defeb8a29402658",
+          "885e0592201ede288deee605b9b9ce4af3e032e3716cfaac3ab91c0277b93151"
+        ],
+        "unit_metadata_hash": "a0f228bee493519e49ab7df05dfe38a49b7f6f94be4ca2c649a148985464c060"
+      }
+    ],
+    [
+      {
+        "acquisition_time": "2019-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 537327845,
+        "native_identifier": "sub-29_ses-1_P109TWH",
+        "path": "000673/sub-29/sub-29_ses-1_ecephys+image.nwb",
+        "patient": "P109TWH",
+        "release": "000673",
+        "session": "ses-1",
+        "task_groups": [
+          "trials"
+        ],
+        "trial_table_hashes": [
+          "abfbe261b298224e960f60afd3355dee6200daa8efad8b1187a6ece927c2748e"
+        ],
+        "unit_metadata_hash": "86dba1292aa6a1df712e06fa94db6c52a9c956dbcae0f99af44b9c1b79282819"
+      },
+      {
+        "acquisition_time": "2019-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 364020825,
+        "native_identifier": "sub-30_ses-1_P109TWH",
+        "path": "001187/sub-30/sub-30_ses-1_ecephys+image.nwb",
+        "patient": "P109TWH",
+        "release": "001187",
+        "session": "ses-1",
+        "task_groups": [
+          "LTM_trials",
+          "WM_trials"
+        ],
+        "trial_table_hashes": [
+          "0d9a023e629ab27351caaddbbf9ee6398bcc9c18d4a834a8d0592d350b9a2e62",
+          "dca55f348d0b3531c9d8a54031e573fac9a5dfe50511ec5c156c0d7d5abbe362"
+        ],
+        "unit_metadata_hash": "6e8a6ad395fb98cb37064cd0a11e9f012183baba21c23cb4b050b295e29ced8d"
+      }
+    ],
+    [
+      {
+        "acquisition_time": "2018-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 911657621,
+        "native_identifier": "sub-3_ses-1_P58CS",
+        "path": "000673/sub-3/sub-3_ses-1_ecephys+image.nwb",
+        "patient": "P58CS",
+        "release": "000673",
+        "session": "ses-1",
+        "task_groups": [
+          "trials"
+        ],
+        "trial_table_hashes": [
+          "a7bafb56175c86059247bf80dc46d023525cd455d393eb96eae18cb5844705a5"
+        ],
+        "unit_metadata_hash": "3964b2813d90129148e78ddcb4a0f00e4bf6aa727250f0c14d6c7c57ea8c8d2c"
+      },
+      {
+        "acquisition_time": "2018-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 355025161,
+        "native_identifier": "sub-4_ses-1_P58CS",
+        "path": "001187/sub-4/sub-4_ses-1_ecephys+image.nwb",
+        "patient": "P58CS",
+        "release": "001187",
+        "session": "ses-1",
+        "task_groups": [
+          "LTM_trials",
+          "WM_trials"
+        ],
+        "trial_table_hashes": [
+          "94ae9aa419d2446e6ae8e9f0bb5234049a6ffa6f944c0b939ff716b9d11665c1",
+          "826c2a9a8369ef50880498804da238d97474d97b245f9124b532ae56c407adfa"
+        ],
+        "unit_metadata_hash": "cacc667113fd428b384ad6d89dadf8499619ec4e3a5f213632dbbe36ea729784"
+      }
+    ],
+    [
+      {
+        "acquisition_time": "2019-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 332303479,
+        "native_identifier": "sub-30_ses-1_P110TWH",
+        "path": "000673/sub-30/sub-30_ses-1_ecephys+image.nwb",
+        "patient": "P110TWH",
+        "release": "000673",
+        "session": "ses-1",
+        "task_groups": [
+          "trials"
+        ],
+        "trial_table_hashes": [
+          "421928a308df14be6cab2e4c984059593ee84dad9ca525611dfd3c7aacb121e2"
+        ],
+        "unit_metadata_hash": "61d1012f98b2955c744df6b6527a91c72e4d5d1c5743f5749a1830745dd40336"
+      },
+      {
+        "acquisition_time": "2019-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 297172101,
+        "native_identifier": "sub-31_ses-1_P110TWH",
+        "path": "001187/sub-31/sub-31_ses-1_ecephys+image.nwb",
+        "patient": "P110TWH",
+        "release": "001187",
+        "session": "ses-1",
+        "task_groups": [
+          "LTM_trials",
+          "WM_trials"
+        ],
+        "trial_table_hashes": [
+          "2944372014a404df892d4c5ac40f289c91601ca5f98fafee39a865106e492000",
+          "edbf924c22dc9585404a5023114cb54d6eb798a7ccd2fc16b70638d289c52899"
+        ],
+        "unit_metadata_hash": "c5e5e7b1832d9799d16d00cb68a3f4b80e778b1044b5521368e5fd51732257f2"
+      }
+    ],
+    [
+      {
+        "acquisition_time": "2019-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 290251157,
+        "native_identifier": "sub-31_ses-2_P113TWH",
+        "path": "000673/sub-31/sub-31_ses-2_ecephys+image.nwb",
+        "patient": "P113TWH",
+        "release": "000673",
+        "session": "ses-2",
+        "task_groups": [
+          "trials"
+        ],
+        "trial_table_hashes": [
+          "c70d4a6079bb87e7365386633c2f65c2d6432abbad66c988e95688385b4e7f95"
+        ],
+        "unit_metadata_hash": "95112fb75321a7b6e90914eabe56377a6a31d292ab93c6a970bf8a4339f30a2f"
+      },
+      {
+        "acquisition_time": "2019-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 256295531,
+        "native_identifier": "sub-32_ses-2_P113TWH",
+        "path": "001187/sub-32/sub-32_ses-2_ecephys+image.nwb",
+        "patient": "P113TWH",
+        "release": "001187",
+        "session": "ses-2",
+        "task_groups": [
+          "LTM_trials",
+          "WM_trials"
+        ],
+        "trial_table_hashes": [
+          "2c4a599b67a15d3c21e91618a05395c8c8c77e682f49529a0a5b7c6f4ce4946e",
+          "03923bbc67584dcf5cef851a4f1f611099209528c3a687b14c4b4575a4e5ddeb"
+        ],
+        "unit_metadata_hash": "65a4ac7b096b5a43492baed905590df25772d8417df7078188d96242e56d718c"
+      }
+    ],
+    [
+      {
+        "acquisition_time": "2019-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 386135900,
+        "native_identifier": "sub-32_ses-1_P116TWH",
+        "path": "000673/sub-32/sub-32_ses-1_ecephys+image.nwb",
+        "patient": "P116TWH",
+        "release": "000673",
+        "session": "ses-1",
+        "task_groups": [
+          "trials"
+        ],
+        "trial_table_hashes": [
+          "831ddbbecfdf30b3ae8853c49c053a3debfd94221dee4f674587b4ce91b840ce"
+        ],
+        "unit_metadata_hash": "d6dd59887556f04af6e8c7be938fe9e900d67208a0efa4b73062516e1e8b6078"
+      },
+      {
+        "acquisition_time": "2019-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 361351136,
+        "native_identifier": "sub-33_ses-1_P116TWH",
+        "path": "001187/sub-33/sub-33_ses-1_ecephys+image.nwb",
+        "patient": "P116TWH",
+        "release": "001187",
+        "session": "ses-1",
+        "task_groups": [
+          "LTM_trials",
+          "WM_trials"
+        ],
+        "trial_table_hashes": [
+          "88e64af6c2c8f4989e70edaef581fb977e17250392fd17c92e5a3d617d1ff34c",
+          "b4506c357fc798db10e939bae0047cd54b529aa6df66429b4837ac1bb9fda852"
+        ],
+        "unit_metadata_hash": "393dad8088966108cb9636ad478a0d19c6a0cd96acd5e12aa2890b40bb03fb8f"
+      }
+    ],
+    [
+      {
+        "acquisition_time": "2018-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 314647556,
+        "native_identifier": "sub-34_ses-1_P1802JHU",
+        "path": "000673/sub-34/sub-34_ses-1_ecephys+image.nwb",
+        "patient": "P1802JHU",
+        "release": "000673",
+        "session": "ses-1",
+        "task_groups": [
+          "trials"
+        ],
+        "trial_table_hashes": [
+          "c516bcc6cd09fd760c23b9ae8297f594f5be4631b10f3a6b9a7a49ce5e8e4934"
+        ],
+        "unit_metadata_hash": "fa64974c09c2e93b9412c7153316b9e7d8ca7286d47e23acf5c2cff4a0d05e9d"
+      },
+      {
+        "acquisition_time": "2018-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 608922430,
+        "native_identifier": "sub-34_ses-1_P1802JHU",
+        "path": "001187/sub-34/sub-34_ses-1_ecephys+image.nwb",
+        "patient": "P1802JHU",
+        "release": "001187",
+        "session": "ses-1",
+        "task_groups": [
+          "LTM_trials",
+          "WM_trials"
+        ],
+        "trial_table_hashes": [
+          "08a785528e670d4013f6ce08a4675330947e531075a615fba95d354a01e66ca6",
+          "fbd94146def76708a7abe133e04f8c189cabd60b0214aa099ac27ba5bfb5b33e"
+        ],
+        "unit_metadata_hash": "ae193d2c8ea655f20dcd0d561465c549357bbf1f6de2483106d7d172db48f76f"
+      }
+    ],
+    [
+      {
+        "acquisition_time": "2018-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 140265600,
+        "native_identifier": "sub-35_ses-1_P1809JHU",
+        "path": "000673/sub-35/sub-35_ses-1_ecephys+image.nwb",
+        "patient": "P1809JHU",
+        "release": "000673",
+        "session": "ses-1",
+        "task_groups": [
+          "trials"
+        ],
+        "trial_table_hashes": [
+          "e83dd973595f0afec331007a5234c5dac8834969a47df0a4365941042d2f4561"
+        ],
+        "unit_metadata_hash": "535e649edebd1fe64f8431f158308f2a0a2c104232cabb9f39dc806f1d93cb20"
+      },
+      {
+        "acquisition_time": "2018-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 176675432,
+        "native_identifier": "sub-35_ses-1_P1809JHU",
+        "path": "001187/sub-35/sub-35_ses-1_ecephys+image.nwb",
+        "patient": "P1809JHU",
+        "release": "001187",
+        "session": "ses-1",
+        "task_groups": [
+          "LTM_trials",
+          "WM_trials"
+        ],
+        "trial_table_hashes": [
+          "fe5437839c9a31d4f614dcc4eeb67262610d412bff716a8c0140ef3074fdecd9",
+          "5346c69e199707980e4170ca2f1b7aab158d7bc47f2b6e71b784b514415c84ae"
+        ],
+        "unit_metadata_hash": "8be75a255ba42d5a2acce9c7da765b1b1aafa4026fef1644838899a57d744b52"
+      }
+    ],
+    [
+      {
+        "acquisition_time": "2018-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 191157433,
+        "native_identifier": "sub-36_ses-1_P1811JHU",
+        "path": "000673/sub-36/sub-36_ses-1_ecephys+image.nwb",
+        "patient": "P1811JHU",
+        "release": "000673",
+        "session": "ses-1",
+        "task_groups": [
+          "trials"
+        ],
+        "trial_table_hashes": [
+          "dd39d0a9a614dc069269002d0dbbdb2aeb4ce8efd4ec19aa3a02ad803e9441bf"
+        ],
+        "unit_metadata_hash": "5c3e69244e4dd986e73ffa15d739cbef261d578998cca5cda93113e01cfb70cd"
+      },
+      {
+        "acquisition_time": "2018-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 305628238,
+        "native_identifier": "sub-36_ses-1_P1811JHU",
+        "path": "001187/sub-36/sub-36_ses-1_ecephys+image.nwb",
+        "patient": "P1811JHU",
+        "release": "001187",
+        "session": "ses-1",
+        "task_groups": [
+          "LTM_trials",
+          "WM_trials"
+        ],
+        "trial_table_hashes": [
+          "1d95ba9f95d7df238e1b557b3092d7d2f506253aec07e414e86ed45a32fa81a0",
+          "3beed06d40596a3f6618f7f1d3a5160a4822dd38fe117f075c1e81f33e433a0b"
+        ],
+        "unit_metadata_hash": "099b48e41e2c1c4d0305c5ec5fe0f2317972d6571f7a7fa63ef9acb5bbcb5e2f"
+      }
+    ],
+    [
+      {
+        "acquisition_time": "2019-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 733139857,
+        "native_identifier": "sub-5_ses-1_P61CS",
+        "path": "000673/sub-5/sub-5_ses-1_ecephys+image.nwb",
+        "patient": "P61CS",
+        "release": "000673",
+        "session": "ses-1",
+        "task_groups": [
+          "trials"
+        ],
+        "trial_table_hashes": [
+          "b393317b0bfb4d37bdb83183ba9e77ee9a16959ceb3546d5d362a04683667770"
+        ],
+        "unit_metadata_hash": "34e7099139314b07e69172b9d601bad3adaa42d2f6b38a6194b4e304cabaf5c8"
+      },
+      {
+        "acquisition_time": "2019-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 482807142,
+        "native_identifier": "sub-5_ses-1_P61CS",
+        "path": "001187/sub-5/sub-5_ses-1_ecephys+image.nwb",
+        "patient": "P61CS",
+        "release": "001187",
+        "session": "ses-1",
+        "task_groups": [
+          "LTM_trials",
+          "WM_trials"
+        ],
+        "trial_table_hashes": [
+          "1c482254139c9f02ccdfa4b1cb824f332c0bf8f90bc569c42a566f0c3b8c94c4",
+          "843a44b3e378da7bccf7017edbd441a9e601c64610296c5e8dc55c5d344a2370"
+        ],
+        "unit_metadata_hash": "e6c24e44576f48c3f19dac64cbc6e775b3827d480d3f9dc1125c91362e1b74d0"
+      }
+    ],
+    [
+      {
+        "acquisition_time": "2019-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 509980528,
+        "native_identifier": "sub-5_ses-2_P61CS",
+        "path": "000673/sub-5/sub-5_ses-2_ecephys+image.nwb",
+        "patient": "P61CS",
+        "release": "000673",
+        "session": "ses-2",
+        "task_groups": [
+          "trials"
+        ],
+        "trial_table_hashes": [
+          "728d8989194e99c6609dddfda73916dec89cfa5810eb98032c30bd41f710ec5d"
+        ],
+        "unit_metadata_hash": "1119b6fed4fac5fe31e7ff0944ad82cab0a22b107c3c9433e787d804c3c4d436"
+      },
+      {
+        "acquisition_time": "2019-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 257869024,
+        "native_identifier": "sub-5_ses-2_P61CS",
+        "path": "001187/sub-5/sub-5_ses-2_ecephys+image.nwb",
+        "patient": "P61CS",
+        "release": "001187",
+        "session": "ses-2",
+        "task_groups": [
+          "LTM_trials",
+          "WM_trials"
+        ],
+        "trial_table_hashes": [
+          "f52a0f72bf3f94f07973fb0cba549d11f4720141b754fa3242e6c8634ea41293",
+          "f50f3b2202d3340f829ade2fbb4fc360901c71a73c9954b3731bb856df234bf6"
+        ],
+        "unit_metadata_hash": "0cc21b2d56210578eda2fa1edb85b99379f4dd5fadbe55426ab032fd68f3dda8"
+      }
+    ],
+    [
+      {
+        "acquisition_time": "2019-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 410731799,
+        "native_identifier": "sub-6_ses-1_P62CS",
+        "path": "000673/sub-6/sub-6_ses-1_ecephys+image.nwb",
+        "patient": "P62CS",
+        "release": "000673",
+        "session": "ses-1",
+        "task_groups": [
+          "trials"
+        ],
+        "trial_table_hashes": [
+          "7532a2b6a9bc2f24e541ca1ecf9bb699eab9780072db6474790520ee90b27064"
+        ],
+        "unit_metadata_hash": "0a2f69333b5e66f223a3b9d6192796326ffecd332b8a8159a15e5b98c70add5f"
+      },
+      {
+        "acquisition_time": "2019-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 685338628,
+        "native_identifier": "sub-6_ses-1_P62CS",
+        "path": "001187/sub-6/sub-6_ses-1_ecephys+image.nwb",
+        "patient": "P62CS",
+        "release": "001187",
+        "session": "ses-1",
+        "task_groups": [
+          "LTM_trials",
+          "WM_trials"
+        ],
+        "trial_table_hashes": [
+          "763cc3b0da34cb597a463cb890dc7cf69e4393de3ac62930ef1a287a4d6cd48b",
+          "c932d4be54eb0f396f51cc1be3d9185ef376d6d143ab19776e908c6e7d86d7b5"
+        ],
+        "unit_metadata_hash": "3456de2a4f8fb593a38e5284bec8b77bd9cb6c8d320b7777eb368e67265289a8"
+      }
+    ],
+    [
+      {
+        "acquisition_time": "2019-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 1231469963,
+        "native_identifier": "sub-7_ses-1_P64CS",
+        "path": "000673/sub-7/sub-7_ses-1_ecephys+image.nwb",
+        "patient": "P64CS",
+        "release": "000673",
+        "session": "ses-1",
+        "task_groups": [
+          "trials"
+        ],
+        "trial_table_hashes": [
+          "6e091cbbac5b9f7abbebfdd39b733ec448f6c3c1ec163c3bb00c72fdbd186977"
+        ],
+        "unit_metadata_hash": "e54f8d3068bae047e7a92de5ea5c0fdd5922e27d8c9e49b2516e1f6af9a2d13b"
+      },
+      {
+        "acquisition_time": "2019-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 316514249,
+        "native_identifier": "sub-7_ses-1_P64CS",
+        "path": "001187/sub-7/sub-7_ses-1_ecephys+image.nwb",
+        "patient": "P64CS",
+        "release": "001187",
+        "session": "ses-1",
+        "task_groups": [
+          "LTM_trials",
+          "WM_trials"
+        ],
+        "trial_table_hashes": [
+          "e6b3a1bd29adc9ac7c705515bedd2811e0b9fefbd5124ad0c805d794825a9f15",
+          "bf5f0a524936e9f355328ef0ca85d860a669aa8a6f82f004b0e57a2df2657cef"
+        ],
+        "unit_metadata_hash": "09116b008abf5cda3d3a61860f0c20988737c03c82c27324e015ca269914fd8b"
+      }
+    ],
+    [
+      {
+        "acquisition_time": "2020-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 475457152,
+        "native_identifier": "sub-8_ses-1_P65CS",
+        "path": "000673/sub-8/sub-8_ses-1_ecephys+image.nwb",
+        "patient": "P65CS",
+        "release": "000673",
+        "session": "ses-1",
+        "task_groups": [
+          "trials"
+        ],
+        "trial_table_hashes": [
+          "ef0782933c31deb6f745525bae13fa448eb05a8dbdd2b054a403df4491f30fd2"
+        ],
+        "unit_metadata_hash": "bfb6cc837fd2d6ec00838706092e6548c490e1b94c4dd42dbd2736bad2dd206f"
+      },
+      {
+        "acquisition_time": "2020-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 519350045,
+        "native_identifier": "sub-8_ses-1_P65CS",
+        "path": "001187/sub-8/sub-8_ses-1_ecephys+image.nwb",
+        "patient": "P65CS",
+        "release": "001187",
+        "session": "ses-1",
+        "task_groups": [
+          "LTM_trials",
+          "WM_trials"
+        ],
+        "trial_table_hashes": [
+          "f8cc0514efb53c2df589d07e22d4bf8ef48ec45ed2c522af21050490f3bb5c05",
+          "cdcda555e8e7b36d8374124522d5000936e79cd83b51894c6d2b716b5676f40e"
+        ],
+        "unit_metadata_hash": "e619274b96b9dd326fae68ca3c1d269b357b9116353e368d0905d8784814de98"
+      }
+    ],
+    [
+      {
+        "acquisition_time": "2020-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 596877902,
+        "native_identifier": "sub-9_ses-1_P67CS",
+        "path": "000673/sub-9/sub-9_ses-1_ecephys+image.nwb",
+        "patient": "P67CS",
+        "release": "000673",
+        "session": "ses-1",
+        "task_groups": [
+          "trials"
+        ],
+        "trial_table_hashes": [
+          "ab14a3793c5f02e748ee3d8f473420dbc5e31dc0e7083be92e80855021593833"
+        ],
+        "unit_metadata_hash": "4e8989bd8998b8bfbfb42862f23d2a3d9517a9360a1646881f1e8e780a88f5ef"
+      },
+      {
+        "acquisition_time": "2020-01-01T00:00:00.000000-08:00",
+        "asset_checksum_status": "pending_full_hash",
+        "asset_sha256": null,
+        "asset_size_bytes": 509077935,
+        "native_identifier": "sub-9_ses-1_P67CS",
+        "path": "001187/sub-9/sub-9_ses-1_ecephys+image.nwb",
+        "patient": "P67CS",
+        "release": "001187",
+        "session": "ses-1",
+        "task_groups": [
+          "LTM_trials",
+          "WM_trials"
+        ],
+        "trial_table_hashes": [
+          "5a29cf637781b487378a66ad67b0bb1712a3a927df12448a59372f5f48280984",
+          "2aacb593326e0968c18563ae7b65d0fa090066b88fca7e59259812b2d488735e"
+        ],
+        "unit_metadata_hash": "4c1e7437673c66a3488bfe585469255ef1545492214ab1c9a83efa43d7d4a806"
+      }
+    ]
+  ],
+  "schema_version": "1.0.0",
+  "unexpected_001187_000673_shared_patients": [],
+  "verified_001187_000673_shared_patients": [
+    "P088TWH",
+    "P089TWH",
+    "P090TWH",
+    "P093TWH",
+    "P096TWH",
+    "P101TWH",
+    "P103TWH",
+    "P106TWH",
+    "P109TWH",
+    "P110TWH",
+    "P113TWH",
+    "P116TWH",
+    "P1802JHU",
+    "P1809JHU",
+    "P1811JHU",
+    "P55CS",
+    "P58CS",
+    "P61CS",
+    "P62CS",
+    "P64CS",
+    "P65CS",
+    "P67CS",
+    "P68CS",
+    "P69CS",
+    "P70CS",
+    "P71CS",
+    "P73CS",
+    "P76CS",
+    "P77CS",
+    "P78CS",
+    "P79CS"
+  ]
+}
