@@ -58,6 +58,21 @@ comments.txt
 RESPONSE.md
 Audit A controllable code.txt
 
+# Internal project and agent documents
+.claude/
+.codex/
+.agents/
+CLAUDE.md
+AGENTS.md
+advisor*.md
+executor.md
+DATASET_ANALYSIS_MATRIX.md
+METHODS_*.md
+RESEARCH_DIRECTIONS.md
+SUPPLEMENTARY_INDEX.md
+docs/
+logs/
+
 # ── IDE ─────────────────────────────────────────────────────────────────────────
 .vscode/
 .idea/
