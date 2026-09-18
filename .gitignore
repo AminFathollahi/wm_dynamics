@@ -20,6 +20,9 @@ build/
 .eggs/
 .pytest_cache/
 .mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
 
 # ── Jupyter ─────────────────────────────────────────────────────────────────────
 .ipynb_checkpoints/
@@ -34,6 +37,8 @@ PAPER_REPORT.bbl
 PAPER_REPORT.blg
 PAPER_REPORT.log
 PAPER_REPORT.out
+PROJECT_FIELD_GUIDE.tex
+PROJECT_FIELD_GUIDE.out
 references.bib
 *.bib
 *.aux
@@ -45,6 +50,9 @@ references.bib
 # ── Outputs ─────────────────────────────────────────────────────────────────────
 figures/
 results/
+INFO_BENCHMARK.md
+INFO_BENCHMARK_SEEDS.md
+*.pid
 *.pdf
 *.png
 *.svg
@@ -58,7 +66,7 @@ comments.txt
 RESPONSE.md
 Audit A controllable code.txt
 
-# Internal project and agent documents
+# Local workspace files
 .claude/
 .codex/
 .agents/
@@ -71,6 +79,12 @@ METHODS_*.md
 RESEARCH_DIRECTIONS.md
 SUPPLEMENTARY_INDEX.md
 docs/
+!docs/
+docs/*
+!docs/info_benchmark.md
+!docs/rank_free_component_identity.md
+!docs/observability_matched_modality_method_note.md
+!docs/human_behavioral_value.md
 logs/
 
 # ── IDE ─────────────────────────────────────────────────────────────────────────
@@ -85,3 +99,30 @@ Thumbs.db
 
 # Learning folder - personal study materials
 learning/
+
+# ── Non-analysis tooling (scaffolding, not science) ────────────────────────────
+# Only analysis and visualization code is version-controlled. Manuscript
+# consolidation, one-off patches, environment checks and repo introspection are
+# scaffolding: they are ignored at creation, never committed and later removed.
+# Named individually rather than globbed, because build_/audit_ prefixes are
+# shared with genuine analysis and with the provenance layer that constitutes
+# the evidence record.
+scripts/_full_rerun.sh
+scripts/append_section11_cracks.py
+scripts/close_round_crack_register_items.py
+scripts/patch_nb08.py
+scripts/patch_nb09.py
+scripts/patch_nb09_einsum.py
+scripts/fix_lambda_ordering_underpowered_leakage.py
+tests/test_fix_lambda_ordering_underpowered_leakage.py
+scripts/freeze_legacy_state.py
+scripts/build_narrative_map.py
+scripts/build_current_claim_audit.py
+scripts/build_open_cell_closability_audit.py
+tests/test_current_claim_audit.py
+tests/test_open_cell_closability_audit.py
+scripts/build_loader_reuse_map.py
+tests/test_loader_reuse_map.py
+scripts/audit_dynamax_api.py
+scripts/verify_lfads_environment.py
+scripts/verify_contrastive_embedding_environment.py
