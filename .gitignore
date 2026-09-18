@@ -74,6 +74,10 @@ CLAUDE.md
 AGENTS.md
 advisor*.md
 executor.md
+plan.md
+prompt.md
+commands.txt
+audit/
 DATASET_ANALYSIS_MATRIX.md
 METHODS_*.md
 RESEARCH_DIRECTIONS.md
