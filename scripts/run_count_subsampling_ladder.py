@@ -3,8 +3,8 @@ orthogonality gate against total spike count an instrument property of how
 many simultaneously recorded units a preparation has, or a real difference
 between preparations?
 
-A companion census (results/dissociation_replication_and_counting_noise.json,
-block_b.count_separation_disclosure) found that the gate is non-significant
+A companion census (results/dissociation_replication_and_counting_noise.json's counting-noise census,
+stored under its block_b.count_separation_disclosure field) found that the gate is non-significant
 (passes) in two macaque preparations and significant (fails) in three others
 -- a mouse motor-cortex recording and two human single-unit recordings --
 and that this split tracks each preparation's median TOTAL spike count per
@@ -79,7 +79,7 @@ from corpus_sessions import data_root, iter_watters, watters_session_dates  # no
 from provenance import _json_safe  # noqa: E402
 from run_dissociation_cross_preparation_test import reproduction_gate  # noqa: E402
 from run_dissociation_replication_and_counting_noise import (  # noqa: E402
-    MIN_TRIALS_WITH_DEFINED_DIRECTION, _load_panichello_for_block_b, _observable_arrays,
+    MIN_TRIALS_WITH_DEFINED_DIRECTION, _load_panichello_for_counting_noise_census, _observable_arrays,
 )
 from run_rate_free_state_geometry_behavior_link import rate_free_state_deviation  # noqa: E402
 from run_state_behavior_link import _counts_from_spikes, _panichello_directory, trial_amplitude_covariates  # noqa: E402
@@ -121,7 +121,7 @@ N_PERM_NATIVE_RUNG = 10000
 
 # ---------------------------------------------------------------------------------------------------
 # The failing-corpora reference numbers this ladder's own named outcomes are compared against, quoted
-# from results/dissociation_replication_and_counting_noise.json's block_b (both the per-corpus gate
+# from results/dissociation_replication_and_counting_noise.json's counting-noise census, block_b (both the per-corpus gate
 # effect sizes and the count_separation_disclosure table), following the same convention
 # run_dissociation_cross_preparation_test.py's own MACAQUE_* constants use rather than re-reading that
 # artifact at run time.
@@ -157,19 +157,19 @@ CENSUS_MEDIAN_SPIKES_PER_UNIT_PER_TRIAL = {
     **FAILING_CORPORA_MEDIAN_SPIKES_PER_UNIT_PER_TRIAL,
 }
 
-# Delivered block_b numbers this module's reproduction check must match before any new number is read
-# (results/dissociation_replication_and_counting_noise.json, block_b.corpora).
-DELIVERED_PANICHELLO_BLOCK_B_GATE_R = 0.03772845194385749
-DELIVERED_PANICHELLO_BLOCK_B_GATE_P = 0.5888411158884111
-DELIVERED_PANICHELLO_BLOCK_B_MEDIAN_TOTAL = 1847.5
-DELIVERED_PANICHELLO_BLOCK_B_MEDIAN_PER_UNIT = 2.0
-DELIVERED_WATTERS_BLOCK_B_GATE_R = -0.001607771613414055
-DELIVERED_WATTERS_BLOCK_B_GATE_P = 0.9554044595540446
-DELIVERED_WATTERS_BLOCK_B_MEDIAN_TOTAL = 989.5
-DELIVERED_WATTERS_BLOCK_B_MEDIAN_PER_UNIT = 6.0
+# Delivered counting-noise census numbers this module's reproduction check must match before any new
+# number is read (results/dissociation_replication_and_counting_noise.json, block_b.corpora).
+DELIVERED_PANICHELLO_COUNTING_NOISE_GATE_R = 0.03772845194385749
+DELIVERED_PANICHELLO_COUNTING_NOISE_GATE_P = 0.5888411158884111
+DELIVERED_PANICHELLO_COUNTING_NOISE_MEDIAN_TOTAL = 1847.5
+DELIVERED_PANICHELLO_COUNTING_NOISE_MEDIAN_PER_UNIT = 2.0
+DELIVERED_WATTERS_COUNTING_NOISE_GATE_R = -0.001607771613414055
+DELIVERED_WATTERS_COUNTING_NOISE_GATE_P = 0.9554044595540446
+DELIVERED_WATTERS_COUNTING_NOISE_MEDIAN_TOTAL = 989.5
+DELIVERED_WATTERS_COUNTING_NOISE_MEDIAN_PER_UNIT = 6.0
 
 # ---------------------------------------------------------------------------------------------------
-# Named outcomes -- declared before any subsampled number is read. Implemented by classify_block_a_branch.
+# Named outcomes -- declared before any subsampled number is read. Implemented by classify_gate_degradation_branch.
 # ---------------------------------------------------------------------------------------------------
 BRANCH_FAILS_ONCE_CUT = "the_orthogonality_gate_fails_once_the_passing_corpora_are_cut_to_the_failing_corpora_counts"
 BRANCH_SURVIVES = "the_orthogonality_gate_survives_at_the_failing_corpora_counts"
@@ -256,7 +256,7 @@ def combine_within_load_trial_weighted(level_results: dict) -> float | None:
     return float(np.sum((n / n.sum()) * r))
 
 
-def classify_block_a_branch(rungs: list, highest_failing_target: float, failing_reference_effect_abs: float) -> dict:
+def classify_gate_degradation_branch(rungs: list, highest_failing_target: float, failing_reference_effect_abs: float) -> dict:
     """Implements DECISION_RULE_DECLARED_BEFORE_FITTING. ``rungs``: one dict per sampled rung, each with
     'target' (float), 'significant' (bool, or None if the pooled gate was not computable/underpowered by
     construction at that rung) and 'mdd' (float or None). A rung with 'significant' None is excluded from
@@ -451,7 +451,7 @@ def run_corpus_ladder(sessions: list, rung_targets: list, compute_draw_stats, n_
 def _load_panichello_sessions(root: Path) -> list:
     """Every single-item macaque lPFC session on disk with its full delay-epoch per-bin spike tensor and
     trial correctness label -- the same session set results/dissociation_replication_and_counting_noise
-    .json's own block_b gate table is built from (_load_panichello_for_block_b), extended here with
+    .json's own counting-noise census gate table is built from (_load_panichello_for_counting_noise_census), extended here with
     per-trial correctness (needed for the raw deviation-to-behaviour statistic, which that table never
     computes) and kept as a per-bin tensor rather than pre-summed (needed for the dominant-latent
     amplitude covariate, which is fit on the trial x window matrix, not the trial x unit total)."""
@@ -581,8 +581,8 @@ def _watters_draw_stats(session: dict, unit_indices, n_perm: int, seed_tag: str)
 
 
 # =======================================================================================================
-# Block B -- separate what a unit subsample changes (fewer units, hence a noisier direction estimate)
-# from confounds subsampling drags along.
+# TRIAL-COUNT AND FIRING-RATE CONFOUND CONTROLS -- separate what a unit subsample changes (fewer units,
+# hence a noisier direction estimate) from confounds subsampling drags along.
 # =======================================================================================================
 
 def _panichello_trial_subsample_stats(session: dict, n_trials_target: int, n_perm: int, seed_tag: str) -> dict | None:
@@ -717,7 +717,7 @@ def run_rate_preserving_control(sessions: list, fixed_unit_count: int, draw_stat
 # =======================================================================================================
 
 def build_recording_specification(ladder_branches: dict, census_per_unit_rates: dict) -> dict:
-    """ladder_branches: {corpus_name: branch_info_dict} (classify_block_a_branch's own return value, one
+    """ladder_branches: {corpus_name: branch_info_dict} (classify_gate_degradation_branch's own return value, one
     per corpus this leg ran a ladder on). census_per_unit_rates: {corpus_name: median spikes/unit/trial}
     for every preparation in the five-corpus census (not only the two this leg subsampled), so the floor
     -- wherever it is established -- is translated into a unit-count requirement for every preparation on
@@ -777,7 +777,7 @@ def _close(observed, expected, tol=REPRODUCTION_TOLERANCE) -> bool:
     return observed is not None and abs(observed - expected) <= tol
 
 
-def _reproduce_block_b_real_gate(activity_sessions: list, seed_prefix: str, n_perm: int = 10000) -> dict:
+def _reproduce_counting_noise_real_gate(activity_sessions: list, seed_prefix: str, n_perm: int = 10000) -> dict:
     per_session = []
     for entry in activity_sessions:
         activity = entry["activity_by_unit"]
@@ -811,29 +811,29 @@ def _reproduce_block_b_real_gate(activity_sessions: list, seed_prefix: str, n_pe
 def run_reproduction_check(root: Path, watters_sessions: list) -> dict:
     eleven_session_check = reproduction_gate(root)
 
-    panichello_block_b_sessions = _load_panichello_for_block_b(root)
-    panichello_repro = _reproduce_block_b_real_gate(
-        panichello_block_b_sessions, "dissociation_replication_and_counting_noise|panichello")
+    panichello_counting_noise_sessions = _load_panichello_for_counting_noise_census(root)
+    panichello_repro = _reproduce_counting_noise_real_gate(
+        panichello_counting_noise_sessions, "dissociation_replication_and_counting_noise|panichello")
 
     watters_activity = [{"session": s["session"], "activity_by_unit": s["counts"].sum(axis=2)} for s in watters_sessions]
-    watters_repro = _reproduce_block_b_real_gate(
+    watters_repro = _reproduce_counting_noise_real_gate(
         watters_activity, "dissociation_replication_and_counting_noise|watters")
 
     checks = {
         "eleven_session_reproduction_gate": eleven_session_check.get("status") == "reproduced_exactly",
-        "panichello_block_b_gate_r": _close(panichello_repro["real_gate_mean_value"], DELIVERED_PANICHELLO_BLOCK_B_GATE_R),
+        "panichello_block_b_gate_r": _close(panichello_repro["real_gate_mean_value"], DELIVERED_PANICHELLO_COUNTING_NOISE_GATE_R),
         "panichello_block_b_gate_p": _close(
-            panichello_repro["real_gate"].get("two_sided_p_value"), DELIVERED_PANICHELLO_BLOCK_B_GATE_P),
+            panichello_repro["real_gate"].get("two_sided_p_value"), DELIVERED_PANICHELLO_COUNTING_NOISE_GATE_P),
         "panichello_block_b_median_total": _close(
-            panichello_repro["median_total_spike_count_per_trial_across_sessions"], DELIVERED_PANICHELLO_BLOCK_B_MEDIAN_TOTAL),
+            panichello_repro["median_total_spike_count_per_trial_across_sessions"], DELIVERED_PANICHELLO_COUNTING_NOISE_MEDIAN_TOTAL),
         "panichello_block_b_median_per_unit": _close(
-            panichello_repro["median_count_per_unit_per_trial_across_sessions"], DELIVERED_PANICHELLO_BLOCK_B_MEDIAN_PER_UNIT),
-        "watters_block_b_gate_r": _close(watters_repro["real_gate_mean_value"], DELIVERED_WATTERS_BLOCK_B_GATE_R),
-        "watters_block_b_gate_p": _close(watters_repro["real_gate"].get("two_sided_p_value"), DELIVERED_WATTERS_BLOCK_B_GATE_P),
+            panichello_repro["median_count_per_unit_per_trial_across_sessions"], DELIVERED_PANICHELLO_COUNTING_NOISE_MEDIAN_PER_UNIT),
+        "watters_block_b_gate_r": _close(watters_repro["real_gate_mean_value"], DELIVERED_WATTERS_COUNTING_NOISE_GATE_R),
+        "watters_block_b_gate_p": _close(watters_repro["real_gate"].get("two_sided_p_value"), DELIVERED_WATTERS_COUNTING_NOISE_GATE_P),
         "watters_block_b_median_total": _close(
-            watters_repro["median_total_spike_count_per_trial_across_sessions"], DELIVERED_WATTERS_BLOCK_B_MEDIAN_TOTAL),
+            watters_repro["median_total_spike_count_per_trial_across_sessions"], DELIVERED_WATTERS_COUNTING_NOISE_MEDIAN_TOTAL),
         "watters_block_b_median_per_unit": _close(
-            watters_repro["median_count_per_unit_per_trial_across_sessions"], DELIVERED_WATTERS_BLOCK_B_MEDIAN_PER_UNIT),
+            watters_repro["median_count_per_unit_per_trial_across_sessions"], DELIVERED_WATTERS_COUNTING_NOISE_MEDIAN_PER_UNIT),
     }
     status = "reproduced_exactly" if all(checks.values()) else "not_reproduced"
     return {
@@ -976,7 +976,7 @@ def main() -> None:
              "n_sessions": rung["n_sessions_computed"]}
             for target, rung in ladder["by_rung"].items()
         ]
-        branch_info = classify_block_a_branch(rungs_for_branch, HIGHEST_FAILING_CORPUS_TARGET, FAILING_REFERENCE_EFFECT_ABS)
+        branch_info = classify_gate_degradation_branch(rungs_for_branch, HIGHEST_FAILING_CORPUS_TARGET, FAILING_REFERENCE_EFFECT_ABS)
         ladder["branch"] = branch_info
         ladder_branches[corpus_name] = branch_info
         output["unit_subsampling_ladder"][corpus_name] = ladder

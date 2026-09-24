@@ -53,7 +53,7 @@ for part in ("src", "scripts"):
 
 from corpus_sessions import data_root, independent_unit  # noqa: E402
 from geometry import subspace_overlap  # noqa: E402
-from provenance import _json_safe, git_commit  # noqa: E402
+from provenance import _json_safe, git_commit, restore_checkpoint  # noqa: E402
 from run_alignment_below_null_diagnostic import (  # noqa: E402
     OUTPUT_PATH as DELIVERED_DIAGNOSTIC_OUTPUT_PATH,
     REPRODUCTION_TOLERANCE, _pool_unit_scalars, _prepare_trials, _rotation,
@@ -65,7 +65,7 @@ from subspace_identity import block_folds, class_basis, regression_basis  # noqa
 
 OUTPUT_PATH = ROOT / "results" / "subspace_rotation_time_separation.json"
 CHECKPOINT_DIR = ROOT / "results" / ".checkpoints" / "run_subspace_rotation_time_separation"
-SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION = "1.1"
 VERSION = "2026-09-18"
 SEED_NAMESPACE = f"subspace_rotation_time_separation|{VERSION}"
 
@@ -112,7 +112,7 @@ def _checkpoint(key: str, identity: dict, fit):
     if path.exists():
         try:
             cached = json.loads(path.read_text())
-            record = cached.get("record")
+            record = restore_checkpoint(cached.get("record"))
             if cached.get("identity") == identity and cached.get("complete") is True and isinstance(record, dict):
                 return record
         except (OSError, UnicodeDecodeError, json.JSONDecodeError):

@@ -45,7 +45,7 @@ from a trial direction (or a subspace component of it) to the cued object's
 its held-out predictions, and the pooling and decision rules over that
 statistic.
 
-The decoder input for Block B's two components is built by fitting the cued
+The decoder input for the subspace-component test's two components is built by fitting the cued
 object's 2-dimensional regression subspace with the identical leave-one-out
 recipe cv_regression_subspace already uses (never a trial's own data in its
 own subspace), then projecting the FULL rate-free direction (not a residual)
@@ -105,7 +105,7 @@ N_FOLDS = 5
 RIDGE_ALPHA_GRID = tuple(float(v) for v in np.logspace(-2, 6, 9))
 MIN_TRAIN_TRIALS_PER_SESSION = 30   # non-swap, item count >= 2 -- enough rows for a 5-fold ridge fit
 MIN_TEST_TRIALS_PER_SESSION = 8     # held-out item-count-3 swap trials -- a session's own fraction
-MIN_POOLED_TEST_TRIALS = 200        # across every gate-cleared session, before Block A is read at all
+MIN_POOLED_TEST_TRIALS = 200        # across every gate-cleared session, before the report-following test is read at all
 ANGULAR_EQUIDISTANCE_TOLERANCE_RAD = float(np.deg2rad(15.0))
 N_SHUFFLE_DRAWS = 1000
 POWERED_NULL_MDD_CEILING = 0.05
@@ -133,7 +133,7 @@ BRANCH_TASK_GEOM_NOT_SEPARABLE = "swap_destination_bias_not_separable_from_task_
 BRANCH_TASK_GEOM_POWERED_NULL = "powered_null_no_swap_destination_bias_under_either_reference"
 BRANCH_TASK_GEOM_NOT_COVERED = "swap_destination_bias_outcome_not_covered_by_the_declared_rule"
 
-DECISION_RULE_BLOCK_A_DECLARED_BEFORE_FITTING = (
+DECISION_RULE_REPORT_FOLLOWING_DECLARED_BEFORE_FITTING = (
     "Let A be the pooled fraction (across gate-cleared sessions, one fraction per session, two-sided "
     "paired sign-flip test against the exact null 0.5) of held-out item-count-3 swap trials on which the "
     "ridge decoder's predicted angle (fit on non-swap item-count>=2 trials, from the trial's full "
@@ -163,8 +163,8 @@ DECISION_RULE_BLOCK_A_DECLARED_BEFORE_FITTING = (
     "fact."
 )
 
-DECISION_RULE_BLOCK_B_DECLARED_BEFORE_FITTING = (
-    "Runs only if Block A's branch is not the swap-trial-floor branch. Block A's primary statistic is "
+DECISION_RULE_SUBSPACE_COMPONENT_DECLARED_BEFORE_FITTING = (
+    "Runs only if the report-following test's branch is not the swap-trial-floor branch. That test's primary statistic is "
     "repeated twice more, changing only the vector the decoder reads: the component of the trial's full "
     "rate-free direction OUTSIDE the cued object's 2-dimensional regression subspace (component 2, fit by "
     "the identical leave-one-out recipe cv_regression_subspace already uses), and the component INSIDE "
@@ -209,10 +209,10 @@ def circular_abs_diff(a: np.ndarray, b: np.ndarray) -> np.ndarray:
 
 
 # ----------------------------------------------------------------------------------------------------
-# Block 0 -- the timing premise, recorded as a measurement before any decoder is fitted.
+# Timing premise -- recorded as a measurement before any decoder is fitted.
 # ----------------------------------------------------------------------------------------------------
 
-def block0_timing_premise(loaded_sessions: list[dict], behaviour) -> dict:
+def measure_pre_cue_window_timing_premise(loaded_sessions: list[dict], behaviour) -> dict:
     """Median, minimum and 5th percentile of time_cue_onset - time_delay_onset over every analysed
     trial, pooled across every loaded session, plus the loader's own count of trials it already refused
     for a too-short delay. The window overlaps cue onset on an analysed trial only if that trial's own
@@ -286,7 +286,7 @@ def _landed_identity_check(behaviour, session: dict, geometry: dict, landed_info
 
 
 # ----------------------------------------------------------------------------------------------------
-# Block B's subspace decomposition of the FULL direction (not a residual), with vectors exposed and
+# The subspace-component test's decomposition of the FULL direction (not a residual), with vectors exposed and
 # proved to agree with cv_regression_subspace's own within/outside magnitudes.
 # ----------------------------------------------------------------------------------------------------
 
@@ -514,19 +514,19 @@ def analyse_session(session: dict, behaviour, seed_prefix: str) -> dict:
 
     decode_outside = _ridge_decode(outside[train_sub], y_train, outside[test_sub], fold_seed)
     decode_inside = _ridge_decode(inside[train_sub], y_train, inside[test_sub], fold_seed)
-    block_b = {}
+    subspace_component_decodes = {}
     for name, decoded in (("outside_subspace", decode_outside), ("inside_subspace", decode_inside)):
         if decoded.get("status") != "computed":
-            block_b[name] = {"status": "not_computable"}
+            subspace_component_decodes[name] = {"status": "not_computable"}
             continue
         frac = _report_following_fraction(decoded["decoded_theta_test"], reported_theta, other_theta)
         component_bias_arr = np.full(n_test, decoded["bias_theta"])
         component_bias = _report_following_fraction(component_bias_arr, reported_theta, other_theta)
-        block_b[name] = {"fraction": frac["fraction"], "n_test_trials": frac["n_trials"],
+        subspace_component_decodes[name] = {"fraction": frac["fraction"], "n_test_trials": frac["n_trials"],
                           "alpha_selected": decoded["alpha_selected"],
                           "bias_only_control_fraction": component_bias["fraction"],
                           "bias_only_control_bias_theta": decoded["bias_theta"]}
-    row["block_b"] = block_b
+    row["block_b"] = subspace_component_decodes
     return row
 
 
@@ -579,7 +579,7 @@ def _paired_session_test_full(a: np.ndarray, b: np.ndarray, seed_tag: str) -> di
             "minimum_detectable_paired_difference_at_80pct_power": minimum_detectable_paired_difference(diffs)}
 
 
-def decide_block_a(gate_status: str, total_pooled_test_trials: int, pooled_a: dict, pooled_c: dict,
+def decide_report_following_branch(gate_status: str, total_pooled_test_trials: int, pooled_a: dict, pooled_c: dict,
                     a_values: np.ndarray, c_values: np.ndarray) -> dict:
     if gate_status != "reproduced_exactly":
         return {"branch": BRANCH_REPRODUCTION_GATE_FAILED}
@@ -657,7 +657,7 @@ def _component_ok(pooled: dict, q_reject: bool | None) -> bool:
     return pooled.get("status") == "tested" and bool(q_reject)
 
 
-def decide_block_b(pooled_outside: dict, pooled_inside: dict, outside_values: np.ndarray,
+def decide_subspace_component_branch(pooled_outside: dict, pooled_inside: dict, outside_values: np.ndarray,
                     inside_values: np.ndarray) -> dict:
     p_outside = pooled_outside.get("p_value") if pooled_outside.get("status") == "tested" else None
     p_inside = pooled_inside.get("p_value") if pooled_inside.get("status") == "tested" else None
@@ -766,15 +766,15 @@ def _primary_below_half_bias_only_control_gap_statement(pooled_a: dict, pooled_c
     )
 
 
-def _block_b_label_validity_gap_statement(pooled_a: dict) -> str:
-    """Whether Block B's component-ordering vocabulary ('carried by', 'carried inside', 'carried outside')
-    may be read as declared -- that vocabulary presupposes a primary Block A statistic significantly ABOVE
+def _subspace_component_label_validity_gap_statement(pooled_a: dict) -> str:
+    """Whether the subspace-component test's component-ordering vocabulary ('carried by', 'carried inside', 'carried outside')
+    may be read as declared -- that vocabulary presupposes a primary report-following statistic significantly ABOVE
     0.5, checked live against the pooled primary rather than assumed."""
     a_below = pooled_a.get("status") == "tested" and pooled_a.get("significant_below_half")
     if a_below:
         return (
             "This block's decision-rule vocabulary -- 'carried by', 'carried inside', 'carried outside' -- "
-            "presupposes a primary Block A statistic significantly ABOVE 0.5, i.e. that the pre-cue state "
+            "presupposes a primary report-following statistic significantly ABOVE 0.5, i.e. that the pre-cue state "
             "leans toward the item that will be reported. The delivered primary is instead significantly "
             "BELOW 0.5. With a below-0.5 primary, no component of the pre-cue state may be described as "
             "carrying reported-item identity, regardless of which component's own bias-only control fires "
@@ -782,7 +782,7 @@ def _block_b_label_validity_gap_statement(pooled_a: dict) -> str:
             "component carries reported-item identity."
         )
     return (
-        "The primary Block A statistic is not significantly below 0.5 in this run, so the label-validity "
+        "The primary report-following statistic is not significantly below 0.5 in this run, so the label-validity "
         "gap that applies to a below-0.5 primary does not apply here; the component labels in this block "
         "may be read as declared in the decision rule."
     )
@@ -851,8 +851,8 @@ def main() -> None:
             "in this module's own docstring hold: the analysed window is entirely pre-cue, and a swap "
             "trial at item count 3 leaves exactly two uncued candidates with an exact 0.5 null."
         ),
-        "decision_rule_block_a_declared_before_fitting": DECISION_RULE_BLOCK_A_DECLARED_BEFORE_FITTING,
-        "decision_rule_block_b_declared_before_fitting": DECISION_RULE_BLOCK_B_DECLARED_BEFORE_FITTING,
+        "decision_rule_block_a_declared_before_fitting": DECISION_RULE_REPORT_FOLLOWING_DECLARED_BEFORE_FITTING,
+        "decision_rule_block_b_declared_before_fitting": DECISION_RULE_SUBSPACE_COMPONENT_DECLARED_BEFORE_FITTING,
         "decision_rule_swap_destination_task_geometry_declared_before_fitting":
             DECISION_RULE_SWAP_DESTINATION_TASK_GEOMETRY_DECLARED_BEFORE_FITTING,
         "constants": {
@@ -883,11 +883,11 @@ def main() -> None:
 
     behaviour = watters_behaviour(root)
 
-    _log("computing Block 0 timing premise")
-    block0 = block0_timing_premise(loaded, behaviour)
-    output["block0_timing_premise"] = block0
+    _log("computing timing premise")
+    timing_premise = measure_pre_cue_window_timing_premise(loaded, behaviour)
+    output["block0_timing_premise"] = timing_premise
     _flush(output)
-    if block0["stop_condition_triggered"]:
+    if timing_premise["stop_condition_triggered"]:
         output["status"] = "stopped"
         output["branch"] = {"branch": BRANCH_BLOCK0_STOP}
         output["wall_clock_s"] = time.time() - t0
@@ -918,7 +918,7 @@ def main() -> None:
     for session in loaded:
         key = session["session"]
         # Cache key carries its own schema tag: analyse_session's return value grew new fields (the
-        # task-geometry control and the two Block B components' own bias-only controls), so a completed
+        # task-geometry control and the subspace-component test's two components' own bias-only controls), so a completed
         # fit recorded under the earlier "session|" key would silently omit them if reused here.
         row = _fit(f"session_with_task_geometry_and_component_bias|{key}",
                    lambda s=session: analyse_session(s, behaviour,
@@ -942,8 +942,8 @@ def main() -> None:
     pooled_a = _pool_against_half(a_values, "pre_cue_state_and_reported_item_identity|block_a|pooled_a")
     pooled_c = _pool_against_half(c_values, "pre_cue_state_and_reported_item_identity|block_a|pooled_c")
 
-    block_a_decision = decide_block_a(gate_result["status"], total_pooled_test_trials, pooled_a, pooled_c,
-                                        a_values, c_values)
+    report_following_decision = decide_report_following_branch(gate_result["status"], total_pooled_test_trials,
+                                        pooled_a, pooled_c, a_values, c_values)
 
     equidistant_rows = [r for r in computed_rows
                          if r["block_a"]["equidistance_sensitivity"].get("fraction") is not None]
@@ -997,11 +997,11 @@ def main() -> None:
         ],
         "swap_destination_task_geometry_control": swap_destination_task_geometry_control,
     }
-    output["branch_block_a"] = block_a_decision
+    output["branch_block_a"] = report_following_decision
     output["primary_below_half_bias_only_control_gap"] = _primary_below_half_bias_only_control_gap_statement(
         pooled_a, pooled_c)
 
-    if block_a_decision["branch"] == BRANCH_A_TOO_FEW:
+    if report_following_decision["branch"] == BRANCH_A_TOO_FEW:
         output["block_b"] = {"status": "not_run", "reason": BRANCH_B_NOT_RUN}
     else:
         outside_rows = [r for r in computed_rows if r["block_b"].get("outside_subspace", {}).get("fraction")
@@ -1025,11 +1025,12 @@ def main() -> None:
         paired_inside = np.array([r["block_b"]["inside_subspace"]["fraction"] for r in computed_rows
                                    if r["session"] in paired_sessions], dtype=float)
 
-        block_b_decision = decide_block_b(pooled_outside, pooled_inside, paired_outside, paired_inside)
+        subspace_component_decision = decide_subspace_component_branch(pooled_outside, pooled_inside,
+                                                                         paired_outside, paired_inside)
         subspace_identity_all_passed = bool(computed_rows) and all(
             r["block_b_subspace_decomposition_identity_check"]["passed"] for r in computed_rows)
 
-        # Each component's own bias-only control, by the identical recipe used for C in Block A -- the
+        # Each component's own bias-only control, by the identical recipe used for C in the report-following test -- the
         # decoder's own mean prediction over its training trials, applied to every held-out test trial.
         outside_bias_values = np.array(
             [r["block_b"]["outside_subspace"]["bias_only_control_fraction"] for r in outside_rows], dtype=float)
@@ -1049,7 +1050,7 @@ def main() -> None:
             "pre_cue_state_and_reported_item_identity|block_b|paired_inside_vs_its_bias")
 
         output["block_b"] = {
-            "status": "computed", "decision": block_b_decision,
+            "status": "computed", "decision": subspace_component_decision,
             "n_sessions_outside_component_computed": len(outside_rows),
             "n_sessions_inside_component_computed": len(inside_rows),
             "n_sessions_paired": len(paired_sessions),
@@ -1058,7 +1059,7 @@ def main() -> None:
             "inside_subspace_bias_only_control": pooled_inside_bias,
             "paired_test_outside_subspace_vs_its_bias_only_control": paired_outside_vs_its_bias,
             "paired_test_inside_subspace_vs_its_bias_only_control": paired_inside_vs_its_bias,
-            "label_validity_gap_statement": _block_b_label_validity_gap_statement(pooled_a),
+            "label_validity_gap_statement": _subspace_component_label_validity_gap_statement(pooled_a),
         }
 
     output["sessions"] = rows
@@ -1089,9 +1090,9 @@ def main() -> None:
     output["status"] = "complete"
     output["wall_clock_s"] = time.time() - t0
     _flush(output)
-    _log(f"branch_block_a: {block_a_decision.get('branch')} elapsed={time.time() - t0:.0f}s")
+    _log(f"branch_block_a: {report_following_decision.get('branch')} elapsed={time.time() - t0:.0f}s")
     print(json.dumps({
-        "reproduction_gate": gate_result["status"], "branch_block_a": block_a_decision.get("branch"),
+        "reproduction_gate": gate_result["status"], "branch_block_a": report_following_decision.get("branch"),
         "branch_block_b": output["block_b"].get("decision", {}).get("branch"),
         "branch_swap_destination_task_geometry_control": swap_destination_task_geometry_control.get("branch"),
         "total_pooled_test_trials": total_pooled_test_trials, "n_sessions_analysed": len(computed_rows),

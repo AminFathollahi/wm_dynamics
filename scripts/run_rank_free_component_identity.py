@@ -18,12 +18,14 @@ for part in ("src", "scripts"):
         sys.path.insert(0, path)
 
 from corpus_sessions import (  # noqa: E402
-    data_root, independent_unit, iter_dandi_000469, iter_dandi_000574, iter_dandi_001187,
+    data_root, independent_unit,
+    iter_dandi_000004, iter_dandi_000469, iter_dandi_000574, iter_dandi_001187, iter_ds005034, iter_ds006848,
     load_watters_session, watters_behaviour, watters_session_dates,
 )
+from data_integrity import missing_files  # noqa: E402
 from provenance import _json_safe, git_commit  # noqa: E402
 from run_component_identity_subspace_atlas import (  # noqa: E402
-    CANDIDATE_KEYS, CANDIDATE_SUPPORT_MATRIX, MAX_SESSIONS_ENV_VAR, _alm_session_inputs,
+    CANDIDATE_KEYS, CANDIDATE_SUPPORT_MATRIX, MAX_SESSIONS_ENV_VAR, Z_80_POWER, _alm_session_inputs,
     _human_session_covariate_inputs, _panichello_reproduction_gate, _panichello_session_inputs,
     _previous_label, _session_core,
 )
@@ -42,6 +44,10 @@ N_PERM = 1000
 N_BOOT = 2000
 MIN_INDEPENDENT_UNITS = 4
 FDR_ALPHA = 0.05
+DATASET_KEYS = (
+    "panichello_2024", "watters_2026", "inagaki_alm5", "dandi_000469", "dandi_001187",
+    "dandi_000574", "dandi_000004", "ds006848", "ds005034",
+)
 
 
 def _hash() -> str:
@@ -159,6 +165,30 @@ def _strip(record: dict) -> dict:
     return clean
 
 
+def _scalp_eeg_sessions(root: Path, corpus: str):
+    iterator = {"ds006848_human_scalp": iter_ds006848, "ds005034_human_scalp": iter_ds005034}[corpus]
+    for entry in iterator(root):
+        activity = np.asarray(entry["counts"]).sum(axis=2)
+        categorical: dict = {}
+        content = entry.get("memorandum_content")
+        if content is not None:
+            content = np.asarray(content, dtype=float)
+            categorical["memorandum_content"] = content
+            categorical["previous_trial_content"] = _previous_label(content)
+        core = _session_core(activity)
+        continuous = {} if core is None else {"gain_total_spike_count": core["spike_count"]}
+        yield f"{entry['patient']}__{entry['session']}", None, activity, categorical, continuous
+
+
+def _dandi_000004_region_sessions(root: Path, structure: str):
+    for entry in iter_dandi_000004(root):
+        if entry["structure"] != structure:
+            continue
+        translated = dict(entry, structure="pooled")
+        translated.setdefault("item_ids", entry.get("memorandum_content"))
+        yield translated
+
+
 def _standard_sessions(root: Path, corpus: str):
     if corpus == "panichello_2024_macaque_lPFC":
         for session, reason, core, categorical, continuous, counts in _panichello_session_inputs(root):
@@ -169,6 +199,16 @@ def _standard_sessions(root: Path, corpus: str):
         for session, reason, core, categorical, continuous, counts in _alm_session_inputs(root):
             activity = None if core is None or counts is None else np.asarray(counts).sum(axis=2)
             yield session, reason, activity, categorical, continuous
+        return
+    if corpus in ("ds006848_human_scalp", "ds005034_human_scalp"):
+        yield from _scalp_eeg_sessions(root, corpus)
+        return
+    if corpus in ("dandi_000004_human_hippocampus", "dandi_000004_human_amygdala"):
+        structure = corpus.rsplit("_", 1)[1]
+        iterator = lambda root: _dandi_000004_region_sessions(root, structure)  # noqa: E731
+        for session, core, categorical, continuous, counts in _human_session_covariate_inputs(root, iterator, corpus):
+            activity = None if core is None or counts is None else np.asarray(counts).sum(axis=2)
+            yield session, None if activity is not None else "session geometry unavailable", activity, categorical, continuous
         return
     iterator = {
         "dandi_000469_human": iter_dandi_000469,
@@ -264,19 +304,26 @@ def _watters_session_record(
 
 def _pool(records: list[dict], candidate: str, seed: str) -> dict:
     grouped: dict[str, list[dict]] = {}
+    not_computable_reasons: set[str] = set()
     for record in records:
         cell = record.get("candidates", {}).get(candidate, {})
         if cell.get("status") == "computed":
             grouped.setdefault(record["independent_unit"], []).append(cell)
+        elif cell.get("status") == "not_computable" and cell.get("reason"):
+            not_computable_reasons.add(cell["reason"])
     n_sessions = sum(len(cells) for cells in grouped.values())
     if len(grouped) < MIN_INDEPENDENT_UNITS:
         n_sessions_with_session_geometry = sum(1 for record in records if record.get("status") == "computed")
+        reason = (
+            next(iter(not_computable_reasons)) if len(not_computable_reasons) == 1
+            else f"fewer than {MIN_INDEPENDENT_UNITS} independent units carry a computed cell"
+        )
         return {
             "status": "not_computable",
             "n_sessions": n_sessions,
             "n_sessions_with_session_geometry": n_sessions_with_session_geometry,
             "n_independent_units": len(grouped),
-            "reason": f"fewer than {MIN_INDEPENDENT_UNITS} independent units carry a computed cell",
+            "reason": reason,
         }
     n_draws = min(len(cell["null_draws"]) for cells in grouped.values() for cell in cells)
     unit_observed = []
@@ -302,10 +349,25 @@ def _pool(records: list[dict], candidate: str, seed: str) -> dict:
         "mean_null_alignment": float(draws.mean()),
         "mean_alignment_above_null": float(effects.mean()),
         "cluster_bootstrap_interval_95pct": [float(value) for value in np.percentile(boot, [2.5, 97.5])],
+        "minimum_detectable_alignment_above_null_at_80pct_power": float(Z_80_POWER * np.std(boot, ddof=1)),
         "p_value": float((1 + np.sum(draws >= observed)) / (len(draws) + 1)),
         "n_permutations": len(draws),
         "bootstrap_seed_id": seed,
     }
+
+
+GAIN_QUANTITY_BY_CORPUS = {
+    "panichello_2024_macaque_lPFC": "spike counts summed over the delay window",
+    "watters_2026_macaque_multi_object": "spike counts summed over the delay window",
+    "inagaki_alm5_mouse_ALM": "spike counts summed over the delay window",
+    "dandi_000469_human": "spike counts summed over the delay window",
+    "dandi_001187_human": "spike counts summed over the delay window",
+    "dandi_000574_human": "spike counts summed over the delay window",
+    "dandi_000004_human_hippocampus": "spike counts summed over the delay window",
+    "dandi_000004_human_amygdala": "spike counts summed over the delay window",
+    "ds006848_human_scalp": "broadband 1-40 Hz Hilbert-envelope power summed across channels and delay-window bins",
+    "ds005034_human_scalp": "broadband 1-40 Hz Hilbert-envelope power summed across channels and delay-window bins",
+}
 
 
 def _summarize(corpus_records: dict[str, list[dict]]) -> dict:
@@ -315,6 +377,8 @@ def _summarize(corpus_records: dict[str, list[dict]]) -> dict:
         present = [name for name in CANDIDATE_KEYS if CANDIDATE_SUPPORT_MATRIX[corpus][name][0] == "present"]
         supported_cells += len(present)
         pooled = {name: _pool(records, name, f"{corpus}|{name}|bootstrap") for name in present}
+        if "gain_total_spike_count" in pooled:
+            pooled["gain_total_spike_count"]["gain_quantity"] = GAIN_QUANTITY_BY_CORPUS[corpus]
         summary[corpus] = pooled
     tested = [
         (corpus, name, cell)
@@ -421,6 +485,11 @@ def main() -> None:
         os.environ[MAX_SESSIONS_ENV_VAR] = str(args.max_sessions)
     started = time.time()
     root = data_root()
+    missing = missing_files(root, DATASET_KEYS)
+    if missing:
+        for corpus, path in missing:
+            print(f"MISSING [{corpus}] {path}", file=sys.stderr)
+        sys.exit(f"completeness gate failed: {len(missing)} required file(s) absent, no fitting attempted")
     identity = {
         "version": VERSION,
         "schema_version": SCHEMA_VERSION,
@@ -434,6 +503,8 @@ def main() -> None:
     corpora = (
         "panichello_2024_macaque_lPFC", "watters_2026_macaque_multi_object", "inagaki_alm5_mouse_ALM",
         "dandi_000469_human", "dandi_001187_human", "dandi_000574_human",
+        "dandi_000004_human_hippocampus", "dandi_000004_human_amygdala",
+        "ds006848_human_scalp", "ds005034_human_scalp",
     )
     output = {
         "schema_version": SCHEMA_VERSION,
@@ -458,6 +529,16 @@ def main() -> None:
         "identity": identity,
         "data_root": str(root),
         "reproduction_gate": _panichello_reproduction_gate(root),
+        "dandi_000004_decision_rules": {
+            "declared_before_fitting": True,
+            "resampling_and_clustering_unit": "patient (independent_unit derived from the participant id in the session key, matching every other dandi_ corpus's own convention); never the trial",
+            "region_pooling": "hippocampus and amygdala are computed and reported as two fully separate corpus entries (dandi_000004_human_hippocampus, dandi_000004_human_amygdala); never pooled with each other, and never pooled with the project's other working-memory maintenance corpora",
+            "clearing_rule": "a cell is reported as clear only if both its fdr_q_value (Benjamini-Hochberg alpha=0.05 across every computed candidate-by-corpus cell in this run) is significant and its cluster_bootstrap_interval_95pct excludes zero; the delivered 'aligned' field already requires both",
+            "minimum_detectable_difference": f"minimum_detectable_alignment_above_null_at_80pct_power = Z_80_POWER ({Z_80_POWER}, this project's fixed 80%-power z) times the standard deviation of the independent-unit cluster bootstrap draws already used for cluster_bootstrap_interval_95pct",
+            "powered_null_rule": "a non-clearing cell is called a powered null only when its minimum detectable difference sits below a reference already validated on this pipeline's own cross-fitted squared-subspace-alignment scale; no such reference exists yet for gain_total_spike_count or memorandum_content on this scale, so a non-clearing dandi_000004 cell is reported as inconclusive here, never as a powered null -- the 0.1704 spike-count-gate and 0.14 behavioural references used elsewhere in this project are Pearson-r-scale quantities from different statistics and are not valid substitutes on this alignment scale",
+            "infeasibility_is_not_a_null": True,
+            "nan_candidate_is_failure": "a candidate cell returning NaN is reported as a failure (status not_computable or error), never coerced to zero and never reported as a negative result",
+        },
         "corpora": {},
     }
     _write(args.output, output)

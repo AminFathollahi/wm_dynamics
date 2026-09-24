@@ -21,6 +21,9 @@ import zlib
 import numpy as np
 from numpy.typing import NDArray
 from typing import Callable
+from scipy.stats import norm as _norm
+
+Z_80_POWER = float(_norm.ppf(0.975) + _norm.ppf(0.80))
 
 
 def stable_seed(name: str) -> int:
@@ -748,6 +751,88 @@ def hedges_g(x: NDArray, y: NDArray) -> float:
     return float(d * j)
 
 
+def _fit_nested_lme(metric: NDArray, condition: NDArray, subject: NDArray, covariates: NDArray | None,
+                     nested_group: NDArray, n: int, n_subjects: int, _failure: Callable) -> dict:
+    """Subject random intercept plus a variance component for nested_group, nested inside subject.
+
+    Fit via MixedLM.from_formula(vc_formula={'nested_group': '0 + C(nested_group)'}, re_formula='1'),
+    which statsmodels processes per top-level group -- nested_group labels need not be globally unique,
+    only unique within one subject, exactly the classroom-nested-in-school pattern in its own docs.
+    """
+    import pandas as pd
+    from statsmodels.regression.mixed_linear_model import MixedLM
+
+    nested_group = np.asarray(nested_group)
+    if len(nested_group) != n:
+        return _failure("nested_group length does not match the outcome length")
+    n_nested = len(np.unique(nested_group))
+    if n_nested < 2:
+        return _failure("fewer than 2 nested_group groups: no nested variance component to estimate")
+    if not np.all(np.isfinite(metric)) or not np.all(np.isfinite(condition)):
+        return _failure("outcome or fixed-effect design contains non-finite values")
+
+    columns = {"metric": metric, "condition": condition, "subject": subject, "nested_group": nested_group}
+    formula = "metric ~ condition"
+    if covariates is not None:
+        C = np.atleast_2d(np.asarray(covariates, dtype=float))
+        if C.shape[0] != n:
+            C = C.T
+        if C.shape[0] != n:
+            return _failure("covariate rows do not match the outcome length")
+        scales = np.std(C, axis=0)
+        if np.any(~np.isfinite(scales)) or np.any(scales < 1e-12):
+            return _failure("covariate design contains a non-finite or zero-variance column")
+        C = (C - np.mean(C, axis=0)) / scales
+        for j in range(C.shape[1]):
+            columns[f"cov{j}"] = C[:, j]
+            formula += f" + cov{j}"
+    data = pd.DataFrame(columns)
+    vc = {"nested_group": "0 + C(nested_group)"}
+
+    fit_errors: list[str] = []
+    valid_results = []
+    for method in ("lbfgs", "powell", "bfgs", "cg"):
+        try:
+            candidate = MixedLM.from_formula(
+                formula, groups="subject", vc_formula=vc, re_formula="1", data=data,
+            ).fit(reml=True, method=method, disp=False)
+        except Exception as exc:
+            fit_errors.append(f"{method}: {exc}")
+            continue
+        coefficient_is_finite = (
+            np.isfinite(candidate.fe_params.get("condition", np.nan))
+            and np.isfinite(candidate.bse.get("condition", np.nan))
+            and np.isfinite(candidate.pvalues.get("condition", np.nan))
+        )
+        if candidate.converged and coefficient_is_finite:
+            valid_results.append(candidate)
+            break
+        fit_errors.append(
+            f"{method}: converged={candidate.converged}, "
+            f"condition_coefficient_finite={coefficient_is_finite}"
+        )
+
+    if not valid_results:
+        detail = "; ".join(fit_errors[:4])
+        return _failure(f"MixedLM did not produce an identified converged nested fit ({detail})")
+    result = valid_results[0]
+
+    beta = float(result.fe_params["condition"])
+    se = float(result.bse["condition"])
+    p_value = float(result.pvalues["condition"])
+    fixed_effects_fitted = np.asarray(result.model.exog) @ np.asarray(result.fe_params.values)
+    if np.std(fixed_effects_fitted) < 1e-12 or np.std(metric) < 1e-12:
+        r_squared = 0.0
+    else:
+        r_squared = float(np.corrcoef(fixed_effects_fitted, metric)[0, 1] ** 2)
+
+    return {
+        "beta": beta, "se": se, "p_value": p_value, "r_squared": r_squared,
+        "converged": True, "reason": None, "n": n, "n_subjects": n_subjects,
+        "n_nested_groups": n_nested,
+    }
+
+
 def linear_mixed_effects_test(
     metric: NDArray,
     condition: NDArray,
@@ -755,6 +840,7 @@ def linear_mixed_effects_test(
     n_perm: int = 5000,
     rng: np.random.Generator | None = None,
     covariates: NDArray | None = None,
+    nested_group: NDArray | None = None,
 ) -> dict:
     """Mixed-effects test for a condition effect, subject as random intercept.
 
@@ -778,6 +864,13 @@ def linear_mixed_effects_test(
     covariates : (N,) or (N, k) — optional nuisance regressors (e.g. set size,
                  response time) added as additional fixed effects alongside
                  condition, so the reported beta is adjusted for them.
+    nested_group : (N,) — optional finer grouping variable nested inside
+                 subject (e.g. a neuron id, one patient per neuron). Adds a
+                 variance component for it alongside the subject random
+                 intercept, so repeated rows sharing one nested_group value
+                 (e.g. many trials from the same neuron) are no longer
+                 scored as independent replicates. Values need not be
+                 globally unique across subjects, only unique within one.
 
     Returns
     -------
@@ -813,6 +906,9 @@ def linear_mixed_effects_test(
 
     if n_subjects < 2:
         return _failure("fewer than 2 subject groups: no random-effect structure to estimate")
+
+    if nested_group is not None:
+        return _fit_nested_lme(metric, condition, subject, covariates, nested_group, n, n_subjects, _failure)
 
     X_cols = [np.ones(n), condition]
     if covariates is not None:
@@ -1499,14 +1595,12 @@ def minimum_detectable_paired_difference(
     dict: n, sd (sample standard deviation, ddof=1), mdd, alpha, power, or a
           ``not_computable`` status if fewer than 2 values are supplied.
     """
-    from scipy.stats import norm
-
     arr = np.asarray(values, dtype=float)
     n = len(arr)
     if n < 2:
         return {"status": "not_computable", "n": n, "reason": "fewer than 2 values -- no spread to estimate"}
     sd = float(np.std(arr, ddof=1))
-    z = float(norm.ppf(1.0 - alpha / 2.0) + norm.ppf(power))
+    z = Z_80_POWER if (alpha, power) == (0.05, 0.80) else float(_norm.ppf(1.0 - alpha / 2.0) + _norm.ppf(power))
     mdd = z * sd / np.sqrt(n)
     return {"status": "computed", "n": n, "sd": sd, "alpha": alpha, "power": power, "z_factor": z, "mdd": float(mdd)}
 

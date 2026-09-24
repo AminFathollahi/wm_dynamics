@@ -78,7 +78,9 @@ from run_component_and_item_binding import (  # noqa: E402
     reproduction_gate,
 )
 from run_state_behavior_link import trial_amplitude_covariates  # noqa: E402
+from scipy.stats import norm  # noqa: E402
 from statistics import (  # noqa: E402
+    Z_80_POWER,
     fdr_bh,
     minimum_detectable_paired_difference,
     partial_correlation_permutation_test,
@@ -88,6 +90,31 @@ from statistics import (  # noqa: E402
     stable_seed,
 )
 from run_watters_state_geometry import MIN_TRIALS_FOR_BEHAVIOURAL_CORRELATION  # noqa: E402
+
+Z_95 = float(norm.ppf(0.975))
+
+
+def _real_minus_control(real: dict, bias: dict) -> dict:
+    """Real (mean_value, a within-session sign-flip-pooled r) and bias-only (r, a between-session
+    correlation) are both on the correlation scale. Interval combines the real statistic's own
+    whole-session standard error (recovered from its minimum-detectable-difference, mdd =
+    Z_80_POWER * se) with a Fisher-z delta-method standard error for the bias-only correlation."""
+    if real.get("status") != "tested" or bias.get("status") != "computed":
+        return {"status": "not_applicable"}
+    estimate = real["mean_value"] - bias["r"]
+    mdd = real.get("minimum_detectable_paired_difference_at_80pct_power") or {}
+    n_bias = bias.get("n_sessions")
+    if mdd.get("status") == "not_computable" or "mdd" not in mdd or not n_bias or n_bias < 4:
+        return {"status": "not_computable", "estimate": estimate, "real_value": real["mean_value"],
+                "control_value": bias["r"]}
+    real_se = mdd["mdd"] / Z_80_POWER
+    bias_se = float((1.0 - bias["r"] ** 2) / np.sqrt(n_bias - 3))
+    se = float(np.sqrt(real_se ** 2 + bias_se ** 2))
+    return {
+        "status": "computed", "estimate": estimate, "real_value": real["mean_value"],
+        "control_value": bias["r"], "standard_error": se,
+        "interval_95pct": [estimate - Z_95 * se, estimate + Z_95 * se],
+    }
 
 SCRIPT_STEM = Path(__file__).stem
 OUTPUT_PATH = ROOT / "results" / "swap_versus_imprecision_by_item_count.json"
@@ -306,7 +333,7 @@ def _cheap_r(outcome: np.ndarray, covariate: np.ndarray) -> float | None:
 
 
 # ============================================================================
-# Block A -- per-level pooled statistics for every outcome and observable
+# Per-level pooled statistics for every outcome and observable
 # ============================================================================
 
 def _level_mask_ok(arrays: dict, level: int) -> tuple[np.ndarray, int]:
@@ -341,7 +368,7 @@ def _collect_level_family(rows: list[dict], outcome: str, observable: str, level
     return collected
 
 
-def block_a_table(rows: list[dict]) -> dict:
+def per_level_pooled_association_table(rows: list[dict]) -> dict:
     computed_rows = [r for r in rows if r.get("status") == "computed"]
     table: dict = {}
     for outcome in ("swap_primary", "swap_strict", "imprecision"):
@@ -357,7 +384,7 @@ def block_a_table(rows: list[dict]) -> dict:
     return table
 
 
-def block_a_level_counts(rows: list[dict]) -> dict:
+def per_level_trial_and_swap_counts(rows: list[dict]) -> dict:
     """Realised trial count, session count and swap base rate per level, recomputed fresh from the
     reproduced per-session rows -- never carried from the delivered artifact."""
     computed_rows = [r for r in rows if r.get("status") == "computed"]
@@ -379,7 +406,7 @@ def block_a_level_counts(rows: list[dict]) -> dict:
     return out
 
 
-def block_a_heterogeneity(rows: list[dict]) -> dict:
+def per_level_heterogeneity_tests(rows: list[dict]) -> dict:
     """A direct paired session-level test between every pair of item-count levels reached, per outcome
     and observable, on sessions contributing a raw per-level value to both levels -- reported, never
     converted into a gradient, a trend or an ordering across item count."""
@@ -426,7 +453,7 @@ def _one_level_raw(row: dict, outcome: str, observable: str, level: int) -> floa
 
 
 # ============================================================================
-# Block B -- the direct paired test between swap and imprecision, per level,
+# The direct paired test between swap and imprecision, per level,
 # continuous and commensurability-dichotomised versions.
 # ============================================================================
 
@@ -442,7 +469,7 @@ def _dichotomize_worst(values: np.ndarray, k: int) -> np.ndarray:
     return flag
 
 
-def block_b_commensurability(rows: list[dict], rows_arrays: dict[str, dict], levels_with_swap: tuple) -> dict:
+def commensurability_dichotomised_paired_test(rows: list[dict], rows_arrays: dict[str, dict], levels_with_swap: tuple) -> dict:
     """Per level: swap-r (reused from the already-computed per_level raw family) paired against a
     freshly computed deviation-vs-dichotomised-imprecision point-biserial correlation, on the same
     sessions, same trials, same base rate."""
@@ -478,7 +505,7 @@ def block_b_commensurability(rows: list[dict], rows_arrays: dict[str, dict], lev
     return out
 
 
-def block_b_primary(rows: list[dict], levels_with_swap: tuple, outcome: str = "swap_primary") -> dict:
+def swap_vs_imprecision_paired_test(rows: list[dict], levels_with_swap: tuple, outcome: str = "swap_primary") -> dict:
     computed_rows = [r for r in rows if r.get("status") == "computed"]
     out: dict = {}
     for level in levels_with_swap:
@@ -495,10 +522,10 @@ def block_b_primary(rows: list[dict], levels_with_swap: tuple, outcome: str = "s
 
 
 # ============================================================================
-# Block C -- the single-item arm
+# The single-item arm
 # ============================================================================
 
-def block_c(rows: list[dict], load1_deviation_raw: dict, swap_within_level: dict) -> dict:
+def item_count_one_arm_comparison(rows: list[dict], load1_deviation_raw: dict, swap_within_level: dict) -> dict:
     computed_rows = [r for r in rows if r.get("status") == "computed"]
     a_vals, b_vals = [], []
     for r in computed_rows:
@@ -592,22 +619,23 @@ def bias_only_control(rows_arrays: dict[str, dict], real_table: dict, levels_wit
                     "voiding_rule": "sign and significance only; the bias-only statistic is a different "
                                     "estimator on a different scale from the real effect size and is never "
                                     "compared to it by magnitude",
+                    "real_minus_control": _real_minus_control(real, bias),
                     "branch": VOID_SESSION_OFFSET if reproduces else None,
                 }
     return cells
 
 
 # ============================================================================
-# Within-session trial-order shuffle null for Block B's primary paired test
+# Within-session trial-order shuffle null for the swap-vs-imprecision paired test
 # ============================================================================
 
-def shuffle_null_block_b(rows_arrays: dict[str, dict], level: int, real_mean_diff: float,
-                          n_draws: int = N_SHUFFLE_DRAWS) -> dict:
+def swap_vs_imprecision_shuffle_null(rows_arrays: dict[str, dict], level: int, real_mean_diff: float,
+                                      n_draws: int = N_SHUFFLE_DRAWS) -> dict:
     """>=n_draws independent within-session shuffles of each contributing session's own trial order
     (deviation permuted, swap and imprecision outcomes left at their real trial positions), both
     correlations recomputed end to end on every draw, the per-session differences pooled the same
     unweighted across-session way the real sign-flip test pools them -- an independent, non-parametric
-    check on Block B's primary paired-difference p-value at this level."""
+    check on the swap-vs-imprecision primary paired-difference p-value at this level."""
     sessions = []
     for arrays in rows_arrays.values():
         mask, n_level = _level_mask_ok(arrays, level)
@@ -647,8 +675,8 @@ def shuffle_null_block_b(rows_arrays: dict[str, dict], level: int, real_mean_dif
 # Named outcome decision
 # ============================================================================
 
-def _branch_from_flags(per_level_flags: dict, levels_with_swap: tuple, block_a: dict,
-                        block_b_primary_result: dict, heterogeneity: dict) -> str:
+def _branch_from_flags(per_level_flags: dict, levels_with_swap: tuple, per_level_table: dict,
+                        swap_vs_imprecision_paired_result: dict, heterogeneity: dict) -> str:
     """The four-way branch decision from a completed per_level_flags table -- factored out so the same
     logic runs twice: once on the raw significance flags (for the record) and once on the bias-only-
     voided flags (the one actually reported), so a caller can see exactly what the voiding changed."""
@@ -671,13 +699,13 @@ def _branch_from_flags(per_level_flags: dict, levels_with_swap: tuple, block_a: 
 
     none_significant = all(f is False for f in primary_sig_flags) if primary_sig_flags else False
     all_mdd_below = all(
-        block_b_primary_result[str(level)].get("status") == "tested"
-        and block_b_primary_result[str(level)]["minimum_detectable_paired_difference_at_80pct_power"]
+        swap_vs_imprecision_paired_result[str(level)].get("status") == "tested"
+        and swap_vs_imprecision_paired_result[str(level)]["minimum_detectable_paired_difference_at_80pct_power"]
             .get("status") == "computed"
-        and block_b_primary_result[str(level)]["minimum_detectable_paired_difference_at_80pct_power"]["mdd"]
-            < abs(block_a["swap_primary"]["deviation"][str(level)]["raw"]["mean_value"])
+        and swap_vs_imprecision_paired_result[str(level)]["minimum_detectable_paired_difference_at_80pct_power"]["mdd"]
+            < abs(per_level_table["swap_primary"]["deviation"][str(level)]["raw"]["mean_value"])
         for level in levels_with_swap
-        if block_a["swap_primary"]["deviation"][str(level)]["raw"].get("status") == "tested"
+        if per_level_table["swap_primary"]["deviation"][str(level)]["raw"].get("status") == "tested"
     ) if levels_with_swap else False
     not_established = (not holds_every_level) and (not carried_by_one_level) and none_significant and all_mdd_below
 
@@ -690,9 +718,9 @@ def _branch_from_flags(per_level_flags: dict, levels_with_swap: tuple, block_a: 
     return BRANCH_INCONCLUSIVE
 
 
-def decide_named_outcomes(block_a: dict, block_a_counts: dict, block_b_primary_result: dict,
-                           block_b_primary_bh: dict, block_b_commensurability_result: dict,
-                           block_b_commensurability_bh: dict, heterogeneity: dict,
+def decide_named_outcomes(per_level_table: dict, per_level_counts: dict, swap_vs_imprecision_paired_result: dict,
+                           swap_vs_imprecision_bh: dict, commensurability_paired_result: dict,
+                           commensurability_bh: dict, heterogeneity: dict,
                            levels_with_swap: tuple, load1_deviation_raw: dict,
                            reproduced_imprecision_combined: dict, bias_only: dict) -> dict:
     def swap_voided(level: int) -> bool:
@@ -702,16 +730,16 @@ def decide_named_outcomes(block_a: dict, block_a_counts: dict, block_b_primary_r
     def swap_predicts(level: int, voided: bool) -> bool | None:
         if voided:
             return False
-        cell = block_a["swap_primary"]["deviation"][str(level)]
+        cell = per_level_table["swap_primary"]["deviation"][str(level)]
         return _predicts({"within_item_count_level": cell})
 
     def imprecision_raw_sig(level: int) -> bool | None:
-        cell = block_a["imprecision"]["deviation"][str(level)]["raw"]
+        cell = per_level_table["imprecision"]["deviation"][str(level)]["raw"]
         return bool(cell["significant"]) if cell.get("status") == "tested" else None
 
     def imprecision_mdd_below_swap(level: int) -> bool | None:
-        imp_cell = block_a["imprecision"]["deviation"][str(level)]["raw"]
-        swap_cell = block_a["swap_primary"]["deviation"][str(level)]["raw"]
+        imp_cell = per_level_table["imprecision"]["deviation"][str(level)]["raw"]
+        swap_cell = per_level_table["swap_primary"]["deviation"][str(level)]["raw"]
         imp_mdd = imp_cell.get("minimum_detectable_paired_difference_at_80pct_power", {})
         if imp_mdd.get("status") != "computed" or swap_cell.get("status") != "tested":
             return None
@@ -720,8 +748,8 @@ def decide_named_outcomes(block_a: dict, block_a_counts: dict, block_b_primary_r
     per_level_flags_raw, per_level_flags = {}, {}
     for level in levels_with_swap:
         voided = swap_voided(level)
-        primary_bh_sig = block_b_primary_bh.get("bh_significant", {}).get(str(level))
-        commensurability_bh_sig = block_b_commensurability_bh.get("bh_significant", {}).get(str(level))
+        primary_bh_sig = swap_vs_imprecision_bh.get("bh_significant", {}).get(str(level))
+        commensurability_bh_sig = commensurability_bh.get("bh_significant", {}).get(str(level))
         raw = {
             "swap_predicts": swap_predicts(level, voided=False),
             "imprecision_raw_significant": imprecision_raw_sig(level),
@@ -733,9 +761,10 @@ def decide_named_outcomes(block_a: dict, block_a_counts: dict, block_b_primary_r
                 else bool(primary_bh_sig == commensurability_bh_sig)),
         }
         per_level_flags_raw[level] = raw
-        # A swap cell the bias-only control reproduces cannot carry a branch: neither Block A's own
-        # "predicts" verdict nor Block B's paired-test significance at that level may be read as
-        # established evidence for it, per the bias-only rule declared before this leg was fitted.
+        # A swap cell the bias-only control reproduces cannot carry a branch: neither the per-level
+        # pooled table's own "predicts" verdict nor the swap-vs-imprecision paired test's significance
+        # at that level may be read as established evidence for it, per the bias-only rule declared
+        # before this leg was fitted.
         per_level_flags[level] = {
             **raw,
             "swap_association_bias_only_void": voided,
@@ -745,9 +774,9 @@ def decide_named_outcomes(block_a: dict, block_a_counts: dict, block_b_primary_r
         }
 
     branch_before_bias_only_voiding = _branch_from_flags(
-        per_level_flags_raw, levels_with_swap, block_a, block_b_primary_result, heterogeneity)
+        per_level_flags_raw, levels_with_swap, per_level_table, swap_vs_imprecision_paired_result, heterogeneity)
     primary_branch = _branch_from_flags(
-        per_level_flags, levels_with_swap, block_a, block_b_primary_result, heterogeneity)
+        per_level_flags, levels_with_swap, per_level_table, swap_vs_imprecision_paired_result, heterogeneity)
     voided_levels = [level for level in levels_with_swap if per_level_flags[level]["swap_association_bias_only_void"]]
     bias_only_disclosure = {
         "voided_levels": voided_levels,
@@ -772,7 +801,7 @@ def decide_named_outcomes(block_a: dict, block_a_counts: dict, block_b_primary_r
 
     level_means = {}
     for level in ALL_LEVELS:
-        cell = block_a["imprecision"]["deviation"][str(level)]["raw"]
+        cell = per_level_table["imprecision"]["deviation"][str(level)]["raw"]
         if cell.get("status") == "tested":
             level_means[level] = cell["mean_value"]
     signs = {lv: (v > 0.0) for lv, v in level_means.items()}
@@ -921,89 +950,89 @@ def main() -> None:
         if arrays is not None:
             rows_arrays[session["session"]] = arrays
 
-    block_a = block_a_table(rows)
-    block_a_counts = block_a_level_counts(rows)
-    heterogeneity = block_a_heterogeneity(rows)
+    per_level_table = per_level_pooled_association_table(rows)
+    per_level_counts = per_level_trial_and_swap_counts(rows)
+    heterogeneity = per_level_heterogeneity_tests(rows)
 
-    n_trials_by_level = {lv: block_a_counts[str(lv)]["n_trials"] for lv in ALL_LEVELS}
-    n_swap_by_level = {lv: block_a_counts[str(lv)]["n_swap_trials_primary_rule"] for lv in (2, 3)}
+    n_trials_by_level = {lv: per_level_counts[str(lv)]["n_trials"] for lv in ALL_LEVELS}
+    n_swap_by_level = {lv: per_level_counts[str(lv)]["n_swap_trials_primary_rule"] for lv in (2, 3)}
     levels_with_swap = tuple(
         lv for lv in (2, 3)
-        if n_swap_by_level[lv] > 0 and block_a["swap_primary"]["deviation"][str(lv)]["raw"].get("status") == "tested"
+        if n_swap_by_level[lv] > 0 and per_level_table["swap_primary"]["deviation"][str(lv)]["raw"].get("status") == "tested"
     )
-    output["block_a_level_counts"] = block_a_counts
-    output["block_a_per_level_table"] = block_a
+    output["block_a_level_counts"] = per_level_counts
+    output["block_a_per_level_table"] = per_level_table
     output["block_a_heterogeneity"] = heterogeneity
     output["levels_with_a_defined_swap"] = list(levels_with_swap)
     _flush(output)
-    _log(f"Block A complete: levels_with_a_defined_swap={levels_with_swap}")
+    _log(f"per-level pooled statistics complete: levels_with_a_defined_swap={levels_with_swap}")
 
-    block_b_primary_result = _fit(
+    swap_vs_imprecision_paired_result = _fit(
         "block_b_primary_swap_primary",
-        lambda: block_b_primary(rows, levels_with_swap, outcome="swap_primary"))
-    block_b_primary_bh = _bh_family(block_b_primary_result)
-    block_b_strict_result = _fit(
+        lambda: swap_vs_imprecision_paired_test(rows, levels_with_swap, outcome="swap_primary"))
+    swap_vs_imprecision_bh = _bh_family(swap_vs_imprecision_paired_result)
+    swap_strict_vs_imprecision_paired_result = _fit(
         "block_b_primary_swap_strict",
-        lambda: block_b_primary(rows, levels_with_swap, outcome="swap_strict"))
-    block_b_strict_bh = _bh_family(block_b_strict_result)
-    block_b_commensurability_result = _fit(
+        lambda: swap_vs_imprecision_paired_test(rows, levels_with_swap, outcome="swap_strict"))
+    swap_strict_vs_imprecision_bh = _bh_family(swap_strict_vs_imprecision_paired_result)
+    commensurability_paired_result = _fit(
         "block_b_commensurability",
-        lambda: block_b_commensurability(rows, rows_arrays, levels_with_swap))
-    block_b_commensurability_bh = _bh_family(block_b_commensurability_result)
+        lambda: commensurability_dichotomised_paired_test(rows, rows_arrays, levels_with_swap))
+    commensurability_bh = _bh_family(commensurability_paired_result)
 
     agreement = {}
     for level in levels_with_swap:
-        p = block_b_primary_bh.get("bh_significant", {}).get(str(level))
-        c = block_b_commensurability_bh.get("bh_significant", {}).get(str(level))
+        p = swap_vs_imprecision_bh.get("bh_significant", {}).get(str(level))
+        c = commensurability_bh.get("bh_significant", {}).get(str(level))
         agreement[str(level)] = {
             "primary_bh_significant": p, "commensurability_bh_significant": c,
             "agree": None if p is None or c is None else bool(p == c),
         }
     output["block_b"] = {
-        "primary_continuous_imprecision": {"per_level": block_b_primary_result,
-                                            "benjamini_hochberg_across_levels": block_b_primary_bh},
-        "commensurability_dichotomised_imprecision": {"per_level": block_b_commensurability_result,
-                                                        "benjamini_hochberg_across_levels": block_b_commensurability_bh},
-        "strict_swap_rule_sensitivity": {"per_level": block_b_strict_result,
-                                          "benjamini_hochberg_across_levels": block_b_strict_bh},
+        "primary_continuous_imprecision": {"per_level": swap_vs_imprecision_paired_result,
+                                            "benjamini_hochberg_across_levels": swap_vs_imprecision_bh},
+        "commensurability_dichotomised_imprecision": {"per_level": commensurability_paired_result,
+                                                        "benjamini_hochberg_across_levels": commensurability_bh},
+        "strict_swap_rule_sensitivity": {"per_level": swap_strict_vs_imprecision_paired_result,
+                                          "benjamini_hochberg_across_levels": swap_strict_vs_imprecision_bh},
         "agreement_between_continuous_and_commensurability_versions": agreement,
     }
     _flush(output)
-    _log("Block B complete")
+    _log("swap-vs-imprecision paired tests complete")
 
     disclosures = build_disclosures(pooled, load1_deviation_raw, rows)
     swap_within_level_reference = pooled["swap_primary"]["deviation"]["within_item_count_level"]["raw"]
-    output["block_c"] = block_c(rows, load1_deviation_raw, swap_within_level_reference)
+    output["block_c"] = item_count_one_arm_comparison(rows, load1_deviation_raw, swap_within_level_reference)
     output["block_c"]["load1_cannot_exclude_the_swap_effect"] = disclosures["load1_cannot_exclude_the_swap_effect"]
     _flush(output)
-    _log("Block C complete")
+    _log("single-item arm comparison complete")
 
     # Checkpoint key names the between-session estimator explicitly: an earlier, superseded fit under
     # the plain "bias_only_control" key used a trial-pooled statistic not commensurable with the real,
     # session-is-the-unit-of-analysis effect size, and is left in place rather than deleted.
     bias_only = _fit("bias_only_control_between_session",
-                      lambda: bias_only_control(rows_arrays, block_a, levels_with_swap))
+                      lambda: bias_only_control(rows_arrays, per_level_table, levels_with_swap))
     output["bias_only_control"] = bias_only
     _flush(output)
     _log("bias-only control complete")
 
     shuffle_results = {}
     for level in levels_with_swap:
-        real_diff = block_b_primary_result[str(level)].get("mean_diff")
+        real_diff = swap_vs_imprecision_paired_result[str(level)].get("mean_diff")
         if real_diff is None:
             shuffle_results[str(level)] = {"status": "not_computable", "reason": "primary paired test not tested"}
             continue
         shuffle_results[str(level)] = _fit(
             f"shuffle_null|level{level}",
-            lambda lv=level, rd=real_diff: shuffle_null_block_b(rows_arrays, lv, rd, N_SHUFFLE_DRAWS))
+            lambda lv=level, rd=real_diff: swap_vs_imprecision_shuffle_null(rows_arrays, lv, rd, N_SHUFFLE_DRAWS))
     output["shuffle_null_block_b_primary"] = shuffle_results
     _flush(output)
     _log("shuffle null complete")
 
     reproduced_imprecision_combined = pooled["imprecision"]["deviation"]["within_item_count_level"]["raw"]
     named_outcomes = decide_named_outcomes(
-        block_a, block_a_counts, block_b_primary_result, block_b_primary_bh,
-        block_b_commensurability_result, block_b_commensurability_bh, heterogeneity,
+        per_level_table, per_level_counts, swap_vs_imprecision_paired_result, swap_vs_imprecision_bh,
+        commensurability_paired_result, commensurability_bh, heterogeneity,
         levels_with_swap, load1_deviation_raw, reproduced_imprecision_combined, bias_only)
     output["named_outcomes"] = named_outcomes
     output["branch"] = {"primary_branch": named_outcomes["primary_branch"],
@@ -1018,7 +1047,7 @@ def main() -> None:
             and len(loaded) == delivered["zero_drop_accounting"]["n_loaded"]
             and len(refused) == delivered["zero_drop_accounting"]["n_refused"]),
         "delivered_artifact_counts": delivered["zero_drop_accounting"],
-        "per_level_session_counts": {str(lv): block_a_counts[str(lv)]["n_sessions_reaching_the_trial_floor"]
+        "per_level_session_counts": {str(lv): per_level_counts[str(lv)]["n_sessions_reaching_the_trial_floor"]
                                       for lv in ALL_LEVELS},
     }
 

@@ -137,7 +137,10 @@ from run_swap_versus_imprecision_by_item_count import (  # noqa: E402
     _bias_only_between_session,
     _session_arrays,
 )
-from statistics import minimum_detectable_paired_difference, stable_seed  # noqa: E402
+from scipy.stats import norm  # noqa: E402
+from statistics import Z_80_POWER, minimum_detectable_paired_difference, stable_seed  # noqa: E402
+
+Z_95 = float(norm.ppf(0.975))
 
 OUTPUT_PATH = ROOT / "results" / "component_binding_bias_only_control.json"
 CHECKPOINT_DIR = ROOT / "results" / ".checkpoints" / "component_binding_bias_only_control"
@@ -382,6 +385,32 @@ def _bias_only_cell_report(bias_result: dict) -> dict:
     }
 
 
+def _real_minus_control(real: dict, bias: dict) -> dict:
+    """Real and bias-only are both correlation-scale estimates (r); their interval combines the
+    real statistic's own whole-session paired-difference standard error (recovered from its
+    already-computed minimum-detectable-difference, mdd = Z_80_POWER * se) with a Fisher-z
+    delta-method standard error for the bias-only between-session correlation -- no per-session
+    list survives into this dict's cell-report shape to bootstrap directly."""
+    real_value, control_value = real.get("mean_value"), bias.get("mean_value")
+    if (real.get("status") != "tested" or bias.get("status") != "computed"
+            or real_value is None or control_value is None):
+        return {"status": "not_applicable"}
+    estimate = real_value - control_value
+    mdd = real.get("minimum_detectable_paired_difference_at_80pct_power") or {}
+    n_bias = bias.get("n_sessions_used") or bias.get("n_sessions")
+    if "mdd" not in mdd or not n_bias or n_bias < 4:
+        return {"status": "not_computable", "estimate": estimate, "real_value": real_value,
+                "control_value": control_value}
+    real_se = mdd["mdd"] / Z_80_POWER
+    bias_se = float((1.0 - control_value ** 2) / np.sqrt(n_bias - 3))
+    se = float(np.sqrt(real_se ** 2 + bias_se ** 2))
+    return {
+        "status": "computed", "estimate": estimate, "real_value": real_value,
+        "control_value": control_value, "standard_error": se,
+        "interval_95pct": [estimate - Z_95 * se, estimate + Z_95 * se],
+    }
+
+
 def _void_verdict(real: dict, bias: dict) -> dict:
     real_sig = bool(real.get("significant")) if real.get("status") == "tested" else None
     bias_sig = bool(bias.get("significant")) if bias.get("status") == "computed" else None
@@ -394,6 +423,7 @@ def _void_verdict(real: dict, bias: dict) -> dict:
         "voiding_rule": "sign and significance only; the bias-only statistic is a different estimator on "
                         "a different scale from the real effect size and is never compared to it by "
                         "magnitude",
+        "real_minus_control": _real_minus_control(real, bias),
     }
 
 

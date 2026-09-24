@@ -63,6 +63,7 @@ from state_persistence import slope_across_sessions_test  # noqa: E402
 from statistics import (  # noqa: E402
     minimum_detectable_paired_difference, partial_correlation_permutation_test, stable_seed,
 )
+from stimulation_response_estimator import rate_free_state_deviation  # noqa: E402
 
 OUTPUT_PATH = Path(__file__).resolve().parents[1] / "results" / "rate_free_state_geometry_behavior_link.json"
 N_PERM = 10000
@@ -118,55 +119,6 @@ BEHAVIOURAL_DECISION_RULE_DECLARED_BEFORE_FITTING = (
     "implemented and tested as its own outcome, reported in the implementation report as a rule gap for "
     "the next round to close in writing rather than silently resolved here."
 )
-
-
-def rate_free_state_deviation(activity_by_unit: np.ndarray) -> np.ndarray:
-    """Per trial, deviation_i = 1 - cosine(unit_vector_i, renormalised
-    leave-one-out mean of every OTHER trial's own unit-normalised
-    direction), from a (n_trials, n_units) per-unit activity array (this
-    module uses each unit's total spike count over the whole delay epoch,
-    one scalar per unit per trial -- the population activity PATTERN for
-    that trial, before any normalisation).
-
-    Removes total activity by construction rather than by regression: each
-    trial's vector is L2-normalised to unit length before the leave-one-out
-    mean is taken, so only its DIRECTION across units enters either the
-    reference or the comparison -- two trials with the same relative
-    per-unit activity pattern but very different total spike counts get the
-    same unit vector and, if their neighbours are similar, similar
-    deviations. The leave-one-out mean excludes trial i's own unit vector
-    from the average it is compared against (the trial must not contribute
-    to its own reference) and is not conditioned on trial outcome in any
-    way -- it is the mean over every OTHER trial in the session regardless
-    of whether that trial was correct or an error.
-
-    A trial with zero total activity across all units has no defined
-    direction and gets NaN, and does not contribute to any other trial's
-    leave-one-out reference either (nansum treats it as a zero contribution
-    and it is excluded from the leave-one-out denominator)."""
-    activity = np.asarray(activity_by_unit, dtype=float)
-    n_trials = activity.shape[0]
-    norms = np.linalg.norm(activity, axis=1, keepdims=True)
-    with np.errstate(invalid="ignore", divide="ignore"):
-        unit_vectors = np.where(norms > 0, activity / np.where(norms > 0, norms, 1.0), np.nan)
-    valid = ~np.isnan(unit_vectors).any(axis=1)
-    total = np.nansum(unit_vectors, axis=0)  # per-unit sum across VALID trials only (NaN rows contribute 0)
-    n_valid = int(valid.sum())
-
-    deviation = np.full(n_trials, np.nan)
-    for i in range(n_trials):
-        if not valid[i]:
-            continue
-        n_other = n_valid - 1
-        if n_other < 1:
-            continue
-        loo_mean = (total - unit_vectors[i]) / n_other
-        loo_norm = np.linalg.norm(loo_mean)
-        if loo_norm == 0.0:
-            continue
-        cosine = float(np.dot(unit_vectors[i], loo_mean / loo_norm))
-        deviation[i] = 1.0 - cosine
-    return deviation
 
 
 def _session_arrays(path: Path) -> dict | None:

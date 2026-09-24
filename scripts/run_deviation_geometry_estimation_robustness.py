@@ -89,7 +89,7 @@ from run_dissociation_cross_preparation_test import BIN_MS, MIN_TRIALS_WITH_DEFI
 from run_state_space_estimation_robustness import (  # noqa: E402
     MAJORITY_SIGNIFICANCE_THRESHOLD, MICROSTIM_CANDIDATES, OPERATING_RANK, STATUS_VOCABULARY,
     aggregate_claim, class_mean_coordinates, decide_claim_standing, fit_representation,
-    restated_claim_cell, rung_three_sample_size,
+    interval_agreement, restated_claim_cell, rung_three_sample_size,
 )
 
 RESULTS = ROOT / "results"
@@ -294,11 +294,12 @@ def build_corpus_claims(records_by_candidate: dict[str, list[dict]]) -> dict:
     for cell_key in CLAIM_CELL_KEYS:
         estimators, verdict_keys = {}, {}
         for candidate, records in sorted(records_by_candidate.items()):
-            agg, vkey = aggregate_claim(records, cell_key)
+            agg, vkey = aggregate_claim(records, cell_key, candidate)
             agg["verdict_key"] = vkey
             estimators[candidate] = agg
             verdict_keys[candidate] = vkey
         standing = decide_claim_standing(verdict_keys)
+        standing["interval_agreement"] = interval_agreement(estimators)
         block = {"metric": CLAIM_METRIC[cell_key], "estimator_cells": estimators, "agreement": standing}
         branch = standing["branch"]
         if branch == "verdict_confirmed_across_estimators":

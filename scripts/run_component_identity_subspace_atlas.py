@@ -63,7 +63,7 @@ percentile test and p-value.
 DECISION RULE -- declared in full, before any number is computed, under decision_rule_declared_
 before_fitting in the output artifact, and never edited after seeing a result. See that string for
 the exact branches. The z multiplier this project uses for 80%-power minimum-detectable-effect
-bounds is fixed by the task at 2.8016015201700604 (Z_80_POWER below); the detection floor for the
+bounds is statistics.Z_80_POWER; the detection floor for the
 "no candidate aligned" branch is a whole-SESSION cluster bootstrap standard error (resampling
 sessions with replacement, never a trial-count formula or an intraclass-correlation design effect),
 multiplied by that same constant -- see _session_cluster_bootstrap_mdd.
@@ -116,7 +116,9 @@ from pathlib import Path
 import numpy as np
 from scipy.io import loadmat
 from scipy.signal import welch
-from scipy.stats import pearsonr, theilslopes
+from scipy.stats import norm, pearsonr, theilslopes
+
+Z_95 = float(norm.ppf(0.975))
 
 ROOT = Path(__file__).resolve().parents[1]
 for _sub in ("src", "scripts"):
@@ -132,7 +134,7 @@ from provenance import _json_safe, git_commit  # noqa: E402
 from spike_pipeline import build_psth  # noqa: E402
 from state_persistence import slope_across_sessions_test  # noqa: E402
 from statistics import (  # noqa: E402
-    fdr_bh, partial_correlation_permutation_test, pearson_permutation_test, permutation_pvalue,
+    Z_80_POWER, fdr_bh, partial_correlation_permutation_test, pearson_permutation_test, permutation_pvalue,
     stable_seed,
 )
 from preprocessing import load_boran_nwb  # noqa: E402
@@ -163,7 +165,6 @@ MAX_SESSIONS_ENV_VAR = "COMPONENT_IDENTITY_ATLAS_MAX_SESSIONS"
 N_RANDOM_SUBSPACE_DRAWS = 1000
 N_PERM = 2000
 N_BOOT_SESSION_CLUSTER = 2000
-Z_80_POWER = 2.8016015201700604  # fixed by the task; see module docstring, DECISION RULE
 FDR_ALPHA = 0.05
 
 CORPORA = (
@@ -777,6 +778,39 @@ CANDIDATE_SUPPORT_MATRIX["dandi_000574_human"] = {
     "field_potential_aperiodic_slope_ieeg": ("present", "depth macro-contact robust log-log aperiodic slope, this module's own new fit"),
     "field_potential_aperiodic_slope_eeg": ("present", "scalp montage robust log-log aperiodic slope, this module's own new fit"),
 }
+CANDIDATE_SUPPORT_MATRIX["ds006848_human_scalp"] = {
+    "memorandum_content": ("present", "the first digit of the presented 7-digit sequence, native to this corpus's trial table"),
+    "upcoming_response": ("absent", "the typed digit-by-digit response is produced only after the retention window this atlas's activity vector is built from; no population direction can encode a not-yet-produced response"),
+    "gain_total_spike_count": ("present", "summed broadband band power, not spike counts; see run_rank_free_component_identity.GAIN_QUANTITY_BY_CORPUS"),
+    "time_in_trial_within_delay": ("present", None),
+    "previous_trial_content": ("present", "positional shift of the first-digit content label"),
+    "field_potential_low_frequency_band_power_ieeg": ("absent", "no intracranial recording in this corpus"),
+    "field_potential_low_frequency_band_power_eeg": ("absent", "this corpus's own channel-power activity vector IS the field potential; no separate co-registered signal exists to test as a candidate distinct from the session's own base activity"),
+    "field_potential_aperiodic_slope_ieeg": ("absent", "no intracranial recording in this corpus"),
+    "field_potential_aperiodic_slope_eeg": ("absent", "this corpus's own channel-power activity vector IS the field potential; no separate co-registered signal exists to test as a candidate distinct from the session's own base activity"),
+}
+CANDIDATE_SUPPORT_MATRIX["ds005034_human_scalp"] = {
+    "memorandum_content": ("absent", "no per-trial item identity is recorded in this corpus's public BIDS release (config/datasets.json)"),
+    "upcoming_response": ("absent", "no per-trial response is recorded in this corpus's public BIDS release"),
+    "gain_total_spike_count": ("present", "summed broadband band power, not spike counts; see run_rank_free_component_identity.GAIN_QUANTITY_BY_CORPUS"),
+    "time_in_trial_within_delay": ("present", None),
+    "previous_trial_content": ("absent", "no item identity label exists in this corpus, so no previous-trial content label exists either"),
+    "field_potential_low_frequency_band_power_ieeg": ("absent", "no intracranial recording in this corpus"),
+    "field_potential_low_frequency_band_power_eeg": ("absent", "this corpus's own channel-power activity vector IS the field potential; no separate co-registered signal exists to test as a candidate distinct from the session's own base activity"),
+    "field_potential_aperiodic_slope_ieeg": ("absent", "no intracranial recording in this corpus"),
+    "field_potential_aperiodic_slope_eeg": ("absent", "this corpus's own channel-power activity vector IS the field potential; no separate co-registered signal exists to test as a candidate distinct from the session's own base activity"),
+}
+for _dandi_000004_key in ("dandi_000004_human_hippocampus", "dandi_000004_human_amygdala"):
+    CANDIDATE_SUPPORT_MATRIX[_dandi_000004_key] = {
+        "memorandum_content": ("present", "the trial's stimCategory code (session-local picture category, 5 categories per session), native to this corpus's trial table"),
+        "upcoming_response": ("absent", "this project's human-corpus covariate pipeline does not extract a response label for any single-unit corpus; out of scope for the candidates this run computes"),
+        "gain_total_spike_count": ("present", None), "time_in_trial_within_delay": ("present", None),
+        "previous_trial_content": ("present", "positional shift of stimCategory, over the admitted-trial sequence"),
+        "field_potential_low_frequency_band_power_ieeg": ("absent", "this corpus ships single-unit spikes only, no co-registered field potential"),
+        "field_potential_low_frequency_band_power_eeg": ("absent", "this corpus ships single-unit spikes only, no co-registered field potential"),
+        "field_potential_aperiodic_slope_ieeg": ("absent", "this corpus ships single-unit spikes only, no co-registered field potential"),
+        "field_potential_aperiodic_slope_eeg": ("absent", "this corpus ships single-unit spikes only, no co-registered field potential"),
+    }
 
 
 # ============================================================================================
@@ -1108,6 +1142,30 @@ def _bias_only_between_session_atlas(session_records: list[dict], seed_tag: str)
     return result
 
 
+def _real_minus_control(real: dict, bias_only: dict) -> dict:
+    """real.mean_value (within-session, sign-flip-pooled r) and bias_only.r (a between-session
+    correlation) are both on the correlation scale. Interval combines the real statistic's own
+    sign-flip-test confidence interval (converted to a standard error) with a Fisher-z delta-method
+    standard error for the bias-only correlation."""
+    real_value, control_value = real.get("mean_value"), bias_only.get("r")
+    if real.get("status") != "tested" or bias_only.get("status") != "computed" \
+            or real_value is None or control_value is None:
+        return {"status": "not_applicable"}
+    estimate = real_value - control_value
+    n_bias = bias_only.get("n_sessions")
+    if not n_bias or n_bias < 4:
+        return {"status": "not_computable", "estimate": estimate, "real_value": real_value,
+                "control_value": control_value}
+    real_se = (real["ci_upper"] - real["ci_lower"]) / (2.0 * Z_95)
+    bias_se = float((1.0 - control_value ** 2) / np.sqrt(n_bias - 3))
+    se = float(np.sqrt(real_se ** 2 + bias_se ** 2))
+    return {
+        "status": "computed", "estimate": estimate, "real_value": real_value,
+        "control_value": control_value, "standard_error": se,
+        "interval_95pct": [estimate - Z_95 * se, estimate + Z_95 * se],
+    }
+
+
 def _reaction_time_branch(session_records: list[dict], seed_tag: str) -> dict:
     """Real association (pooled across sessions by the paired sign-flip test on each session's own
     deterministic r) plus its bias-only between-session control -- voided only if the control is
@@ -1133,6 +1191,7 @@ def _reaction_time_branch(session_records: list[dict], seed_tag: str) -> dict:
         "real_association": real,
         "bias_only_between_session_control": bias_only,
         "voided_by_bias_only_control": voided,
+        "real_minus_control": _real_minus_control(real, bias_only),
         "voiding_rule": (
             "voids the real association only if the bias-only between-session control is ALSO "
             "significant (two-sided p<0.05) in the SAME direction; sign and significance only, "

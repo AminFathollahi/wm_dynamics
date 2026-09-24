@@ -50,6 +50,7 @@ references.bib
 # ── Outputs ─────────────────────────────────────────────────────────────────────
 figures/
 results/
+!results/implementation_report.md
 INFO_BENCHMARK.md
 INFO_BENCHMARK_SEEDS.md
 *.pid

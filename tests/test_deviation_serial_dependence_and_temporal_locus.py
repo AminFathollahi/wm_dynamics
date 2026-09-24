@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from run_deviation_serial_dependence_and_temporal_locus import (  # noqa: E402
-    _adjacency_statistic, _block_a_branch, _block_b_branch, _cosine_at_lag, _detrend,
+    _adjacency_statistic, _serial_dependence_branch, _temporal_locus_branch, _cosine_at_lag, _detrend,
     _sign_to_worse_behaviour, rate_free_state_deviation_neighbour_excluded, unit_direction_vectors,
 )
 from run_rate_free_state_geometry_behavior_link import rate_free_state_deviation  # noqa: E402
@@ -146,34 +146,34 @@ def test_sign_flip_is_a_no_op_at_multiplier_one():
 
 
 # ---------------------------------------------------------------------------------------------------
-# Block A classifier -- every named cell
+# Serial dependence test classifier -- every named cell
 # ---------------------------------------------------------------------------------------------------
 
-def test_block_a_adjacency_absent_behaviour_survives():
-    assert _block_a_branch(False, True) == "accuracy_predicting_component_is_not_interference_from_the_preceding_trial"
+def test_serial_dependence_adjacency_absent_behaviour_survives():
+    assert _serial_dependence_branch(False, True) == "accuracy_predicting_component_is_not_interference_from_the_preceding_trial"
 
 
-def test_block_a_adjacency_absent_behaviour_does_not_survive_is_a_disclosed_defect():
-    assert _block_a_branch(False, False) == "partial_control_removes_variance_the_adjacency_statistic_does_not_explain"
+def test_serial_dependence_adjacency_absent_behaviour_does_not_survive_is_a_disclosed_defect():
+    assert _serial_dependence_branch(False, False) == "partial_control_removes_variance_the_adjacency_statistic_does_not_explain"
 
 
-def test_block_a_adjacency_present_behaviour_does_not_survive():
-    assert _block_a_branch(True, False) == "accuracy_predicting_component_is_interference_from_the_preceding_trial"
+def test_serial_dependence_adjacency_present_behaviour_does_not_survive():
+    assert _serial_dependence_branch(True, False) == "accuracy_predicting_component_is_interference_from_the_preceding_trial"
 
 
-def test_block_a_adjacency_present_behaviour_survives():
-    assert _block_a_branch(True, True) == (
+def test_serial_dependence_adjacency_present_behaviour_survives():
+    assert _serial_dependence_branch(True, True) == (
         "interference_from_the_preceding_trial_is_present_and_separable_from_the_accuracy_predicting_component"
     )
 
 
-def test_block_a_not_computable_on_missing_inputs():
-    assert _block_a_branch(None, True) == "not_computable"
-    assert _block_a_branch(True, None) == "not_computable"
+def test_serial_dependence_not_computable_on_missing_inputs():
+    assert _serial_dependence_branch(None, True) == "not_computable"
+    assert _serial_dependence_branch(True, None) == "not_computable"
 
 
 # ---------------------------------------------------------------------------------------------------
-# Block B classifier
+# Temporal locus test classifier
 # ---------------------------------------------------------------------------------------------------
 
 def _window(void: bool, significant: bool | None) -> dict:
@@ -181,48 +181,48 @@ def _window(void: bool, significant: bool | None) -> dict:
     return {"void": void, "raw_vs_behaviour_pooled": pooled}
 
 
-def test_block_b_all_void_is_unreachable():
+def test_temporal_locus_all_void_is_unreachable():
     split = {"windows": [_window(True, None), _window(True, None)],
              "ordering_test_latest_minus_earliest_surviving": None}
-    assert _block_b_branch(split, True)["branch"] == "temporal_locus_unreachable_at_this_count_per_window"
+    assert _temporal_locus_branch(split, True)["branch"] == "temporal_locus_unreachable_at_this_count_per_window"
 
 
-def test_block_b_present_throughout_when_ordering_not_significant():
+def test_temporal_locus_present_throughout_when_ordering_not_significant():
     split = {"windows": [_window(False, True), _window(False, True)],
              "ordering_test_latest_minus_earliest_surviving": {"status": "tested", "significant": False, "mean_value": 0.01}}
-    assert _block_b_branch(split, True)["branch"] == "accuracy_predicting_component_is_present_throughout_the_delay"
+    assert _temporal_locus_branch(split, True)["branch"] == "accuracy_predicting_component_is_present_throughout_the_delay"
 
 
-def test_block_b_grows_across_the_delay_when_ordering_significant_and_positive():
+def test_temporal_locus_grows_across_the_delay_when_ordering_significant_and_positive():
     split = {"windows": [_window(False, True), _window(False, True)],
              "ordering_test_latest_minus_earliest_surviving": {"status": "tested", "significant": True, "mean_value": 0.05}}
-    assert _block_b_branch(split, True)["branch"] == "accuracy_predicting_component_grows_across_the_delay"
+    assert _temporal_locus_branch(split, True)["branch"] == "accuracy_predicting_component_grows_across_the_delay"
 
 
-def test_block_b_strongest_at_onset_when_ordering_significant_and_negative():
+def test_temporal_locus_strongest_at_onset_when_ordering_significant_and_negative():
     split = {"windows": [_window(False, True), _window(False, True)],
              "ordering_test_latest_minus_earliest_surviving": {"status": "tested", "significant": True, "mean_value": -0.05}}
-    assert _block_b_branch(split, True)["branch"] == "accuracy_predicting_component_is_strongest_at_delay_onset"
+    assert _temporal_locus_branch(split, True)["branch"] == "accuracy_predicting_component_is_strongest_at_delay_onset"
 
 
-def test_block_b_absent_everywhere_but_present_over_full_epoch():
+def test_temporal_locus_absent_everywhere_but_present_over_full_epoch():
     split = {"windows": [_window(False, False), _window(False, False)],
              "ordering_test_latest_minus_earliest_surviving": {"status": "tested", "significant": False, "mean_value": 0.0}}
-    assert _block_b_branch(split, True)["branch"] == "accuracy_predicting_component_requires_the_full_epoch_to_be_detected"
+    assert _temporal_locus_branch(split, True)["branch"] == "accuracy_predicting_component_requires_the_full_epoch_to_be_detected"
 
 
-def test_block_b_mixed_presence_is_the_disclosed_rule_gap_not_a_forced_label():
+def test_temporal_locus_mixed_presence_is_the_disclosed_rule_gap_not_a_forced_label():
     # One surviving window present, the other absent -- a reachable outcome the pre-declared rule does
     # not name (it only names "every surviving window" agreeing one way or the other).
     split = {"windows": [_window(False, True), _window(False, False)],
              "ordering_test_latest_minus_earliest_surviving": {"status": "tested", "significant": False, "mean_value": 0.0}}
-    result = _block_b_branch(split, True)
+    result = _temporal_locus_branch(split, True)
     assert result["branch"] == "block_b_outcome_not_covered_by_the_pre_declared_rule"
     assert result["sub_label"] == "behaviour_link_present_in_some_but_not_all_surviving_sub_windows"
 
 
-def test_block_b_single_surviving_window_no_ordering_possible():
+def test_temporal_locus_single_surviving_window_no_ordering_possible():
     split = {"windows": [_window(False, True), _window(True, None)],
              "ordering_test_latest_minus_earliest_surviving": None}
     # Only one window survives -> vacuously "present in every surviving window", no ordering test exists.
-    assert _block_b_branch(split, True)["branch"] == "accuracy_predicting_component_is_present_throughout_the_delay"
+    assert _temporal_locus_branch(split, True)["branch"] == "accuracy_predicting_component_is_present_throughout_the_delay"

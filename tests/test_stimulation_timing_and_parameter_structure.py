@@ -18,8 +18,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 
 from run_stimulation_timing_and_parameter_structure import (  # noqa: E402
     MIN_TRIALS_PER_ARM_PER_SUBJECT,
-    block_a_neighbor_coverage,
-    block_a_session,
+    _item_attributability_neighbor_coverage,
+    _item_attributability_session,
     build_trains_closedloop,
     build_trains_openloop,
     fit_subject_interaction,
@@ -66,8 +66,8 @@ class TestOverlapGeometry:
 
 
 class TestTrainToItemOverlap:
-    """block_a_session's items_per_train count -- the statistic Block A's
-    attributability branch is decided from."""
+    """_item_attributability_session's items_per_train count -- the statistic the item-attributability
+    branch is decided from."""
 
     def _words(self):
         # Four items, 2.5 s apart, each on screen for 1.6 s (matches the
@@ -80,20 +80,20 @@ class TestTrainToItemOverlap:
         # both item 1 [0, 1.6] is too early -- start it so it truly spans two.
         words = self._words()
         trains = [{"start": 2.4, "end": 2.4 + 4.6}]  # overlaps item[1] and item[2]
-        result = block_a_session(words, trains)
+        result = _item_attributability_session(words, trains)
         assert result["items_per_train"] == [2]
 
     def test_short_train_confined_to_one_item(self):
         words = self._words()
         trains = [{"start": 2.9, "end": 3.3}]  # inside item[1]'s [2.5, 4.1] window
-        result = block_a_session(words, trains)
+        result = _item_attributability_session(words, trains)
         assert result["items_per_train"] == [1]
 
     def test_train_landing_in_the_gap_overlaps_nothing(self):
         words = self._words()
         trains = [{"start": 9.4, "end": 9.7}]  # after item[3]'s [7.5, 9.1] window,
                                                 # before the (nonexistent) next item
-        result = block_a_session(words, trains)
+        result = _item_attributability_session(words, trains)
         assert result["items_per_train"] == [0]
 
 
@@ -110,7 +110,7 @@ class TestNeighborCoverage:
         ]
         by_list = group_words_by_list(words)
         trains = [{"start": 2.3, "end": 2.3 + 4.6}]  # overlaps items 2 and 3 only
-        cov = block_a_neighbor_coverage(by_list, trains, lambda w: w["stimulation"] == "1")
+        cov = _item_attributability_neighbor_coverage(by_list, trains, lambda w: w["stimulation"] == "1")
         assert cov["n_stim_items"] == 2
         assert cov["n_next_covered"] == 1  # the first stim item (serialpos 2)
         assert cov["n_prev_covered"] == 1  # the second stim item (serialpos 3)
@@ -120,7 +120,7 @@ class TestNeighborCoverage:
     def test_unmatched_stim_item_is_counted_not_silently_dropped(self):
         words = [make_row("WORD", onset=0.0, duration=1.6, list="1", serialpos="1", stimulation="1")]
         by_list = group_words_by_list(words)
-        cov = block_a_neighbor_coverage(by_list, trains=[], is_stim_flag=lambda w: w["stimulation"] == "1")
+        cov = _item_attributability_neighbor_coverage(by_list, trains=[], is_stim_flag=lambda w: w["stimulation"] == "1")
         assert cov["n_stim_items"] == 1
         assert cov["n_train_unmatched_to_owning_item"] == 1
         assert cov["n_any_covered"] == 0

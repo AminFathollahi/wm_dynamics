@@ -105,7 +105,7 @@ for _sub in ("src", "scripts"):
 from provenance import _json_safe, checkpoint_safe, git_commit, restore_checkpoint  # noqa: E402
 from spike_pipeline import normalize_region_label  # noqa: E402
 from run_human_stimulation_component_response import (  # noqa: E402
-    CLOSEDLOOP_DATA, OPENLOOP_DATA, _bin_averaged, channel_condition_masks, compute_block_b_displacement,
+    CLOSEDLOOP_DATA, OPENLOOP_DATA, _bin_averaged, channel_condition_masks, compute_stimulation_displacement,
     load_corpus,
 )
 from run_stimulation_site_targeting_map import load_electrode_table  # noqa: E402
@@ -301,10 +301,11 @@ def _fit_session(rec: dict) -> dict:
     ]
 
     # Reproduction-gate probe: the SAME artifact-cleaned, untiered channel set and the SAME displacement
-    # primitive the delivered response module's own Block B uses, so this module's own channel masking and
-    # control/stimulated split can be checked exactly against that already-delivered artifact.
+    # primitive the delivered response module's own stimulation-displacement computation uses, so this
+    # module's own channel masking and control/stimulated split can be checked exactly against that
+    # already-delivered artifact.
     full_activity = _bin_averaged(arrays, trusted_mask)
-    repro = compute_block_b_displacement(full_activity, arrays["stim_flag"])
+    repro = compute_stimulation_displacement(full_activity, arrays["stim_flag"])
     reproduction_probe = {
         "n_control_trials_finite": int(np.isfinite(repro["control_deviation"]).sum()),
         "n_stim_trials_finite": int(np.isfinite(repro["stim_deviation"]).sum()),
@@ -352,13 +353,13 @@ def _reproduce_zero_drop(openloop: dict, closedloop: dict) -> dict:
     }
 
 
-def _reproduce_block_b_trial_counts(per_session: dict) -> dict:
-    delivered_block_b = json.loads(COMPONENT_RESPONSE_PATH.read_text())["block_b"]["per_session"]
+def _reproduce_stimulation_displacement_trial_counts(per_session: dict) -> dict:
+    delivered_stimulation_displacement = json.loads(COMPONENT_RESPONSE_PATH.read_text())["block_b"]["per_session"]
     checks = {}
     for session_key, rec in per_session.items():
         if rec.get("status") != "computed":
             continue
-        delivered_cond = delivered_block_b.get(session_key, {}).get("conditions", {}).get(
+        delivered_cond = delivered_stimulation_displacement.get(session_key, {}).get("conditions", {}).get(
             "excluding_stimulated_shank", {})
         if delivered_cond.get("status") != "computed":
             continue
@@ -377,7 +378,7 @@ def _reproduce_block_b_trial_counts(per_session: dict) -> dict:
                    else "not_reproduced"),
         "rule": "every session's finite control- and stimulated-trial counts under the "
                 "excluding_stimulated_shank channel condition, recomputed here with the identical "
-                "displacement primitive (compute_block_b_displacement) the delivered artifact's own "
+                "displacement primitive (compute_stimulation_displacement) the delivered artifact's own "
                 "producer script uses on the identical channel set, must exactly match that delivered "
                 "artifact's per-session values for the same condition",
         "n_sessions_checked": len(checks), "checks": checks,
@@ -417,11 +418,11 @@ def main() -> None:
                                     if per_session[k].get("status") == "computed"}),
     }
 
-    block_b_reproduction = _reproduce_block_b_trial_counts(per_session)
-    if block_b_reproduction["status"] != "reproduced_exactly":
+    stimulation_displacement_reproduction = _reproduce_stimulation_displacement_trial_counts(per_session)
+    if stimulation_displacement_reproduction["status"] != "reproduced_exactly":
         raise AssertionError("freshly computed control/stimulated trial counts do not reproduce "
-                              "results/human_stimulation_component_response.json's block_b per-session "
-                              "values -- refusing to report")
+                              "results/human_stimulation_component_response.json's stored block_b "
+                              "(stimulation-displacement) per-session values -- refusing to report")
 
     computed_sessions = sorted(s for s, r in per_session.items() if r.get("status") == "computed")
     corpus_of = {s: per_session[s]["corpus"] for s in computed_sessions}
@@ -624,7 +625,7 @@ def main() -> None:
         "per_session": per_session_output,
         "reproduction_gate": {
             "zero_drop_against_component_response_artifact": zero_drop_reproduction,
-            "control_and_stimulated_trial_counts_against_component_response_block_b": block_b_reproduction,
+            "control_and_stimulated_trial_counts_against_component_response_block_b": stimulation_displacement_reproduction,
         },
         "zero_drop_accounting": zero_drop_accounting,
         "non_human_comparison": non_human_comparison,

@@ -19,7 +19,7 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from run_state_space_estimation_robustness import (  # noqa: E402
-    RUNG_THREE_MAX_SESSIONS, control_cell_verdict_key, decide_claim_standing,
+    RUNG_THREE_MAX_SESSIONS, RUNG_THREE_Z_FACTOR, control_cell_verdict_key, decide_claim_standing,
     dynamics_vote_resolvability, effect_cell_verdict_key, fit_representation,
     require_linear_representation, restated_claim_cell, rung_three_sample_size,
 )
@@ -247,6 +247,5 @@ def test_rung_three_sample_size_scales_with_sd_over_effect_and_respects_the_budg
 
 def test_mdd_at_declared_cap_matches_the_project_convention():
     sizing = rung_three_sample_size(sd=0.1, effect=10.0)  # huge effect -> cap binds
-    z = 2.8016015201700604
-    expected = z * 0.1 / np.sqrt(min(sizing["n_required"], RUNG_THREE_MAX_SESSIONS))
+    expected = RUNG_THREE_Z_FACTOR * 0.1 / np.sqrt(min(sizing["n_required"], RUNG_THREE_MAX_SESSIONS))
     assert abs(sizing["mdd_at_cap"] - expected) < 1e-12

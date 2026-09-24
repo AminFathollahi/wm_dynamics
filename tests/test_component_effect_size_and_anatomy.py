@@ -1,8 +1,8 @@
 """Tests for scripts/run_component_effect_size_and_anatomy.py: the new glue
 this module introduces (decile contrast, spike-count-matched decile
 contrast, contiguous-fold cross-validated discrimination, the trial-count-
-weighted combiner) and its two pre-declared branch classifiers (Block A's
-cross-validated-discrimination branch, Block B's cross-group localisation
+weighted combiner) and its two pre-declared branch classifiers (the effect-size
+translation's cross-validated-discrimination branch, the anatomical localisation's cross-group localisation
 branch), all against known small examples worked out by hand or with an
 unambiguous ground truth. No real corpus data is touched -- the reused
 estimators (rate_free_state_deviation, partial_correlation_permutation_test,
@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from run_component_effect_size_and_anatomy import (  # noqa: E402
-    _block_a_cv_branch, _contiguous_folds, _cv_discrimination_binary, _cv_discrimination_continuous,
+    _effect_size_cv_branch, _contiguous_folds, _cv_discrimination_binary, _cv_discrimination_continuous,
     _decile_contrast, _localisation_branch, _matched_contrast_reachability, _pairwise_cell_reachability,
     _pairwise_comparison_note, _pairwise_predictor_tests, _spike_count_matched_contrast, _trial_count_weighted,
 )
@@ -220,40 +220,40 @@ def test_trial_count_weighted_all_none_returns_none():
 
 
 # --------------------------------------------------------------------------------------------------------
-# Block A cross-validated-discrimination branch classifier
+# Effect-size translation cross-validated-discrimination branch classifier
 # --------------------------------------------------------------------------------------------------------
 
 def _pooled(significant_positive: bool, status: str = "tested") -> dict:
     return {"status": status, "significant_positive": significant_positive}
 
 
-def test_block_a_branch_deviation_above_chance_amplitude_not():
-    branch = _block_a_cv_branch(_pooled(True), _pooled(False))
+def test_effect_size_cv_branch_deviation_above_chance_amplitude_not():
+    branch = _effect_size_cv_branch(_pooled(True), _pooled(False))
     assert branch == ("accuracy_predicting_component_carries_held_out_single_trial_information_and_the_"
                        "dominant_amplitude_does_not")
 
 
-def test_block_a_branch_both_above_chance():
-    assert _block_a_cv_branch(_pooled(True), _pooled(True)) == "both_observables_carry_held_out_information"
+def test_effect_size_cv_branch_both_above_chance():
+    assert _effect_size_cv_branch(_pooled(True), _pooled(True)) == "both_observables_carry_held_out_information"
 
 
-def test_block_a_branch_neither_above_chance():
-    assert _block_a_cv_branch(_pooled(False), _pooled(False)) == \
+def test_effect_size_cv_branch_neither_above_chance():
+    assert _effect_size_cv_branch(_pooled(False), _pooled(False)) == \
         "no_observable_reaches_held_out_single_trial_discrimination_at_this_power"
 
 
-def test_block_a_branch_amplitude_only():
-    assert _block_a_cv_branch(_pooled(False), _pooled(True)) == \
+def test_effect_size_cv_branch_amplitude_only():
+    assert _effect_size_cv_branch(_pooled(False), _pooled(True)) == \
         "dominant_amplitude_outpredicts_the_component_in_held_out_data"
 
 
-def test_block_a_branch_not_tested_counts_as_not_above_chance():
-    assert _block_a_cv_branch({"status": "not_computable"}, _pooled(True)) == \
+def test_effect_size_cv_branch_not_tested_counts_as_not_above_chance():
+    assert _effect_size_cv_branch({"status": "not_computable"}, _pooled(True)) == \
         "dominant_amplitude_outpredicts_the_component_in_held_out_data"
 
 
 # --------------------------------------------------------------------------------------------------------
-# Block B localisation branch classifier
+# Anatomical localisation branch classifier
 # --------------------------------------------------------------------------------------------------------
 
 def _cell(status: str, r_values: list[float] | None = None) -> dict:

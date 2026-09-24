@@ -85,6 +85,25 @@ from run_human_stimulation_component_response import (  # noqa: E402
     subject_aggregated_correlation,
 )
 from run_ram_openloop_pipeline import BIN_S, N_PC, PRE_S  # noqa: E402
+from scipy.stats import norm  # noqa: E402
+
+Z_95 = float(norm.ppf(0.975))
+
+
+def _real_minus_control(real_corr: dict, bias_corr: dict) -> dict:
+    """real_corr and bias_corr are both subject-aggregated Pearson r; interval combines each side's
+    own bootstrap standard error, recovered from its already-computed 95% CI half-width."""
+    if real_corr.get("status") != "computed" or bias_corr.get("status") != "computed":
+        return {"status": "not_applicable"}
+    estimate = real_corr["r"] - bias_corr["r"]
+    real_se = (real_corr["ci_upper"] - real_corr["ci_lower"]) / (2.0 * Z_95)
+    bias_se = (bias_corr["ci_upper"] - bias_corr["ci_lower"]) / (2.0 * Z_95)
+    se = float(np.sqrt(real_se ** 2 + bias_se ** 2))
+    return {
+        "status": "computed", "estimate": estimate, "real_value": real_corr["r"],
+        "control_value": bias_corr["r"], "standard_error": se,
+        "interval_95pct": [estimate - Z_95 * se, estimate + Z_95 * se],
+    }
 from run_stimulation_site_targeting_map import load_admitted_sessions  # noqa: E402
 
 RESULTS = ROOT / "results"
@@ -356,13 +375,14 @@ def bias_only_voids(real_corr: dict, bias_corr: dict) -> bool:
 # ── Reproduction gate against the delivered linear artifact ──
 
 def reproduction_gate(admitted_sessions: list[dict], component_response: dict) -> dict:
-    block_b = component_response.get("block_b", {}).get("per_session", {})
+    displacement_per_session = component_response.get("block_b", {}).get("per_session", {})
     exact, mismatched, missing = 0, [], []
     for rec in admitted_sessions:
         cond = rec["displacement_conditions"].get(CHANNEL_CONDITION_FOR_DISPLACEMENT, {})
         if cond.get("status") != "computed":
             continue
-        source = block_b.get(rec["session_key"], {}).get("conditions", {}).get(CHANNEL_CONDITION_FOR_DISPLACEMENT, {})
+        source = displacement_per_session.get(rec["session_key"], {}).get("conditions", {}).get(
+            CHANNEL_CONDITION_FOR_DISPLACEMENT, {})
         if source.get("status") != "computed":
             missing.append(rec["session_key"])
             continue
@@ -479,6 +499,7 @@ def main() -> None:
         voided = bias_only_voids(real_corr, bias_corr)
         bias_only_block = {
             "correlation": bias_corr, "voids_the_real_result": voided,
+            "real_minus_control": _real_minus_control(real_corr, bias_corr),
             "control_power_check": {
                 "real_r": real_corr.get("r"), "bias_only_r": bias_corr.get("r"),
                 "effect_moved": (abs(bias_corr.get("r", 0.0)) < abs(real_corr.get("r", 0.0)) * 0.5

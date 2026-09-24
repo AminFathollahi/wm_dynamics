@@ -305,6 +305,7 @@ def _parse_desikan_killiany(raw: str) -> tuple[str, str | None]:
 _LABEL_CONVENTION_PARSERS = {
     "nwb_structure_hemisphere_suffix": _parse_rutishauser_suffix,
     "nwb_boran_brainnetome_hybrid": _parse_brainnetome_hybrid,
+    "nwb_hemisphere_prefixed_structure": _parse_desikan_killiany,
     "bids_brainnetome_anatomical_location": _parse_brainnetome_hybrid,
     "bids_desikan_killiany_ind_region": _parse_desikan_killiany,
 }

@@ -76,7 +76,7 @@ DECISION_RULE_DECLARED_BEFORE_FITTING = (
 )
 
 
-def _reachable_sessions(root: Path) -> list[Path]:
+def _reachable_sessions(root: Path, limit: int | None = None) -> list[Path]:
     directory = _panichello_directory(root)
     if directory is None:
         return []
@@ -87,6 +87,8 @@ def _reachable_sessions(root: Path) -> list[Path]:
         n_error = int((~is_corr).sum())
         if n_error >= MIN_ERROR_TRIALS_FOR_REACHABILITY:
             paths.append(Path(path))
+            if limit is not None and len(paths) >= limit:
+                break
     return paths
 
 

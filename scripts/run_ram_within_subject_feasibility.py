@@ -19,10 +19,14 @@ from __future__ import annotations
 
 import csv
 import json
+import sys
 from collections import defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(ROOT / "src"))
+from project_config import dataset_path
+
 RESULTS = ROOT / "results"
 DATA = dataset_path("ram_ds005489_openloop")
 MIN_MULTISITE_SUBJECTS = 8
@@ -92,7 +96,7 @@ def main() -> None:
             "multisite_subjects": {s: [list(x) for x in sites] for s, sites in multisite_subjects.items()},
             "per_subject_site_count": {s: len(sites) for s, sites in subject_sites.items()},
         }
-        with open(RESULTS / "causal_ram_within_subject.json", "w") as f:
+        with open(RESULTS / "ram_within_subject_site_feasibility.json", "w") as f:
             json.dump(out, f, indent=2)
         print(f"\nGATE FAILED: n_multisite_subjects={n_multisite} < {MIN_MULTISITE_SUBJECTS} -- "
               "wrote underpowered status, stopping (keep the pooled null as the honest bound).")
@@ -106,7 +110,7 @@ def main() -> None:
             "n_total_subjects_with_stim": n_total_subjects,
             "multisite_subjects": {s: [list(x) for x in sites] for s, sites in multisite_subjects.items()},
         }
-        with open(RESULTS / "causal_ram_within_subject.json", "w") as f:
+        with open(RESULTS / "ram_within_subject_site_feasibility.json", "w") as f:
             json.dump(out, f, indent=2)
 
 

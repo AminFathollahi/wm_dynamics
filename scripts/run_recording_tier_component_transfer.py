@@ -36,7 +36,7 @@ release recorded as a separate session; its per-trial identity (set size,
 accuracy, artifact status) is not retrievable from the distributed derivative
 (verified directly against the file -- see beamformed_trial_identity_audit
 below), so cross-release pairing against tiers 1-4 is never licensed at the
-trial level for any patient and tier 5 enters Block C at patient level only,
+trial level for any patient and tier 5 enters the cross-tier-transfer test at patient level only,
 as the patient-level fallback regime below anticipates.
 
 The component estimator (rate_free_state_deviation) and the magnitude-matched
@@ -99,19 +99,20 @@ MAINT_WINDOW_S = (-3.0, 0.0)  # relative to probe onset, this task's own convent
 EPOCH_WIN_S = (-3.5, 0.5)  # padding around the maintenance window for filter settling.
 BEAMFORMED_SOURCES = ["DLPFC", "OFC", "PPC", "AC", "V1"]
 
-# The reference effect for every behaviour-link and cross-tier-agreement null in this module (Blocks B and
-# C -- both measured in correlation-r units). Sourced unchanged from results/rate_free_state_geometry_
-# behavior_link.json's own minimum detectable paired difference (0.14 r units): the same fixed constant
-# results/human_stimulation_component_response.json also reuses for its own human intracranial arm, so
-# every behavioural bound this project reports -- macaque, human stimulation, and this recording-tier leg
-# -- sits on one scale. Block A's reference (a variance-difference, not a correlation) has no r-unit
-# equivalent and is instead established from the single_unit tier's own observed effect, disclosed in
-# BLOCK_A_DECISION_RULE above.
+# The reference effect for every behaviour-link and cross-tier-agreement null in this module (the
+# behaviour-link and cross-tier-transfer tests -- both measured in correlation-r units). Sourced unchanged
+# from results/rate_free_state_geometry_behavior_link.json's own minimum detectable paired
+# difference (0.14 r units): the same fixed constant results/human_stimulation_component_response.json
+# also reuses for its own human intracranial arm, so every behavioural bound this project reports --
+# macaque, human stimulation, and this recording-tier leg -- sits on one scale. The existence test's
+# reference (a variance-difference, not a correlation) has no r-unit equivalent and is instead
+# established from the single_unit tier's own observed effect, disclosed in EXISTENCE_DECISION_RULE
+# above.
 MEANINGFUL_EFFECT_THRESHOLD_R_UNITS = 0.14
 
 N_ROTATION_NULL_DRAWS = 1000
 N_TRIAL_SHUFFLE_DRAWS = 1000
-N_BOOT_BLOCK_A_B = 5000
+N_BOOT_EXISTENCE_AND_BEHAVIOUR_LINK = 5000
 MIN_TRIALS_PER_SESSION_TIER = 10
 MIN_TRIALS_PER_SET_SIZE_CELL = 6
 MIN_PATIENTS_FOR_TEST = 5  # slope_across_sessions_test's own attainable-p floor: min_attainable_p =
@@ -124,7 +125,7 @@ SET_SIZES = (4, 6, 8)
 BAND_ORDER = (("hgp", 70.0, 150.0), ("gamma", 30.0, 70.0), ("beta", 13.0, 30.0),
               ("alpha", 8.0, 13.0), ("theta", 4.0, 8.0))
 
-BLOCK_A_DECISION_RULE = (
+EXISTENCE_DECISION_RULE = (
     "Per session per tier, compute rate_free_state_deviation on the maintenance-window feature matrix "
     "(unchanged estimator), then test its within-session variance against a magnitude-matched rotation "
     "null (rotation_null_variance_test, 1000 draws: each trial's own feature magnitude is kept, its "
@@ -135,16 +136,16 @@ BLOCK_A_DECISION_RULE = (
     "reach p<=0.05 (min_attainable_p > 0.05) and the tier fires 'underpowered_to_ask_at_this_tier'. "
     "Otherwise: significant (p<=0.05) -> 'component_is_present_at_this_recording_tier'. Not significant: "
     "the tier's own minimum detectable paired difference (80% power) is compared against a reference "
-    "effect. Block A's own text does not name a reference effect (unlike Block B, which explicitly names "
-    "'the effect measured at the finest tier in the same patients'); this module extends that same, "
-    "explicitly-licensed rule to Block A by disclosed analogy, fixed here before any tier past single_unit "
+    "effect. The existence test's own text does not name a reference effect (unlike the behaviour-link "
+    "test, which explicitly names 'the effect measured at the finest tier in the same patients'); this "
+    "module extends that same, explicitly-licensed rule to the existence test by disclosed analogy, fixed here before any tier past single_unit "
     "is evaluated: the reference is the single_unit tier's own observed |pooled mean effect|, established "
     "first. MDD < reference -> 'component_is_not_distinguishable_from_a_magnitude_matched_rotation_null'. "
     "MDD >= reference, or no reference could be established (single_unit itself did not reach "
     "significance) -> 'underpowered_to_ask_at_this_tier'."
 )
 
-BLOCK_B_DECISION_RULE = (
+BEHAVIOUR_LINK_DECISION_RULE = (
     "Trials are pooled, not session-level statistics: this corpus's error rate is 8.3% (151/1827 trials), "
     "per-session error counts run 0-10 (median ~4), so a point-biserial correlation computed within one "
     "session is built from too few errors to mean anything, and pooling those session-level numbers would "
@@ -172,7 +173,7 @@ BLOCK_B_DECISION_RULE = (
     "available -> 'underpowered_to_ask_at_this_tier'."
 )
 
-BLOCK_C_DECISION_RULE = (
+CROSS_TIER_TRANSFER_DECISION_RULE = (
     "For each unordered pair of tiers, per session, the trial-wise Pearson correlation of the two tiers' "
     "component values on the identical admitted trial cohort (only licensed when both tiers were built "
     "from the same release's same trial table -- true for every pair among single_unit/depth_mtl/"
@@ -188,7 +189,7 @@ BLOCK_C_DECISION_RULE = (
     "regime: one scalar per patient per tier (the patient's own median component value, pooled across its "
     "admitted trials), Spearman-correlated across patients with a patient-bootstrap CI (the same construct "
     "results/cross_modality_calibration.json uses for its own cross-release comparison), 'excludes zero' "
-    "standing in for the sign-flip test's significance call. Only three branches exist for Block C -- no "
+    "standing in for the sign-flip test's significance call. Only three branches exist for the cross-tier-transfer test -- no "
     "separate 'underpowered' branch -- so this module's own disclosed reading, fixed before any pair is "
     "evaluated: n_patients < 5 (either regime) -> 'cross_tier_agreement_not_testable_at_matched_trials'. "
     "Significant -> 'the_two_tiers_track_the_same_per_trial_quantity'. Not significant and MDD (or, in the "
@@ -199,7 +200,7 @@ BLOCK_C_DECISION_RULE = (
     "'no_cross_tier_agreement_above_the_reported_bound'. Not significant and underpowered against that "
     "reference, or the reference itself unavailable -> 'cross_tier_agreement_not_testable_at_matched_"
     "trials' (this branch's literal name, 'not testable AT MATCHED TRIALS', is read as covering both a "
-    "structurally unmatched pair and a matched-but-underpowered one, since Block C's fixed three-branch "
+    "structurally unmatched pair and a matched-but-underpowered one, since the cross-tier-transfer test's fixed three-branch "
     "vocabulary provides no other slot for an underpowered result)."
 )
 
@@ -385,7 +386,7 @@ def _depth_or_scalp_activity(epochs: np.ndarray, times: np.ndarray, srate: float
 
 
 def trial_tables_agree(table: dict, ieeg: dict, eeg: dict) -> tuple[bool, str | None]:
-    """The protective assertion Block C's bridge depends on, run before any feature is built rather than
+    """The protective assertion the cross-tier-transfer test's bridge depends on, run before any feature is built rather than
     only before a cross-tier statistic: depth (ieeg) and scalp (eeg) are two independent reads of the same
     NWB trials table (load_boran_nwb, called once per signal), and this checks they actually came back
     identical element-by-element on trial count, set size and accuracy -- rather than assuming two reads
@@ -405,7 +406,8 @@ def trial_tables_agree(table: dict, ieeg: dict, eeg: dict) -> tuple[bool, str | 
 
 def build_000574_session(nwb_path: Path) -> dict:
     """Loads one 000574 session and returns per-tier admitted feature matrices plus the shared trial
-    admission mask -- everything downstream (Block A/B/C) is built from this one record."""
+    admission mask -- everything downstream (the existence, behaviour-link and cross-tier-transfer
+    tests) is built from this one record."""
     with h5py.File(nwb_path, "r") as handle:
         if "units" not in handle:
             return {"status": "refused", "reason": "no_units_table"}
@@ -522,8 +524,8 @@ def build_beamformed_session(mat_path: Path) -> dict:
         "activity": activity, "n_features": len(beam_idx),
         "band": {"name": name, "lo_hz": lo, "hi_hz": hi, "srate_hz": fsample},
         "audit": audit,
-        # No accuracy or set-size label exists for this tier (see audit); Block B is structurally
-        # untestable here, not merely underpowered -- disclosed explicitly rather than fabricated.
+        # No accuracy or set-size label exists for this tier (see audit); the behaviour-link test is
+        # structurally untestable here, not merely underpowered -- disclosed explicitly rather than fabricated.
         "set_size": None, "correct": None,
     }
 
@@ -555,7 +557,7 @@ def discover_beamformed_sessions(root: Path, overlapping_patients: set[str]) -> 
     return out
 
 
-# ── Block A: existence ───────────────────────────────────────────────────────────────────────────────────
+# ── Existence test ───────────────────────────────────────────────────────────────────────────────────
 
 def _session_deviation_and_gate(activity: np.ndarray, seed_tag: str) -> dict:
     deviation = rate_free_state_deviation(activity)
@@ -566,7 +568,8 @@ def _session_deviation_and_gate(activity: np.ndarray, seed_tag: str) -> dict:
 
 def _patient_clustered_test(per_patient_values: dict[str, float]) -> dict:
     """The shared 'per-patient effect, sign-flip test across patients, with the bootstrap interval'
-    primitive Blocks A, B and the trial-wise regime of Block C all use, built once here."""
+    primitive the existence test, the behaviour-link test and the trial-wise regime of the
+    cross-tier-transfer test all use, built once here."""
     values = [v for v in per_patient_values.values() if np.isfinite(v)]
     if len(values) < MIN_PATIENTS_FOR_TEST:
         return {"status": "underpowered_by_construction", "n_patients": len(values)}
@@ -581,7 +584,7 @@ def _patient_clustered_test(per_patient_values: dict[str, float]) -> dict:
     }
 
 
-def block_a_tier(sessions: list[dict], reference_effect: float | None) -> dict:
+def existence_tier(sessions: list[dict], reference_effect: float | None) -> dict:
     """sessions: list of {patient, session_effect (signed observed-null variance), gate p_value, ...}."""
     per_patient: dict[str, list[float]] = {}
     for s in sessions:
@@ -617,7 +620,7 @@ def block_a_tier(sessions: list[dict], reference_effect: float | None) -> dict:
     }
 
 
-# ── Block B: behaviour link ──────────────────────────────────────────────────────────────────────────────
+# ── Behaviour-link test ──────────────────────────────────────────────────────────────────────────────
 
 def _bias_only_values(values: np.ndarray) -> np.ndarray:
     """Each trial's value replaced by the leave-one-out mean of every OTHER trial in the same cell."""
@@ -700,7 +703,7 @@ def _patient_set_size_cell(deviation: np.ndarray, correct: np.ndarray, session_i
     return {"status": "computed", "n_trials": n, "n_errors": n_errors, "primary": primary, "bias_only": bias}
 
 
-def block_b_tier(sessions: list[dict], reference_effect: float | None) -> dict:
+def behaviour_link_tier(sessions: list[dict], reference_effect: float | None) -> dict:
     """Patient-clustered, trial-pooled behaviour link: within each set size, every trial a patient
     contributes across ALL of that patient's sessions is pooled into one point-biserial correlation
     (never a per-session intermediate value), the up-to-3 set-size-specific coefficients are averaged to
@@ -779,7 +782,7 @@ def block_b_tier(sessions: list[dict], reference_effect: float | None) -> dict:
     }
 
 
-# ── Block C: cross-tier bridge ───────────────────────────────────────────────────────────────────────────
+# ── Cross-tier-transfer test ───────────────────────────────────────────────────────────────────────────
 
 def _trial_wise_session_correlation(dev_a: np.ndarray, dev_b: np.ndarray, seed_tag: str) -> dict | None:
     both_finite = np.isfinite(dev_a) & np.isfinite(dev_b)
@@ -796,7 +799,7 @@ def _trial_wise_session_correlation(dev_a: np.ndarray, dev_b: np.ndarray, seed_t
     return {"r": observed, "p_value": p, "n_trials": n}
 
 
-def block_c_pair_trial_wise(session_records: list[dict], tier_a: str, tier_b: str,
+def cross_tier_transfer_pair_trial_wise(session_records: list[dict], tier_a: str, tier_b: str,
                              reference_effect: float | None) -> dict:
     """session_records: per-000574-session dicts with 'patient', 'session_key', and 'tiers' (deviation
     arrays for every computed in-file tier)."""
@@ -814,7 +817,7 @@ def block_c_pair_trial_wise(session_records: list[dict], tier_a: str, tier_b: st
         per_patient.setdefault(rec["patient"], []).append(corr["r"])
     per_patient_mean = {p: float(np.mean(v)) for p, v in per_patient.items()}
     pooled = _patient_clustered_test(per_patient_mean)
-    branch = _classify_block_c(pooled, reference_effect)
+    branch = _classify_cross_tier_transfer(pooled, reference_effect)
     return {
         "regime": "trial_wise", "branch": branch, "pooled_patient_test": pooled,
         "reference_effect_used": reference_effect, "n_sessions_licensed": n_sessions_licensed,
@@ -823,7 +826,7 @@ def block_c_pair_trial_wise(session_records: list[dict], tier_a: str, tier_b: st
     }
 
 
-def block_c_pair_patient_level(patient_scalars_a: dict[str, float], patient_scalars_b: dict[str, float],
+def cross_tier_transfer_pair_patient_level(patient_scalars_a: dict[str, float], patient_scalars_b: dict[str, float],
                                 reference_effect: float | None) -> dict:
     """Fallback regime used whenever exact trial-level cross-release matching is
     not available: one scalar per patient per tier, Spearman-correlated across patients with a
@@ -835,7 +838,7 @@ def block_c_pair_patient_level(patient_scalars_a: dict[str, float], patient_scal
         return {"regime": "patient_level_only", "branch": "cross_tier_agreement_not_testable_at_matched_trials",
                 "n_patients": len(pairs), "reference_effect_used": reference_effect}
     rng = np.random.default_rng(stable_seed(f"block_c_patient_level|{tuple(shared)}"))
-    rho, lower, upper = bootstrap_ci(pairs, lambda d: spearmanr(d[:, 0], d[:, 1]).statistic, rng=rng, n_boot=N_BOOT_BLOCK_A_B)
+    rho, lower, upper = bootstrap_ci(pairs, lambda d: spearmanr(d[:, 0], d[:, 1]).statistic, rng=rng, n_boot=N_BOOT_EXISTENCE_AND_BEHAVIOUR_LINK)
     excludes_zero = bool(lower > 0.0 or upper < 0.0)
     ci_half_width = (upper - lower) / 2.0
     if excludes_zero:
@@ -851,7 +854,7 @@ def block_c_pair_patient_level(patient_scalars_a: dict[str, float], patient_scal
     }
 
 
-def _classify_block_c(pooled: dict, reference_effect: float | None) -> str:
+def _classify_cross_tier_transfer(pooled: dict, reference_effect: float | None) -> str:
     if pooled["status"] == "underpowered_by_construction":
         return "cross_tier_agreement_not_testable_at_matched_trials"
     if pooled["significant"]:
@@ -861,7 +864,7 @@ def _classify_block_c(pooled: dict, reference_effect: float | None) -> str:
     return "cross_tier_agreement_not_testable_at_matched_trials"
 
 
-# ── Block D / E: plain-sentence synthesis, read from the computed dict only ─────────────────────────────
+# ── Recording-specification / non-human-claims synthesis, read from the computed dict only ─────────────────────────────
 
 _TIER_LABEL = {
     "single_unit": "microwire single units", "depth_mtl": "depth macro-contacts in medial temporal cortex",
@@ -875,39 +878,39 @@ _TIER_INVASIVENESS = {
 _TIER_ORDER_COARSE_TO_FINE = ("beamformed_cortical", "scalp_eeg", "depth_cortical", "depth_mtl", "single_unit")
 
 
-def _passes_a_and_b(block_a: dict, block_b: dict, tier: str) -> bool:
-    a = block_a.get(tier, {}).get("branch")
-    b = block_b.get(tier, {}).get("branch")
+def _passes_a_and_b(existence: dict, behaviour_link: dict, tier: str) -> bool:
+    a = existence.get(tier, {}).get("branch")
+    b = behaviour_link.get(tier, {}).get("branch")
     return a == "component_is_present_at_this_recording_tier" and b == "component_predicts_accuracy_at_this_recording_tier"
 
 
-def _tracks_single_unit(block_c: dict, tier: str) -> bool:
-    pair = block_c.get(f"single_unit|{tier}") or block_c.get(f"{tier}|single_unit")
+def _tracks_single_unit(cross_tier_transfer: dict, tier: str) -> bool:
+    pair = cross_tier_transfer.get(f"single_unit|{tier}") or cross_tier_transfer.get(f"{tier}|single_unit")
     return bool(pair) and pair["branch"] == "the_two_tiers_track_the_same_per_trial_quantity"
 
 
-def synthesize_block_d(block_a: dict, block_b: dict, block_c: dict) -> str:
+def synthesize_recording_specification(existence: dict, behaviour_link: dict, cross_tier_transfer: dict) -> str:
     coarsest_existing_and_predictive = next(
-        (t for t in _TIER_ORDER_COARSE_TO_FINE if _passes_a_and_b(block_a, block_b, t)), None)
+        (t for t in _TIER_ORDER_COARSE_TO_FINE if _passes_a_and_b(existence, behaviour_link, t)), None)
     coarsest_tracking_single_unit = next(
-        (t for t in _TIER_ORDER_COARSE_TO_FINE if t != "single_unit" and _tracks_single_unit(block_c, t)), None)
+        (t for t in _TIER_ORDER_COARSE_TO_FINE if t != "single_unit" and _tracks_single_unit(cross_tier_transfer, t)), None)
     any_noninvasive_passes_a_and_b = any(
-        _TIER_INVASIVENESS[t] == "non-invasive" and _passes_a_and_b(block_a, block_b, t)
+        _TIER_INVASIVENESS[t] == "non-invasive" and _passes_a_and_b(existence, behaviour_link, t)
         for t in ("scalp_eeg", "beamformed_cortical"))
-    any_noninvasive_tracks = any(_tracks_single_unit(block_c, t) for t in ("scalp_eeg", "beamformed_cortical"))
+    any_noninvasive_tracks = any(_tracks_single_unit(cross_tier_transfer, t) for t in ("scalp_eeg", "beamformed_cortical"))
 
     lines = []
     if coarsest_existing_and_predictive is not None:
         lines.append(
-            f"The coarsest recording tier at which the component both exists (Block A) and predicts "
-            f"behaviour (Block B) in this corpus is {_TIER_LABEL[coarsest_existing_and_predictive]} "
+            f"The coarsest recording tier at which the component both exists (the existence test) and predicts "
+            f"behaviour (the behaviour-link test) in this corpus is {_TIER_LABEL[coarsest_existing_and_predictive]} "
             f"({_TIER_INVASIVENESS[coarsest_existing_and_predictive]}).")
     else:
-        lines.append("No recording tier in this corpus both exists (Block A) and predicts behaviour "
-                      "(Block B) at the same time; the tiers that clear one bar do not clear both.")
+        lines.append("No recording tier in this corpus both exists (the existence test) and predicts behaviour "
+                      "(the behaviour-link test) at the same time; the tiers that clear one bar do not clear both.")
     if coarsest_tracking_single_unit is not None:
         lines.append(
-            f"The coarsest tier that still tracks the single-unit measurement trial by trial (Block C) is "
+            f"The coarsest tier that still tracks the single-unit measurement trial by trial (the cross-tier-transfer test) is "
             f"{_TIER_LABEL[coarsest_tracking_single_unit]}.")
     else:
         lines.append("No coarser tier tracks the single-unit measurement trial by trial above its reported "
@@ -930,34 +933,30 @@ def synthesize_block_d(block_a: dict, block_b: dict, block_c: dict) -> str:
     return " ".join(lines)
 
 
-def synthesize_block_e() -> str:
+def synthesize_non_human_claims() -> str:
     return (
         "The component's identity -- that it is neither the dominant population-rate mode nor the "
         "memorandum subspace, and that it predicts behaviour where the dominant mode does not -- was "
         "established in non-human single-unit preparations (macaque lateral prefrontal cortex, mouse "
         "anterior lateral motor cortex). Those preparations cannot address the question this leg asks: "
         "no non-human corpus in this project records simultaneous microwire, depth macro-contact and "
-        "scalp signals in the same animals on the same trials, so the cross-tier bridge (Block C) has no "
+        "scalp signals in the same animals on the same trials, so the cross-tier bridge (the cross-tier-transfer test) has no "
         "non-human counterpart to compare against, and neither does the recording-tier specification "
-        "(Block D) that follows from it. This human corpus, in turn, cannot re-establish or re-adjudicate "
+        "that follows from it. This human corpus, in turn, cannot re-establish or re-adjudicate "
         "the component's non-human identity claims by the same design (a different task, a different "
         "clustering unit -- patient, not session -- and no dominant-mode or memorandum-subspace decomposition "
-        "computed here), so this leg's Block B result is read as a same-corpus, same-instrument "
+        "computed here), so this leg's behaviour-link test result is read as a same-corpus, same-instrument "
         "recording-tier comparison, never as a replication or a refutation of the non-human identity "
         "finding. It is, however, a genuine measurement in its own right, not a reachability-limited one: "
-        "every loader elsewhere in this project that reaches this corpus family (iter_dandi_000574, "
-        "iter_dandi_000469, iter_dandi_001187) admits only correct trials at the loader, so a prior claim "
-        "that human trial-level accuracy in this task family 'is at ceiling' describes that loader filter, "
-        "not the task -- it was never actually tested, and is not carried forward or cited as a reason for "
-        "any branch here. This module's own admission keeps every trial, correct and error alike (see "
-        "trial_tables_agree and the artifact mask discussion above), so Block B's behaviour link is, as "
-        "far as this project's own record shows, the first time the component-behaviour relationship has "
-        "been measured on real errors in a human maintenance-delay task rather than assumed unreachable. "
-        "Holding both preparations together narrows the practical question this project exists to answer "
-        "-- where a stimulation device should record from -- to whichever tiers this leg's own Block A/B/C "
+        "this module's own admission keeps every trial, correct and error alike (see the trial-table "
+        "agreement check and session_status/ds004752_beamformed/*/audit in the artifact for the per-session "
+        "record), so this leg's behaviour-link test is fit on real error trials in a human maintenance-delay "
+        "task. Holding both preparations together narrows the practical question this project exists to answer "
+        "-- where a stimulation device should record from -- to whichever tiers this leg's own existence, "
+        "behaviour-link and cross-tier-transfer "
         "branches name, while leaving the separate question of what the component IS to stand on the "
         "non-human evidence alone. Where a tier's result in this corpus runs against a non-human "
-        "expectation (for instance, if a coarse invasive tier here fails Block A while the single-unit "
+        "expectation (for instance, if a coarse invasive tier here fails the existence test while the single-unit "
         "tier does not), that contradiction is reported as such in the per-tier branch record above and is "
         "not adjudicated away by this synthesis."
     )
@@ -974,8 +973,9 @@ def _read_json(path: Path) -> dict | None:
 
 def count_floor_context() -> dict:
     """The unsampled total-spikes-per-trial gap between corpora whose deviation-vs-spike-count gate
-    passes and those whose gate fails (results/dissociation_replication_and_counting_noise.json,
-    block_b.count_separation_disclosure). No single fitted threshold exists inside that gap -- the
+    passes and those whose gate fails (results/dissociation_replication_and_counting_noise.json's
+    counting-noise census, stored under its block_b.count_separation_disclosure field). No single
+    fitted threshold exists inside that gap -- the
     project's own explicit rule is that none may be asserted -- so this module reports the single_unit
     tier's median spike total per trial against the gap's two known boundaries, not against a fabricated
     single number."""
@@ -1096,6 +1096,60 @@ def load_beamformed_tier(patient: str, mat_path: Path) -> dict:
 
 # ── Main ──────────────────────────────────────────────────────────────────────────────────────────────────
 
+DS006848_PRESENTATION_MODE_CODES = {"Simultaneous": 0, "Fast": 1, "Fast+delay": 2, "Slow": 3}
+
+
+def healthy_scalp_corpora(root: Path) -> dict:
+    """Two independent healthy-participant scalp-EEG corpora, each recorded from its own
+    participants with no simultaneous depth or single-unit tier -- so neither one is a sixth entry
+    in TIERS (that would pool a corpus with no paired-tier structure into a cross-tier-transfer
+    test built for one), and neither is pooled into 000574's own 'scalp_eeg' tier (a different
+    corpus's cells). Existence and (where behaviour exists) behaviour-link only; cross-tier
+    transfer needs a second, simultaneously-recorded tier from the same session, which neither
+    corpus has, so it is not attempted here."""
+    from corpus_sessions import iter_ds005034, iter_ds006848
+
+    ds006848_sessions = []
+    for entry in iter_ds006848(root):
+        activity = np.asarray(entry["counts"]).sum(axis=2)
+        key = f"healthy_scalp__ds006848__{entry['session']}"
+        record = run_checkpointed(key, lambda a=activity, t=key: _session_deviation_and_gate(a, t))
+        ds006848_sessions.append({
+            "patient": entry["patient"], "session_key": entry["session"],
+            "deviation": np.asarray(record["deviation"], dtype=float), "gate": record["gate"],
+            "correct": (np.asarray(entry["accuracy_ncorrect"], dtype=float) == 7.0).astype(int),
+            "set_size": np.asarray([DS006848_PRESENTATION_MODE_CODES[c] for c in entry["task_condition"]], dtype=int),
+        })
+    ds005034_sessions = []
+    for entry in iter_ds005034(root):
+        activity = np.asarray(entry["counts"]).sum(axis=2)
+        key = f"healthy_scalp__ds005034__{entry['session']}"
+        record = run_checkpointed(key, lambda a=activity, t=key: _session_deviation_and_gate(a, t))
+        ds005034_sessions.append({
+            "patient": entry["patient"], "session_key": entry["session"],
+            "deviation": np.asarray(record["deviation"], dtype=float), "gate": record["gate"],
+        })
+
+    return {
+        "ds006848_human_scalp": {
+            "n_sessions": len(ds006848_sessions), "n_patients": len(set(s["patient"] for s in ds006848_sessions)),
+            "existence": existence_tier(ds006848_sessions, None),
+            "behaviour_link": behaviour_link_tier(ds006848_sessions, MEANINGFUL_EFFECT_THRESHOLD_R_UNITS),
+            "cross_tier_transfer": "not_applicable: no simultaneously-recorded second tier exists for this corpus",
+        },
+        "ds005034_human_scalp": {
+            "n_sessions": len(ds005034_sessions), "n_patients": len(set(s["patient"] for s in ds005034_sessions)),
+            "existence": existence_tier(ds005034_sessions, None),
+            "behaviour_link": {
+                "branch": "underpowered_to_ask_at_this_tier",
+                "reason": "no trial-level behavioural outcome is recorded in this corpus's public BIDS "
+                          "release; it exists only on a separate OSF repository (config/datasets.json)",
+            },
+            "cross_tier_transfer": "not_applicable: no simultaneously-recorded second tier exists for this corpus",
+        },
+    }
+
+
 def main() -> None:
     t0 = time.time()
     root = data_root()
@@ -1104,7 +1158,7 @@ def main() -> None:
     patients_000574 = {patient for patient, _, _ in sessions_000574}
     sessions_beamformed = discover_beamformed_sessions(root, patients_000574)
 
-    # Zero-drop bookkeeping and the in-memory records Block A/B/C are built from.
+    # Zero-drop bookkeeping and the in-memory records the existence, behaviour-link and cross-tier-transfer tests are built from.
     session_status: dict[str, dict] = {}
     session_records: list[dict] = []  # one per 000574 session: {patient, session_key, tiers: {tier: deviation array}}
     per_tier_sessions: dict[str, list[dict]] = {tier: [] for tier in TIERS}
@@ -1132,9 +1186,9 @@ def main() -> None:
         session_records.append({"patient": patient, "session_key": session_key,
                                  "tiers": {tier: rec["deviation"] for tier, rec in computed_tiers.items()}})
         for tier, rec in computed_tiers.items():
-            # correct/set_size ride along per session so block_b_tier can pool trials across a patient's
+            # correct/set_size ride along per session so behaviour_link_tier can pool trials across a patient's
             # sessions itself (see _concat_tier_trials) -- no per-session behaviour statistic is computed
-            # here, deliberately, per the trial-pooled design BLOCK_B_DECISION_RULE describes.
+            # here, deliberately, per the trial-pooled design BEHAVIOUR_LINK_DECISION_RULE describes.
             per_tier_sessions[tier].append({
                 "patient": patient, "session_key": session_key, "deviation": rec["deviation"], "gate": rec["gate"],
                 "correct": rec["correct"], "set_size": rec["set_size"],
@@ -1151,61 +1205,61 @@ def main() -> None:
                                        "reason": rec.get("reason"), "audit": rec.get("audit")}
         if rec["status"] == "computed":
             # No "correct"/"set_size" here -- no accuracy label is retrievable for this tier's trials
-            # (see beamformed_trial_identity_audit), so Block B is never called on this tier at all (main()
+            # (see beamformed_trial_identity_audit), so the behaviour-link test is never called on this tier at all (main()
             # constructs its 'underpowered_to_ask_at_this_tier' record directly, with the reason stated).
             per_tier_sessions["beamformed_cortical"].append({
                 "patient": patient, "session_key": session_key, "deviation": rec["deviation"], "gate": rec["gate"],
             })
 
-    # ── Block A, tier by tier -- single_unit first, its own effect becomes the reference for the rest.
-    block_a: dict[str, dict] = {}
-    block_a["single_unit"] = block_a_tier(per_tier_sessions["single_unit"], None)
-    reference_effect_block_a = None
-    if block_a["single_unit"]["pooled_patient_test"].get("status") == "tested" and \
-            block_a["single_unit"]["pooled_patient_test"].get("significant"):
-        reference_effect_block_a = abs(block_a["single_unit"]["pooled_patient_test"]["mean_value"])
+    # ── Existence test, tier by tier -- single_unit first, its own effect becomes the reference for the rest.
+    existence: dict[str, dict] = {}
+    existence["single_unit"] = existence_tier(per_tier_sessions["single_unit"], None)
+    reference_effect_existence = None
+    if existence["single_unit"]["pooled_patient_test"].get("status") == "tested" and \
+            existence["single_unit"]["pooled_patient_test"].get("significant"):
+        reference_effect_existence = abs(existence["single_unit"]["pooled_patient_test"]["mean_value"])
     for tier in TIERS:
         if tier == "single_unit":
             continue
-        block_a[tier] = block_a_tier(per_tier_sessions[tier], reference_effect_block_a)
+        existence[tier] = existence_tier(per_tier_sessions[tier], reference_effect_existence)
 
-    # ── Block B, tier by tier -- fixed 0.14 r-unit reference throughout (see MEANINGFUL_EFFECT_THRESHOLD_R_UNITS).
-    block_b: dict[str, dict] = {}
+    # ── Behaviour-link test, tier by tier -- fixed 0.14 r-unit reference throughout (see MEANINGFUL_EFFECT_THRESHOLD_R_UNITS).
+    behaviour_link: dict[str, dict] = {}
     for tier in TIERS:
         if tier == "beamformed_cortical":
-            block_b[tier] = {
+            behaviour_link[tier] = {
                 "branch": "underpowered_to_ask_at_this_tier",
                 "reason": "no accuracy label is retrievable for this tier's trials (structural, not a "
                           "sample-size shortfall -- see beamformed_trial_identity_audit); the least-bad fit "
-                          "among Block B's three pre-declared branches, disclosed explicitly rather than "
+                          "among the behaviour-link test's three pre-declared branches, disclosed explicitly rather than "
                           "forced into a branch that implies a correlation was actually computed",
                 "n_sessions_with_primary": 0, "n_sessions_total": len(per_tier_sessions[tier]),
                 "n_patients_contributing": 0, "reference_effect_used": MEANINGFUL_EFFECT_THRESHOLD_R_UNITS,
             }
             continue
-        block_b[tier] = block_b_tier(per_tier_sessions[tier], MEANINGFUL_EFFECT_THRESHOLD_R_UNITS)
+        behaviour_link[tier] = behaviour_link_tier(per_tier_sessions[tier], MEANINGFUL_EFFECT_THRESHOLD_R_UNITS)
 
-    # ── Block C, every unordered tier pair.
-    block_c: dict[str, dict] = {}
+    # ── Cross-tier-transfer test, every unordered tier pair.
+    cross_tier_transfer: dict[str, dict] = {}
     tier_pairs = [(a, b) for i, a in enumerate(TIERS) for b in TIERS[i + 1:]]
     trial_wise_pairs = [(a, b) for a, b in tier_pairs if a in IN_FILE_TIERS and b in IN_FILE_TIERS]
     patient_level_pairs = [(a, b) for a, b in tier_pairs if a not in IN_FILE_TIERS or b not in IN_FILE_TIERS]
 
     reference_pair_key = ("single_unit", "depth_mtl") if ("single_unit", "depth_mtl") in trial_wise_pairs else None
-    reference_effect_block_c = None
+    reference_effect_cross_tier_transfer = None
     if reference_pair_key is not None:
-        first = block_c_pair_trial_wise(session_records, *reference_pair_key, None)
-        block_c[f"{reference_pair_key[0]}|{reference_pair_key[1]}"] = first
+        first = cross_tier_transfer_pair_trial_wise(session_records, *reference_pair_key, None)
+        cross_tier_transfer[f"{reference_pair_key[0]}|{reference_pair_key[1]}"] = first
         if first["pooled_patient_test"].get("status") == "tested" and first["pooled_patient_test"].get("significant"):
-            reference_effect_block_c = abs(first["pooled_patient_test"]["mean_value"])
+            reference_effect_cross_tier_transfer = abs(first["pooled_patient_test"]["mean_value"])
         else:
-            reference_effect_block_c = MEANINGFUL_EFFECT_THRESHOLD_R_UNITS
+            reference_effect_cross_tier_transfer = MEANINGFUL_EFFECT_THRESHOLD_R_UNITS
 
     for a, b in trial_wise_pairs:
         key = f"{a}|{b}"
-        if key in block_c:
+        if key in cross_tier_transfer:
             continue
-        block_c[key] = block_c_pair_trial_wise(session_records, a, b, reference_effect_block_c)
+        cross_tier_transfer[key] = cross_tier_transfer_pair_trial_wise(session_records, a, b, reference_effect_cross_tier_transfer)
 
     def _patient_scalars(tier: str) -> dict[str, float]:
         by_patient: dict[str, list[float]] = {}
@@ -1217,11 +1271,12 @@ def main() -> None:
 
     patient_scalar_cache = {tier: _patient_scalars(tier) for tier in TIERS}
     for a, b in patient_level_pairs:
-        block_c[f"{a}|{b}"] = block_c_pair_patient_level(
-            patient_scalar_cache[a], patient_scalar_cache[b], reference_effect_block_c)
+        cross_tier_transfer[f"{a}|{b}"] = cross_tier_transfer_pair_patient_level(
+            patient_scalar_cache[a], patient_scalar_cache[b], reference_effect_cross_tier_transfer)
 
-    block_d = synthesize_block_d(block_a, block_b, block_c)
-    block_e = synthesize_block_e()
+    recording_specification = synthesize_recording_specification(existence, behaviour_link, cross_tier_transfer)
+    non_human_claims = synthesize_non_human_claims()
+    healthy_scalp = healthy_scalp_corpora(root)
 
     n_000574_seen = len(sessions_000574)
     n_000574_computed = sum(1 for v in session_status.values() if v["status"] == "computed" and "tiers" in v)
@@ -1251,14 +1306,15 @@ def main() -> None:
             "n_beamformed_patients_refused": n_beamformed_seen - n_beamformed_computed,
         },
         "decision_rules": {
-            "block_a": BLOCK_A_DECISION_RULE, "block_b": BLOCK_B_DECISION_RULE, "block_c": BLOCK_C_DECISION_RULE,
+            "block_a": EXISTENCE_DECISION_RULE, "block_b": BEHAVIOUR_LINK_DECISION_RULE, "block_c": CROSS_TIER_TRANSFER_DECISION_RULE,
         },
         "count_floor_context": count_floor_context(),
         "field_potential_degeneracy_context": field_potential_degeneracy_context(),
         "session_status": session_status,
-        "block_a": block_a, "block_b": block_b, "block_c": block_c,
-        "block_d_recording_specification": block_d,
-        "block_e_non_human_claims": block_e,
+        "block_a": existence, "block_b": behaviour_link, "block_c": cross_tier_transfer,
+        "block_d_recording_specification": recording_specification,
+        "block_e_non_human_claims": non_human_claims,
+        "block_f_healthy_scalp_corpora": healthy_scalp,
         "wall_clock_s": time.time() - t0,
         "status": "complete",
     }
@@ -1266,7 +1322,9 @@ def main() -> None:
     OUTPUT_PATH.write_text(canonical_json(output))
     print(json.dumps({
         "n_000574_sessions_computed": n_000574_computed, "n_beamformed_patients_computed": n_beamformed_computed,
-        "block_a": {t: block_a[t]["branch"] for t in TIERS}, "block_b": {t: block_b[t]["branch"] for t in TIERS},
+        "existence_branch_by_tier": {t: existence[t]["branch"] for t in TIERS},
+        "behaviour_link_branch_by_tier": {t: behaviour_link[t]["branch"] for t in TIERS},
+        "healthy_scalp_existence_branch": {c: healthy_scalp[c]["existence"]["branch"] for c in healthy_scalp},
         "wall_clock_s": output["wall_clock_s"],
     }, indent=2))
 

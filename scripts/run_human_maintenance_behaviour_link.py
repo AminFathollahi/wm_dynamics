@@ -17,7 +17,7 @@ errors (8.3%), across 37 sessions and 9 patients; after excluding only the
 corpus's own artifact-flagged trials (the ONLY admission criterion this
 module applies), 1683 trials remain, 142 of them errors (8.4%), the same 37
 sessions and 9 patients. Both numbers are recomputed fresh every run, in
-Block A below, rather than assumed from this docstring.
+the trial-admission census below, rather than assumed from this docstring.
 
 This module does not modify src/corpus_sessions.py's iterators (other
 delivered analyses depend on their current behaviour) or any read-only
@@ -66,6 +66,7 @@ os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
 os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
 
+import argparse
 import json
 import sys
 import time
@@ -81,7 +82,7 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from corpus_sessions import (  # noqa: E402
-    BORAN_EPOCH_WINDOWS_S, EPOCH_WINDOWS_S, MIN_TRIALS, data_root, load_spike_times,
+    BORAN_EPOCH_WINDOWS_S, EPOCH_WINDOWS_S, MIN_TRIALS, data_root, iter_ds006848, load_spike_times,
     region_filtered_units, resolve_unit_regions,
 )
 from provenance import _json_safe  # noqa: E402
@@ -93,7 +94,7 @@ from run_state_behavior_link import _counts_from_spikes  # noqa: E402
 from run_state_content_link import delay_counts  # noqa: E402
 from state_persistence import slope_across_sessions_test  # noqa: E402
 from statistics import (  # noqa: E402
-    forest_meta, minimum_detectable_paired_difference, partial_correlation_permutation_test,
+    Z_80_POWER, forest_meta, minimum_detectable_paired_difference, partial_correlation_permutation_test,
     power_to_detect_effect, stable_seed,
 )
 
@@ -109,14 +110,14 @@ N_PERM_HEADLINE = 10000  # per-session/per-patient pooling across independent un
 # the point estimate 'r' each per-patient cell contributes to pooling does not depend on n_perm at all.
 N_PERM_PATIENT_CELL = 2000
 MIN_TRIALS_PER_PATIENT_CELL = 6  # >=1 df left after outcome ~ intercept + 2 controls
-N_DRAWS_BLOCK_C = 200  # matches this project's own established convention (run_state_behavior_link.N_MATCHED_DRAWS)
+N_DRAWS_NON_HUMAN_EFFECT_AT_HUMAN_ERROR_COUNTS = 200  # matches this project's own established convention (run_state_behavior_link.N_MATCHED_DRAWS)
 
 MEANINGFUL_EFFECT_THRESHOLD_R_UNITS = 0.14  # this project's standing reference scale; fixed before any fit runs
 
 REFERENCE_ARTIFACT_PATH = ROOT / "results" / "rate_free_state_geometry_behavior_link.json"
 SUBSPACE_ARTIFACT_PATH = ROOT / "results" / "deviation_subspace_decomposition.json"
 
-BLOCK_B_DECISION_RULE_DECLARED_BEFORE_FITTING = (
+HUMAN_ESTIMATE_DECISION_RULE_DECLARED_BEFORE_FITTING = (
     "Per (corpus, load level) arm, pool the patient-level partial correlations (raw; controlling total "
     "spike count; controlling trial index; joint, controlling both) across patients with the two-sided "
     "paired sign-flip test. Combine the within-load arms across all corpora and load levels by "
@@ -148,14 +149,14 @@ BLOCK_B_DECISION_RULE_DECLARED_BEFORE_FITTING = (
     "'the_component_predicts_accuracy_in_a_human_maintenance_delay' wherever it would otherwise fire."
 )
 
-BLOCK_C_DECISION_RULE_DECLARED_BEFORE_FITTING = (
+NON_HUMAN_EFFECT_AT_HUMAN_ERROR_COUNTS_DECISION_RULE_DECLARED_BEFORE_FITTING = (
     "Using the same 11 macaque lPFC sessions results/rate_free_state_geometry_behavior_link.json reports "
     "its raw pooled effect on: for each session, at each candidate error count e* in the pooled human "
-    "per-session error-count distribution's observed unique values (Block A, all three corpora, restricted "
-    "to values >=2), draw " + str(N_DRAWS_BLOCK_C) + " independent subsamples of that session's OWN error "
+    "per-session error-count distribution's observed unique values (the trial admission census, all three corpora, restricted "
+    "to values >=2), draw " + str(N_DRAWS_NON_HUMAN_EFFECT_AT_HUMAN_ERROR_COUNTS) + " independent subsamples of that session's OWN error "
     "trials down to e* (every correct trial kept), recompute rate_free_state_deviation from scratch on each "
     "draw's trial subset, and take the point correlation of deviation with trial outcome. The "
-    + str(N_DRAWS_BLOCK_C) + " draws are aggregated to ONE median value per session before any inference; "
+    + str(N_DRAWS_NON_HUMAN_EFFECT_AT_HUMAN_ERROR_COUNTS) + " draws are aggregated to ONE median value per session before any inference; "
     "the cross-session test (paired sign-flip, across the 11 sessions) is the only inference step, and it "
     "is never run across draws.\n"
     "  - A second draw family samples e* itself, per draw, from the pooled human per-session error-count "
@@ -209,7 +210,7 @@ def _flush(output: dict) -> None:
 
 
 # =======================================================================================================
-# Block A -- trial admission (artifact mask only; correctness is never an admission criterion)
+# Trial-admission census -- artifact mask only; correctness is never an admission criterion
 # =======================================================================================================
 
 def _base_record(dataset: str, patient: str, session: str, n_raw: int, n_admitted: int, n_errors: int,
@@ -329,11 +330,12 @@ ADMISSION_ITERATORS = {
 }
 
 
-def run_block_a(root: Path) -> tuple[dict, dict[str, list[dict]]]:
-    """Scans every session's raw trial table once (Block A's own census, independent of whether that
-    session's spike data later proves usable) and, in the same pass, attempts the spike-loading path Block
-    B needs. Returns (block_a_report, sessions_by_corpus) -- the second value carries every session seen,
-    usable or not, so Block B's own zero-drop accounting reconciles against Block A's."""
+def run_trial_admission_census(root: Path) -> tuple[dict, dict[str, list[dict]]]:
+    """Scans every session's raw trial table once (this census's own count, independent of whether that
+    session's spike data later proves usable) and, in the same pass, attempts the spike-loading path the
+    human estimate needs. Returns (trial_admission_report, sessions_by_corpus) -- the second value carries
+    every session seen, usable or not, so the human estimate's own zero-drop accounting reconciles against
+    this census's."""
     sessions_by_corpus: dict[str, list[dict]] = {}
     report: dict[str, dict] = {}
     for dataset, iterator in ADMISSION_ITERATORS.items():
@@ -408,8 +410,98 @@ def _session_trial_arrays(entry: dict) -> dict:
     }
 
 
+DS006848_PRESENTATION_MODE_CODES = {"Simultaneous": 0, "Fast": 1, "Fast+delay": 2, "Slow": 3}
+
+
+def _ds006848_session_trial_arrays(entry: dict) -> dict:
+    """Healthy-participant scalp-EEG analogue of _session_trial_arrays: channels stand in for
+    units (activity_by_unit = per-trial delay-window broadband channel power, summed over bins),
+    fed unmodified into rate_free_state_deviation. is_correct is the full 7-digit sequence recalled
+    in the presented order (NCorrect == 7); the graded NCorrect/7 fraction is carried as a disclosed
+    diagnostic only, never as the admitted outcome."""
+    activity_by_unit = np.asarray(entry["counts"]).sum(axis=2)
+    deviation = rate_free_state_deviation(activity_by_unit)
+    total_delay_power = activity_by_unit.sum(axis=1)
+    trial_index = np.arange(activity_by_unit.shape[0], dtype=float)
+    ncorrect = np.asarray(entry["accuracy_ncorrect"], dtype=float)
+    is_correct = ncorrect == 7.0
+    load_level = np.asarray([DS006848_PRESENTATION_MODE_CODES[c] for c in entry["task_condition"]], dtype=float)
+    finite = np.isfinite(deviation)
+    n_finite = int(finite.sum())
+    if n_finite < MIN_TRIALS_WITH_DEFINED_DIRECTION:
+        return {"status": "too_few_trials_with_defined_direction", "n_trials_total": int(activity_by_unit.shape[0]),
+                "n_trials_with_defined_direction": n_finite}
+    dev = deviation[finite]
+    n = dev.shape[0]
+    total_dev = float(dev.sum())
+    control_dev = (total_dev - dev) / (n - 1) if n > 1 else np.full(n, np.nan)
+    return {
+        "status": "computed", "patient": entry["patient"], "session": entry["session"], "dataset": entry["dataset"],
+        "is_correct": is_correct[finite].astype(float), "deviation": dev, "control_deviation": control_dev,
+        "spike_count": total_delay_power[finite], "trial_index": trial_index[finite], "load_level": load_level[finite],
+        "n_trials_total": int(activity_by_unit.shape[0]), "n_trials_with_defined_direction": n_finite,
+        "mean_graded_accuracy_fraction": float(np.mean(ncorrect[finite] / 7.0)),
+    }
+
+
+def run_ds006848_human_estimate(root: Path) -> dict:
+    """This corpus's own, separate behaviour-link estimate: 30 healthy participants, a genuine 6.0 s
+    stimulus-free retention interval, error trials retained by construction (accuracy is a measured
+    outcome, never an admission filter). Reuses _arm/_combine_arms/_classify_human_estimate
+    unmodified. Never pooled into run_human_estimate's clinical three-corpus combined_real/branch --
+    reported as an independent block, per this project's rule against averaging across corpora."""
+    sessions = []
+    for entry in iter_ds006848(root):
+        key = f"session_arrays|ds006848_human_scalp|{entry['session']}"
+        result = _fit(key, lambda e=entry: _ds006848_session_trial_arrays(e))
+        if result["status"] == "computed":
+            sessions.append(result)
+    load_levels = sorted(set(int(v) for s in sessions for v in np.unique(s["load_level"])))
+    arms_real, arms_control, arm_labels, by_mode, by_mode_control = [], [], [], {}, {}
+    for level in load_levels:
+        tag = f"run_human_maintenance_behaviour_link|ds006848_human_scalp|presentation_mode{level}"
+        arm_real = _fit(f"arm_real|ds006848_human_scalp|{level}",
+                         lambda ss=sessions, l=level, t=tag: _arm(ss, l, "deviation", t))
+        arm_control = _fit(f"arm_control|ds006848_human_scalp|{level}",
+                            lambda ss=sessions, l=level, t=tag: _arm(ss, l, "control_deviation", f"{t}|control"))
+        by_mode[str(level)], by_mode_control[str(level)] = arm_real, arm_control
+        arms_real.append(arm_real)
+        arms_control.append(arm_control)
+        arm_labels.append(f"ds006848_human_scalp_presentation_mode{level}")
+    combined_real = {
+        "raw": _combine_arms(arms_real, "pooled_raw", arm_labels),
+        "partial_controlling_delay_power": _combine_arms(arms_real, "pooled_partial_controlling_spike_count", arm_labels),
+        "partial_controlling_trial_index": _combine_arms(arms_real, "pooled_partial_controlling_trial_index", arm_labels),
+        "joint_partial": _combine_arms(arms_real, "pooled_joint_partial", arm_labels),
+    }
+    combined_control = {
+        "raw": _combine_arms(arms_control, "pooled_raw", arm_labels),
+        "joint_partial": _combine_arms(arms_control, "pooled_joint_partial", arm_labels),
+    }
+    branch = _classify_human_estimate(combined_real, combined_control)
+    return {
+        "corpus": "ds006848_human_scalp", "n_patients": len(set(s["patient"] for s in sessions)),
+        "n_sessions_computed": len(sessions),
+        "note": "an independent estimate for a healthy-participant scalp-EEG corpus, computed the same "
+                "way as the clinical three-corpus estimate above but never pooled into it and never "
+                "compared to it by magnitude",
+        "outcome_definition": "is_correct = the full 7-digit sequence recalled in the presented serial "
+                               "order (NCorrect == 7); graded NCorrect/7 accuracy is reported per session "
+                               "(mean_graded_accuracy_fraction) as a disclosed diagnostic only",
+        "nuisance_covariate_definition": "the fields named spike_count / partial_controlling_spike_count "
+                                          "hold this corpus's own total delay-window broadband (1-40 Hz "
+                                          "Hilbert-envelope) channel power, not a spike count -- no spikes "
+                                          "exist in a scalp-EEG-only corpus",
+        "presentation_mode_levels": load_levels, "presentation_mode_codes": DS006848_PRESENTATION_MODE_CODES,
+        "arm_labels": arm_labels, "by_presentation_mode": by_mode, "by_presentation_mode_control": by_mode_control,
+        "combined_within_presentation_mode_then_meta_analysed": combined_real,
+        "mandatory_control_session_training_trial_mean": combined_control,
+        "branch": branch,
+    }
+
+
 # =======================================================================================================
-# Block B -- the human estimate (trial-level, clustered by patient)
+# Human estimate -- trial-level, clustered by patient
 # =======================================================================================================
 
 def _pool_patient_trials(sessions: list[dict], load_filter: int | None) -> dict[str, dict]:
@@ -417,15 +509,18 @@ def _pool_patient_trials(sessions: list[dict], load_filter: int | None) -> dict[
     contributed to this arm. Patients are keyed by (dataset, patient) so two different corpora's patient
     identifiers can never collide into the same cluster."""
     by_patient: dict[str, list[dict]] = {}
+    fields = ("is_correct", "deviation", "control_deviation", "spike_count", "trial_index")
     for s in sessions:
         if s["status"] != "computed":
             continue
         key = f"{s['dataset']}::{s['patient']}"
-        mask = np.ones(s["is_correct"].shape[0], dtype=bool) if load_filter is None else (s["load_level"] == load_filter)
+        # np.asarray here (not assumed already-array) because a session dict re-read from an existing
+        # checkpoint via _fit comes back from json.loads as plain lists, not ndarrays.
+        load_level = np.asarray(s["load_level"]) if load_filter is not None else None
+        mask = np.ones(len(s["is_correct"]), dtype=bool) if load_filter is None else (load_level == load_filter)
         if not mask.any():
             continue
-        by_patient.setdefault(key, []).append({field: s[field][mask] for field in
-                                                ("is_correct", "deviation", "control_deviation", "spike_count", "trial_index")})
+        by_patient.setdefault(key, []).append({field: np.asarray(s[field])[mask] for field in fields})
     return {patient: {field: np.concatenate([part[field] for part in parts]) for field in
                        ("is_correct", "deviation", "control_deviation", "spike_count", "trial_index")}
             for patient, parts in by_patient.items()}
@@ -502,41 +597,44 @@ def _combine_arms(arms: list[dict], key: str, labels: list[str]) -> dict:
 
 
 def _mdd_from_se(se: float, alpha: float = 0.05, power: float = 0.80) -> dict:
-    z = float(norm.ppf(1.0 - alpha / 2.0) + norm.ppf(power))
+    z = Z_80_POWER if (alpha, power) == (0.05, 0.80) else float(norm.ppf(1.0 - alpha / 2.0) + norm.ppf(power))
     return {"status": "computed", "se": se, "alpha": alpha, "power": power, "z_factor": z, "mdd": z * se}
 
 
-def _classify_block_b(combined_real: dict, combined_control: dict) -> dict:
+def _classify_human_estimate(combined_real: dict, combined_control: dict) -> dict:
     raw, joint = combined_real["raw"], combined_real["joint_partial"]
     if raw.get("status") != "computed":
         return {"branch": "underpowered_to_ask", "reason": "no arm produced a computable combined raw estimate"}
+    mdd = _mdd_from_se(raw["se"])
     raw_sig = raw["p_value"] <= 0.05
     if raw_sig:
         raw_sign_positive = raw["pooled"] > 0.0
         joint_agrees = (joint.get("status") == "computed" and joint["p_value"] <= 0.05
                         and (joint["pooled"] > 0.0) == raw_sign_positive)
         if not joint_agrees:
-            return {"branch": "raw_correlation_significant_but_does_not_survive_joint_control_of_spike_count_and_trial_index"}
+            return {"branch": "raw_correlation_significant_but_does_not_survive_joint_control_of_spike_count_and_trial_index",
+                    "minimum_detectable_difference_80pct_power": mdd}
         control_joint = combined_control["joint_partial"]
         control_reproduces = (control_joint.get("status") == "computed" and control_joint["p_value"] <= 0.05
                                and (control_joint["pooled"] > 0.0) == raw_sign_positive)
         if control_reproduces:
-            return {"branch": "behaviour_link_not_separable_from_a_session_level_offset"}
-        return {"branch": "the_component_predicts_accuracy_in_a_human_maintenance_delay"}
-    mdd = _mdd_from_se(raw["se"])
+            return {"branch": "behaviour_link_not_separable_from_a_session_level_offset",
+                    "minimum_detectable_difference_80pct_power": mdd}
+        return {"branch": "the_component_predicts_accuracy_in_a_human_maintenance_delay",
+                "minimum_detectable_difference_80pct_power": mdd}
     if mdd["mdd"] < MEANINGFUL_EFFECT_THRESHOLD_R_UNITS:
         return {"branch": "no_human_behaviour_link_above_the_reported_bound", "minimum_detectable_difference_80pct_power": mdd}
     return {"branch": "underpowered_to_ask", "minimum_detectable_difference_80pct_power": mdd}
 
 
-def run_block_b(sessions_by_corpus_computed: dict[str, list[dict]]) -> dict:
+def run_human_estimate(sessions_by_corpus_computed: dict[str, list[dict]]) -> dict:
     arms_real, arms_control, arm_labels = [], [], []
     per_corpus_detail: dict[str, dict] = {}
     for corpus, sessions in sessions_by_corpus_computed.items():
         load_levels = sorted(set(int(v) for s in sessions if s["status"] == "computed" for v in np.unique(s["load_level"])))
         by_load, by_load_control = {}, {}
         for load in load_levels:
-            tag = f"run_human_maintenance_behaviour_link|block_b|{corpus}|load{load}"
+            tag = f"run_human_maintenance_behaviour_link|human_estimate|{corpus}|load{load}"
             arm_real = _fit(f"arm_real|{corpus}|{load}", lambda ss=sessions, l=load, t=tag: _arm(ss, l, "deviation", t))
             arm_control = _fit(f"arm_control|{corpus}|{load}",
                                 lambda ss=sessions, l=load, t=tag: _arm(ss, l, "control_deviation", f"{t}|control"))
@@ -545,7 +643,7 @@ def run_block_b(sessions_by_corpus_computed: dict[str, list[dict]]) -> dict:
             arms_control.append(arm_control)
             arm_labels.append(f"{corpus}_load{load}")
         per_corpus_detail[corpus] = {"load_levels": load_levels, "by_load": by_load, "by_load_control": by_load_control}
-        _log(f"  Block B arms built for {corpus}: {len(load_levels)} load levels")
+        _log(f"  human estimate arms built for {corpus}: {len(load_levels)} load levels")
 
     combined_real = {
         "raw": _combine_arms(arms_real, "pooled_raw", arm_labels),
@@ -560,7 +658,7 @@ def run_block_b(sessions_by_corpus_computed: dict[str, list[dict]]) -> dict:
 
     all_sessions_flat = [s for sessions in sessions_by_corpus_computed.values() for s in sessions]
     secondary_arrays = _pool_patient_trials(all_sessions_flat, load_filter=None)
-    secondary_cells = {p: _patient_cell(arr, "deviation", f"run_human_maintenance_behaviour_link|block_b|secondary|{p}")
+    secondary_cells = {p: _patient_cell(arr, "deviation", f"run_human_maintenance_behaviour_link|human_estimate|secondary|{p}")
                         for p, arr in secondary_arrays.items()}
     secondary_pooled = {
         "raw": _pool_patients_across(secondary_cells, "raw"),
@@ -576,10 +674,10 @@ def run_block_b(sessions_by_corpus_computed: dict[str, list[dict]]) -> dict:
     else:
         secondary_mdd = {"status": "not_computable", "n": len(secondary_cells)}
 
-    branch = _classify_block_b(combined_real, combined_control)
+    branch = _classify_human_estimate(combined_real, combined_control)
 
     return {
-        "decision_rule_declared_before_fitting": BLOCK_B_DECISION_RULE_DECLARED_BEFORE_FITTING,
+        "decision_rule_declared_before_fitting": HUMAN_ESTIMATE_DECISION_RULE_DECLARED_BEFORE_FITTING,
         "meaningful_effect_threshold_r_units": MEANINGFUL_EFFECT_THRESHOLD_R_UNITS,
         "n_arms": len(arms_real), "arm_labels": arm_labels,
         "per_corpus": per_corpus_detail,
@@ -598,7 +696,7 @@ def run_block_b(sessions_by_corpus_computed: dict[str, list[dict]]) -> dict:
 
 
 # =======================================================================================================
-# Block C -- the non-human effect cut down to human error structure
+# Non-human effect at human error counts -- the non-human effect cut down to human error structure
 # =======================================================================================================
 
 def _macaque_session_activity(path: Path) -> tuple[np.ndarray, np.ndarray]:
@@ -632,13 +730,13 @@ def _session_rung(activity_by_unit: np.ndarray, is_corr: np.ndarray, e_star: int
     if e_star > len(error_idx):
         return {"status": "e_star_exceeds_session_error_trials", "n_error_actual": int(len(error_idx))}
     draws = []
-    for d in range(N_DRAWS_BLOCK_C):
+    for d in range(N_DRAWS_NON_HUMAN_EFFECT_AT_HUMAN_ERROR_COUNTS):
         rng = np.random.default_rng(stable_seed(
-            f"run_human_maintenance_behaviour_link|block_c|ladder|{session_id}|e{e_star}|draw{d}"))
+            f"run_human_maintenance_behaviour_link|non_human_effect_at_human_error_counts|ladder|{session_id}|e{e_star}|draw{d}"))
         r = _session_draw_r(activity_by_unit, is_corr, correct_idx, error_idx, e_star, rng)
         if r is not None:
             draws.append(r)
-    if len(draws) < max(3, N_DRAWS_BLOCK_C // 2):
+    if len(draws) < max(3, N_DRAWS_NON_HUMAN_EFFECT_AT_HUMAN_ERROR_COUNTS // 2):
         return {"status": "too_few_valid_draws", "n_draws_valid": len(draws)}
     return {"status": "computed", "n_draws_valid": len(draws), "median_r": float(np.median(draws)),
             "iqr_r": [float(np.percentile(draws, 25)), float(np.percentile(draws, 75))]}
@@ -648,9 +746,9 @@ def _session_human_distributed(activity_by_unit: np.ndarray, is_corr: np.ndarray
                                 human_error_counts: list[int]) -> dict:
     correct_idx, error_idx = np.where(is_corr)[0], np.where(~is_corr)[0]
     draws, n_skipped = [], 0
-    for d in range(N_DRAWS_BLOCK_C):
+    for d in range(N_DRAWS_NON_HUMAN_EFFECT_AT_HUMAN_ERROR_COUNTS):
         rng = np.random.default_rng(stable_seed(
-            f"run_human_maintenance_behaviour_link|block_c|human_distribution|{session_id}|draw{d}"))
+            f"run_human_maintenance_behaviour_link|non_human_effect_at_human_error_counts|human_distribution|{session_id}|draw{d}"))
         e_star = int(rng.choice(human_error_counts))
         if e_star > len(error_idx):
             n_skipped += 1
@@ -658,13 +756,13 @@ def _session_human_distributed(activity_by_unit: np.ndarray, is_corr: np.ndarray
         r = _session_draw_r(activity_by_unit, is_corr, correct_idx, error_idx, e_star, rng)
         if r is not None:
             draws.append(r)
-    if len(draws) < max(3, N_DRAWS_BLOCK_C // 4):
+    if len(draws) < max(3, N_DRAWS_NON_HUMAN_EFFECT_AT_HUMAN_ERROR_COUNTS // 4):
         return {"status": "too_few_valid_draws", "n_draws_valid": len(draws), "n_skipped_e_star_exceeds_session": n_skipped}
     return {"status": "computed", "n_draws_valid": len(draws), "n_skipped_e_star_exceeds_session": n_skipped,
             "median_r": float(np.median(draws))}
 
 
-def run_block_c(root: Path, human_error_counts: list[int], reference_raw_r: float) -> dict:
+def run_non_human_effect_at_human_error_counts(root: Path, human_error_counts: list[int], reference_raw_r: float) -> dict:
     macaque_paths = _reachable_sessions(root)
     rungs = sorted(set(v for v in human_error_counts if v >= 2))
     session_rung_results: dict[str, dict[int, dict]] = {}
@@ -683,7 +781,7 @@ def run_block_c(root: Path, human_error_counts: list[int], reference_raw_r: floa
         session_human_dist_results[session_id] = _fit(
             f"block_c_human_distribution|{session_id}",
             lambda a=activity_by_unit, ic=is_corr, sid=session_id: _session_human_distributed(a, ic, sid, human_error_counts))
-        _log(f"  Block C: {session_id} done ({len(rungs)} rungs + human-distribution draws)")
+        _log(f"  non-human effect: {session_id} done ({len(rungs)} rungs + human-distribution draws)")
 
     hd_values = [v["median_r"] for v in session_human_dist_results.values() if v.get("status") == "computed"]
     hd_pooled = slope_across_sessions_test(hd_values, alternative="two-sided") if hd_values else {"status": "not_computed"}
@@ -710,10 +808,10 @@ def run_block_c(root: Path, human_error_counts: list[int], reference_raw_r: floa
         branch = "no_identifiable_transition_inside_the_sampled_range"
 
     return {
-        "decision_rule_declared_before_fitting": BLOCK_C_DECISION_RULE_DECLARED_BEFORE_FITTING,
+        "decision_rule_declared_before_fitting": NON_HUMAN_EFFECT_AT_HUMAN_ERROR_COUNTS_DECISION_RULE_DECLARED_BEFORE_FITTING,
         "n_sessions": len(macaque_paths), "rungs_tested": rungs, "reference_effect_raw_r": reference_raw_r,
         "human_error_count_distribution_used_for_matched_draws": human_error_counts,
-        "n_draws_per_session_per_rung": N_DRAWS_BLOCK_C, "session_n_error_actual": session_n_error_actual,
+        "n_draws_per_session_per_rung": N_DRAWS_NON_HUMAN_EFFECT_AT_HUMAN_ERROR_COUNTS, "session_n_error_actual": session_n_error_actual,
         "human_distribution_matched_draws": {"per_session": session_human_dist_results, "pooled": hd_pooled},
         "error_count_ladder": ladder,
         "minimum_detectable_error_count_at_80pct_power": min_detectable_error_count,
@@ -722,10 +820,10 @@ def run_block_c(root: Path, human_error_counts: list[int], reference_raw_r: floa
 
 
 # =======================================================================================================
-# Block D -- the joint verdict (a pre-interpreted two-by-two)
+# Joint verdict -- a pre-interpreted two-by-two
 # =======================================================================================================
 
-BLOCK_D_CELL_INTERPRETATIONS = {
+JOINT_VERDICT_CELL_INTERPRETATIONS = {
     (True, True): "the mechanism is shared and measurable in both; the specification's read-out is human-validated",
     (True, False): "the human result is stronger than the design should allow; check it hard before believing it",
     (False, True): "a genuine preparation difference, and the most interesting outcome available here",
@@ -734,25 +832,25 @@ BLOCK_D_CELL_INTERPRETATIONS = {
 }
 
 
-def run_block_d(block_b_branch: str, block_c_branch: str) -> dict:
-    human_link_present = block_b_branch == "the_component_predicts_accuracy_in_a_human_maintenance_delay"
-    non_human_survives = block_c_branch == "the_non_human_effect_survives_at_human_error_counts"
+def run_joint_verdict(human_estimate_branch: str, non_human_effect_branch: str) -> dict:
+    human_link_present = human_estimate_branch == "the_component_predicts_accuracy_in_a_human_maintenance_delay"
+    non_human_survives = non_human_effect_branch == "the_non_human_effect_survives_at_human_error_counts"
     return {
         "human_link_present": human_link_present, "non_human_effect_survives_the_cut": non_human_survives,
-        "block_b_branch": block_b_branch, "block_c_branch": block_c_branch,
-        "cell_interpretation": BLOCK_D_CELL_INTERPRETATIONS[(human_link_present, non_human_survives)],
+        "block_b_branch": human_estimate_branch, "block_c_branch": non_human_effect_branch,
+        "cell_interpretation": JOINT_VERDICT_CELL_INTERPRETATIONS[(human_link_present, non_human_survives)],
     }
 
 
 # =======================================================================================================
-# Block E -- what actually differs between the preparations
+# Preparation differences -- what actually differs between the preparations
 # =======================================================================================================
 
-def run_block_e(block_a: dict, block_c: dict, human_median_units: float | None, macaque_median_units: float | None,
+def run_preparation_differences(trial_admission_census: dict, non_human_effect_at_human_error_counts: dict, human_median_units: float | None, macaque_median_units: float | None,
                  human_median_trials_per_session: float | None) -> list[dict]:
-    macaque_n = block_c["n_sessions"]
-    human_sessions_total = sum(block_a[c]["n_sessions_usable_for_estimator"] for c in block_a)
-    human_patients_total = sum(block_a[c]["n_patients"] for c in block_a)
+    macaque_n = non_human_effect_at_human_error_counts["n_sessions"]
+    human_sessions_total = sum(trial_admission_census[c]["n_sessions_usable_for_estimator"] for c in trial_admission_census)
+    human_patients_total = sum(trial_admission_census[c]["n_patients"] for c in trial_admission_census)
     return [
         {"topic": "species", "classification": "irreducible_difference",
          "statement": "One preparation is Macaca mulatta, the other is Homo sapiens. Nothing in this project's "
@@ -772,8 +870,8 @@ def run_block_e(block_a: dict, block_c: dict, human_median_units: float | None, 
                       "human corpus used here is binary correctness natively. Not a difference in what could be "
                       "measured, only in what was collected -- closable by a future continuous-report human task."},
         {"topic": "error_count", "classification": "irreducible_difference",
-         "statement": "This is exactly what Block C quantifies: human sessions carry a median of a handful of "
-                      "error trials per session (Block A), the macaque reachable sessions were selected for at "
+         "statement": "This is exactly what the non-human-effect-at-human-error-counts test quantifies: human sessions carry a median of a handful of "
+                      "error trials per session (the trial admission census), the macaque reachable sessions were selected for at "
                       "least 60. A human patient cannot be made to err more without changing the task's difficulty, "
                       "which changes what is being measured; this is a property of clinical Sternberg tasks kept "
                       "easy enough to be tolerable, not an instrumentation gap."},
@@ -796,18 +894,18 @@ def run_block_e(block_a: dict, block_c: dict, human_median_units: float | None, 
                       "recording session would close this without a new implant."},
         {"topic": "sessions_per_subject", "classification": "artifact_of_available_data",
          "statement": f"Human: {human_sessions_total} usable sessions across {human_patients_total} patients "
-                      "pooled over all three corpora (most patients contribute one session; Block B's whole design "
+                      "pooled over all three corpora (most patients contribute one session; the human estimate's whole design "
                       "exists because of this). Macaque: the reachable cohort spans more than one animal; this leg "
                       "pools all reachable sessions the way the reference artifact already does and does not "
-                      "re-derive per-animal identity, since neither Block B nor Block C conditions on it."},
+                      "re-derive per-animal identity, since neither the human estimate nor the non-human-effect-at-human-error-counts test conditions on it."},
     ]
 
 
 # =======================================================================================================
-# Block F -- the prediction only a maintenance-period human stimulation experiment can test
+# Human stimulation prediction -- the prediction only a maintenance-period human stimulation experiment can test
 # =======================================================================================================
 
-def run_block_f(reference_artifact: dict, subspace_artifact: dict | None, block_b: dict) -> dict:
+def run_human_stimulation_prediction(reference_artifact: dict, subspace_artifact: dict | None, human_estimate: dict) -> dict:
     pooled = reference_artifact.get("pooled", {})
     raw = pooled.get("raw_outcome_vs_deviation", {})
     joint = pooled.get("joint_partial_controlling_spike_count_and_trial_index", {})
@@ -827,27 +925,61 @@ def run_block_f(reference_artifact: dict, subspace_artifact: dict | None, block_
             "population, not the same signal under two names."
         )
 
-    human_joint = block_b.get("combined_within_load_then_meta_analysed", {}).get("joint_partial", {})
+    human_combined = human_estimate.get("combined_within_load_then_meta_analysed", {})
+    human_raw = human_combined.get("raw", {})
+    human_joint = human_combined.get("joint_partial", {})
     human_available = human_joint.get("status") == "computed" and human_joint.get("p_value", 1.0) <= 0.05
     source = "human (this leg's own combined joint estimate)" if human_available else \
         "macaque lPFC (results/rate_free_state_geometry_behavior_link.json; the human arm did not deliver its own significant fitted number)"
     used_sign = (human_joint.get("pooled") if human_available else joint_r)
+    used_joint = human_joint.get("pooled") if human_available else joint_r
+    used_raw = human_raw.get("pooled") if human_available else raw_r
+    used_values = {"joint_partial_r": used_joint, "raw_r": used_raw}
+
+    human_reading = {
+        "instrument": "human iEEG maintenance delay (this leg's own combined, meta-analysed estimate)",
+        "raw": {"estimate": human_raw.get("pooled"), "interval_95pct": [human_raw.get("ci_lo"), human_raw.get("ci_hi")],
+                "p_value": human_raw.get("p_value"), "status": human_raw.get("status")},
+        "joint_partial_controlling_spike_count_and_trial_index": {
+            "estimate": human_joint.get("pooled"), "interval_95pct": [human_joint.get("ci_lo"), human_joint.get("ci_hi")],
+            "p_value": human_joint.get("p_value"), "status": human_joint.get("status")},
+    }
+    macaque_reading = {
+        "instrument": "macaque lPFC single-unit maintenance delay (results/rate_free_state_geometry_behavior_link.json)",
+        "raw": {"estimate": raw_r, "interval_95pct": [raw.get("ci_lower"), raw.get("ci_upper")], "p_value": raw.get("p_value")},
+        "joint_partial_controlling_spike_count_and_trial_index": {
+            "estimate": joint_r, "interval_95pct": [joint.get("ci_lower"), joint.get("ci_upper")], "p_value": joint.get("p_value")},
+    }
+    value_text = "; ".join(f"{name.replace('_', ' ')}={value:.3f}"
+                            for name, value in used_values.items() if value is not None)
+    if used_sign is None:
+        direction = "an as-yet undetermined"
+        falsification = (
+            "No directional falsification criterion is available until a fitted correlation sign exists."
+        )
+    else:
+        direction = "negative" if used_sign < 0 else "positive"
+        expected_change = "decrease" if used_sign < 0 else "increase"
+        falsification = (
+            "Falsification is a stimulation-driven increase in deviation with no corresponding accuracy "
+            f"{expected_change}, or an accuracy change in the opposite direction."
+        )
 
     return {
         "source_of_the_fitted_numbers": source,
+        "prediction_correlation_values": used_values,
         "raw_correlation_reference": {"r": raw_r, "p_value": raw.get("p_value")},
         "joint_partial_correlation_reference": {"r": joint_r, "p_value": joint.get("p_value")},
+        "human_reading": human_reading,
+        "macaque_reading": macaque_reading,
         "prediction": (
             "Delivering stimulation inside a human maintenance delay that DISPLACES the population state away from "
             "its own session-typical direction (raises rate_free_state_deviation) is predicted, from this "
             f"project's own fitted numbers ({source}), to move trial accuracy in the "
-            f"{'negative' if used_sign is not None and used_sign < 0 else 'positive'} direction: a one-within-"
-            "session-standard-deviation increase in the deviation component predicts roughly a "
-            f"{abs(joint_r):.3f} to {abs(raw_r):.3f} (joint-partial to raw r-unit) increase in the per-trial "
-            "probability of an error, on the same scale results/rate_free_state_geometry_behavior_link.json "
-            "reports. This is a magnitude prediction stated on the correlational r scale this project already "
-            "uses throughout, not a causal-effect-size claim; falsification is a stimulation-driven increase in "
-            "deviation that produces NO corresponding drop in accuracy, or a drop in the opposite direction."
+            f"{direction} direction. The available "
+            f"references are correlations ({value_text}), not a calibrated "
+            "probability or dose-response transfer. The relevant error base-rate and a causal mapping from "
+            f"stimulation-induced deviation to accuracy are unavailable. {falsification}"
         ),
         "memorandum_subspace_prediction": (
             "The memorandum's own item-identity coding subspace is predicted NOT to be required to move for this "
@@ -861,6 +993,24 @@ def run_block_f(reference_artifact: dict, subspace_artifact: dict | None, block_
     }
 
 
+def refresh_stored_prediction(artifact_path: Path = OUTPUT_PATH,
+                              reference_path: Path = REFERENCE_ARTIFACT_PATH,
+                              subspace_path: Path = SUBSPACE_ARTIFACT_PATH) -> dict:
+    artifact = json.loads(artifact_path.read_text())
+    reference = json.loads(reference_path.read_text())
+    subspace = None
+    if subspace_path.exists():
+        try:
+            subspace = json.loads(subspace_path.read_text())
+        except (OSError, ValueError):
+            subspace = None
+    artifact["block_f"] = run_human_stimulation_prediction(reference, subspace, artifact["block_b"])
+    scratch = artifact_path.with_suffix(artifact_path.suffix + ".partial")
+    scratch.write_text(json.dumps(_json_safe(artifact), indent=2, allow_nan=False, default=float))
+    os.replace(scratch, artifact_path)
+    return artifact
+
+
 # =======================================================================================================
 # Driver
 # =======================================================================================================
@@ -872,11 +1022,11 @@ def main() -> None:
     output: dict = {"version": ANALYSIS_VERSION, "status": "running"}
     _flush(output)
 
-    _log("Block A: trial admission census (all three human maintenance corpora)")
-    block_a, sessions_by_corpus = run_block_a(root)
-    output["block_a"] = block_a
+    _log("trial admission census (all three human maintenance corpora)")
+    trial_admission_census, sessions_by_corpus = run_trial_admission_census(root)
+    output["block_a"] = trial_admission_census
     _flush(output)
-    for corpus, report in block_a.items():
+    for corpus, report in trial_admission_census.items():
         _log(f"  {corpus}: {report['n_trials_admitted_total']} admitted, {report['n_errors_admitted_total']} errors "
              f"({report['pct_errors_admitted']:.2f}%), {report['n_sessions_usable_for_estimator']}/{report['n_sessions_seen']} "
              f"sessions usable, elapsed={time.time() - t0:.0f}s")
@@ -901,13 +1051,25 @@ def main() -> None:
     output["session_array_status_by_corpus"] = session_array_status
     _flush(output)
 
-    _log("Block B: the human estimate")
-    output["block_b"] = run_block_b(sessions_by_corpus_computed)
+    _log("human estimate")
+    output["block_b"] = run_human_estimate(sessions_by_corpus_computed)
     _flush(output)
-    _log(f"  Block B branch: {output['block_b']['branch']['branch']} elapsed={time.time() - t0:.0f}s")
+    _log(f"  human estimate branch: {output['block_b']['branch']['branch']} elapsed={time.time() - t0:.0f}s")
+
+    _log("ds006848 healthy-participant scalp-EEG estimate (separate corpus, never pooled above)")
+    output["block_b_ds006848_healthy_scalp"] = run_ds006848_human_estimate(root)
+    output["block_b_ds005034_healthy_scalp"] = {
+        "corpus": "ds005034_human_scalp", "status": "not_applicable",
+        "reason": "no trial-level behavioural outcome is recorded in this corpus's public BIDS "
+                  "release; it exists only on a separate OSF repository not present in this "
+                  "project's data root (config/datasets.json)",
+    }
+    _flush(output)
+    _log(f"  ds006848 estimate branch: {output['block_b_ds006848_healthy_scalp']['branch']['branch']} "
+         f"elapsed={time.time() - t0:.0f}s")
 
     human_error_counts = [
-        s["n_errors_admitted"] for report in block_a.values() for s in report["per_session_census"]
+        s["n_errors_admitted"] for report in trial_admission_census.values() for s in report["per_session_census"]
         if s["n_trials_admitted"] >= MIN_TRIALS
     ]
     reference_artifact = json.loads(REFERENCE_ARTIFACT_PATH.read_text())
@@ -920,13 +1082,13 @@ def main() -> None:
         "n_sessions": reference_artifact.get("n_sessions_computed"),
     }
 
-    _log(f"Block C: the non-human effect cut down to human error structure ({len(human_error_counts)} human sessions "
+    _log(f"non-human effect at human error counts cut down to human error structure ({len(human_error_counts)} human sessions "
          "informing the target distribution)")
-    output["block_c"] = run_block_c(root, human_error_counts, reference_raw_r)
+    output["block_c"] = run_non_human_effect_at_human_error_counts(root, human_error_counts, reference_raw_r)
     _flush(output)
-    _log(f"  Block C branch: {output['block_c']['branch']} elapsed={time.time() - t0:.0f}s")
+    _log(f"  non-human-effect-at-human-error-counts branch: {output['block_c']['branch']} elapsed={time.time() - t0:.0f}s")
 
-    output["block_d"] = run_block_d(output["block_b"]["branch"]["branch"], output["block_c"]["branch"])
+    output["block_d"] = run_joint_verdict(output["block_b"]["branch"]["branch"], output["block_c"]["branch"])
 
     macaque_units = [_macaque_session_activity(p)[0].shape[1] for p in _reachable_sessions(root)]
     human_unit_counts = []
@@ -939,8 +1101,8 @@ def main() -> None:
             if entry["usable_for_estimator"]:
                 human_unit_counts.append(len(entry["spike_lists"]))
 
-    output["block_e"] = run_block_e(
-        block_a, output["block_c"],
+    output["block_e"] = run_preparation_differences(
+        trial_admission_census, output["block_c"],
         human_median_units=float(np.median(human_unit_counts)) if human_unit_counts else None,
         macaque_median_units=float(np.median(macaque_units)) if macaque_units else None,
         human_median_trials_per_session=float(np.median(human_trial_counts)) if human_trial_counts else None,
@@ -952,17 +1114,23 @@ def main() -> None:
             subspace_artifact = json.loads(SUBSPACE_ARTIFACT_PATH.read_text())
         except (OSError, ValueError):
             subspace_artifact = None
-    output["block_f"] = run_block_f(reference_artifact, subspace_artifact, output["block_b"])
+    output["block_f"] = run_human_stimulation_prediction(reference_artifact, subspace_artifact, output["block_b"])
 
     output["status"] = "complete"
     output["wall_clock_s"] = time.time() - t0
     _flush(output)
     print(json.dumps({
-        "block_b_branch": output["block_b"]["branch"]["branch"],
-        "block_c_branch": output["block_c"]["branch"],
-        "block_d": output["block_d"]["cell_interpretation"],
+        "human_estimate_branch": output["block_b"]["branch"]["branch"],
+        "non_human_effect_branch": output["block_c"]["branch"],
+        "joint_verdict": output["block_d"]["cell_interpretation"],
     }, indent=2, default=float))
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--refresh-stored-prediction", type=Path)
+    args = parser.parse_args()
+    if args.refresh_stored_prediction:
+        refresh_stored_prediction(args.refresh_stored_prediction)
+    else:
+        main()

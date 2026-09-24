@@ -332,14 +332,14 @@ def test_delivered_cell_is_deterministic_on_real_session_inputs():
 @requires_data_root
 def test_delivered_artifact_matches_its_own_reproduction_gate_shape():
     """results/rank_free_component_identity.json is expected to already exist and carry at least one
-    cell that reached the four-independent-unit floor for each of the four corpora the diagnostic
-    script needs -- if this ever stops being true the diagnostic script has nothing to reproduce."""
+    cell that reached the four-independent-unit floor for each corpus the diagnostic script needs --
+    if this ever stops being true for any of them the diagnostic script has nothing to reproduce."""
     delivered = json.loads(rank_free.OUTPUT_PATH.read_text())
     summary = delivered["summary"]["per_corpus"]
     needed = {
         corpus for corpus, candidates in summary.items()
         if any(cell.get("status") == "computed" for cell in candidates.values())
     }
-    assert needed == {
+    assert {
         "inagaki_alm5_mouse_ALM", "dandi_000469_human", "dandi_001187_human", "dandi_000574_human",
-    }
+    }.issubset(needed)

@@ -81,7 +81,7 @@ from project_config import data_root, dataset_path, executable, project_path
 
 import h5py
 from scipy.stats import norm
-from statistics import (linear_mixed_effects_test, forest_meta, stouffer_combine, stable_seed,
+from statistics import (Z_80_POWER, linear_mixed_effects_test, forest_meta, stouffer_combine, stable_seed,
                         permutation_pvalue)
 
 RESULTS = ROOT / "results"
@@ -125,15 +125,10 @@ def minimum_detectable_correlation(n: float, alpha: float = 0.05, power: float =
     instead derive detection bounds from a whole-subject cluster bootstrap."""
     if n < 4:
         return {"status": "not_computable", "n": n}
-    z_factor = float(norm.ppf(1 - alpha / 2) + norm.ppf(power))
+    z_factor = Z_80_POWER if (alpha, power) == (0.05, 0.80) else float(norm.ppf(1 - alpha / 2) + norm.ppf(power))
     z_effect = z_factor / np.sqrt(n - 3)
     return {"status": "computed", "n": n, "alpha": alpha, "power": power,
             "z_factor": z_factor, "mdd_r": float(np.tanh(z_effect))}
-
-
-# Two-sided alpha=0.05, power=0.80 detectability z-factor, the same quantity every power
-# calculation in this project uses (see statistics.minimum_detectable_paired_difference).
-Z_FACTOR_80_POWER = float(norm.ppf(1 - 0.05 / 2) + norm.ppf(0.80))
 
 
 WITHIN_R_DEFINITION = (
@@ -237,7 +232,7 @@ def _lme_report(drift: np.ndarray, rt: np.ndarray, subj: np.ndarray, seed_name: 
         "within_subject_r_ci_lo": ci.get("r_ci_lo", float("nan")),
         "within_subject_r_ci_hi": ci.get("r_ci_hi", float("nan")),
         "within_subject_r_se": r_se,
-        "mdc_80_r": float(min(1.0, Z_FACTOR_80_POWER * r_se)) if np.isfinite(r_se) else float("nan"),
+        "mdc_80_r": float(min(1.0, Z_80_POWER * r_se)) if np.isfinite(r_se) else float("nan"),
         "mdc_80_r_correction_note": MDC_CORRECTION_NOTE,
         "n_trials": int(len(drift)), "n_subjects": int(n_subjects),
     }
@@ -438,6 +433,21 @@ def _describe_bias_only_vs_native(beta_between_subject: float, native_beta: floa
     )
 
 
+def _real_minus_control(native: dict, bias_only: dict) -> dict:
+    """native.beta minus bias_only.beta on the shared regression-coefficient scale, with an
+    interval from combining each arm's own already-fitted standard error."""
+    if "beta" not in native or "beta" not in bias_only or not np.isfinite(bias_only.get("se", float("nan"))):
+        return {"status": "not_applicable"}
+    estimate = float(native["beta"] - bias_only["beta"])
+    se = float(np.sqrt(native["se"] ** 2 + bias_only["se"] ** 2))
+    z95 = float(norm.ppf(0.975))
+    return {
+        "status": "computed", "estimate": estimate, "real_value": float(native["beta"]),
+        "control_value": float(bias_only["beta"]), "standard_error": se,
+        "interval_95pct": [estimate - z95 * se, estimate + z95 * se],
+    }
+
+
 def _within_subject_identity_note(within_subject: dict, native: dict) -> dict:
     """Verify, numerically, that within_subject.beta equals native.beta -- a structural identity
     of this model, not a coincidence: the native fit already carries a per-subject random
@@ -532,6 +542,7 @@ def _run_control_arms(trials: dict, seed_prefix: str, native: dict) -> dict:
         if "beta" in native:
             bias_only["beta_vs_native"] = _describe_bias_only_vs_native(
                 bias_only["beta"], native["beta"])
+            bias_only["real_minus_control"] = _real_minus_control(native, bias_only)
     else:
         bias_only = {
             "not_computable": True, "between_subject_test_status": between_subject["status"],
@@ -872,7 +883,7 @@ def _pool_arm(scored_corpora: dict, arm_key: str | None, labels: list[str]) -> d
             pooled_arm["between_subject_r"] = float(np.tanh(r_meta_z["pooled"]))
             pooled_arm["between_subject_r_ci_lo"] = float(np.tanh(r_meta_z["ci_lo"]))
             pooled_arm["between_subject_r_ci_hi"] = float(np.tanh(r_meta_z["ci_hi"]))
-            pooled_arm["mdc_80_r"] = float(np.tanh(Z_FACTOR_80_POWER * r_meta_z["se"]))
+            pooled_arm["mdc_80_r"] = float(np.tanh(Z_80_POWER * r_meta_z["se"]))
             pooled_arm["mdc_80_r_correction_note"] = (
                 "This arm's predictor is subject-constant, so it has a one-row-per-subject "
                 "between-subject estimand, not the within-subject trial-level one the other "
@@ -904,7 +915,7 @@ def _pool_arm(scored_corpora: dict, arm_key: str | None, labels: list[str]) -> d
             pooled_arm["within_subject_r_ci_lo"] = float(np.tanh(r_meta_z["ci_lo"]))
             pooled_arm["within_subject_r_ci_hi"] = float(np.tanh(r_meta_z["ci_hi"]))
             pooled_arm["within_subject_r_se_fisher_z"] = float(r_meta_z["se"])
-            pooled_arm["mdc_80_r"] = float(np.tanh(Z_FACTOR_80_POWER * r_meta_z["se"]))
+            pooled_arm["mdc_80_r"] = float(np.tanh(Z_80_POWER * r_meta_z["se"]))
             pooled_arm["mdc_80_r_correction_note"] = (
                 "The pooled detection floor is computed from the random-effects Fisher-z meta-"
                 "analytic SE of per-corpus subject-adjusted correlations. Each per-corpus SE comes "

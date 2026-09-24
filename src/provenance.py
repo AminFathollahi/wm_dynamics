@@ -123,6 +123,11 @@ def restore_checkpoint(value: Any) -> Any:
     checkpoint should go through checkpoint_safe instead: a tagged array always
     comes back with its original dtype and shape exactly, an untagged one only
     approximately.
+
+    JSON also has no integer dict keys: a dict keyed by int in memory comes back
+    from json.loads keyed by its str(). Every digit-only key is restored to int
+    here, so a caller that indexes a restored dict with the same ints it wrote
+    (e.g. a per-chunk-size lookup table) does not have to convert at every call site.
     """
     if isinstance(value, dict):
         if value.get(_CHECKPOINT_ARRAY_TAG) is True and "dtype" in value and "data" in value:
@@ -131,7 +136,10 @@ def restore_checkpoint(value: Any) -> Any:
             array = np.array(data, dtype=dtype)
             shape = tuple(value.get("shape", array.shape))
             return array.reshape(shape) if array.shape != shape and array.size == np.prod(shape) else array
-        return {key: restore_checkpoint(item) for key, item in value.items()}
+        return {
+            (int(key) if isinstance(key, str) and key.isdigit() else key): restore_checkpoint(item)
+            for key, item in value.items()
+        }
     if isinstance(value, list):
         if _is_bool_leaf_list(value):
             return np.array(value, dtype=bool)
@@ -162,13 +170,33 @@ def sha256_file(path: str | Path, chunk_size: int = 1024 * 1024) -> str:
     return digest.hexdigest()
 
 
-def git_commit(repo_root: str | Path) -> str | None:
+def git_commit(repo_root: str | Path, script_path: str | Path | None = None) -> str | dict | None:
+    """The current HEAD sha, unchanged for every existing caller passing one argument.
+
+    With ``script_path``, returns a dict instead: the sha, whether the working tree carries
+    uncommitted changes (so a sha alone is not mistaken for identifying the exact code that ran),
+    and the producing script's own sha256 (so an untracked or since-edited script's artifact still
+    names the file that actually produced it, independent of git).
+    """
     try:
-        return subprocess.check_output(
+        sha = subprocess.check_output(
             ["git", "-C", str(repo_root), "rev-parse", "HEAD"], text=True
         ).strip()
     except (OSError, subprocess.CalledProcessError):
-        return None
+        sha = None
+    if script_path is None:
+        return sha
+    try:
+        dirty = bool(subprocess.check_output(
+            ["git", "-C", str(repo_root), "status", "--porcelain"], text=True
+        ).strip())
+    except (OSError, subprocess.CalledProcessError):
+        dirty = None
+    return {
+        "sha": sha,
+        "working_tree_dirty": dirty,
+        "producing_script_sha256": sha256_file(script_path),
+    }
 
 
 @dataclass(frozen=True)
@@ -255,6 +283,20 @@ def linked_duplicate_000673_session_keys(overlap_report: dict[str, Any]) -> set[
             if row["release"] == "000673":
                 stems.add(Path(row["path"]).stem)
     return stems
+
+
+def canonical_patient_by_relative_path(provenance_dir: str | Path) -> dict[str, str]:
+    """Map each primary recording's ``release/sub-N/file.nwb`` path to its canonical patient id.
+
+    Built from canonical_primary_records.json: for a recording shared between releases (e.g.
+    001187 and 000673), only the primary release's path is a key here, so filtering session paths
+    against this mapping both resolves the shared-patient identity and drops the duplicate.
+    """
+    path = Path(provenance_dir) / "canonical_primary_records.json"
+    if not path.exists():
+        return {}
+    records = json.loads(path.read_text())
+    return {record["path"]: record["patient"] for record in records}
 
 
 REQUIRED_LEDGER_FIELDS = {

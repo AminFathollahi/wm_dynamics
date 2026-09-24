@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0.0",
   "paths": {
-    "data_root": null,
+    "data_root": "/media/amin/ADATA HD710 PRO/Research/Representation/Working Memory/data",
     "results": "results",
     "figures": "figures",
     "provenance": "provenance",
@@ -17,7 +17,7 @@
     "lfads_python": "WM_DYNAMICS_LFADS_PYTHON"
   },
   "executables": {
-    "lfads_python": null
+    "lfads_python": "/home/amin/envs/lfads_torch_py310/bin/python"
   },
   "defaults": {
     "random_seed": 42,

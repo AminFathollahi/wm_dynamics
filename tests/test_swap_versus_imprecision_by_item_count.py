@@ -30,10 +30,10 @@ from run_swap_versus_imprecision_by_item_count import (  # noqa: E402
     _dichotomize_worst,
     _one_level_raw,
     _pool_series,
-    block_a_heterogeneity,
-    block_a_level_counts,
-    block_a_table,
-    block_b_primary,
+    per_level_heterogeneity_tests,
+    per_level_trial_and_swap_counts,
+    per_level_pooled_association_table,
+    swap_vs_imprecision_paired_test,
     decide_named_outcomes,
 )
 
@@ -185,37 +185,38 @@ N_SESSIONS = 6  # the paired sign-flip test's own minimum-attainable-p floor nee
 
 def test_per_level_ladder_recovers_a_swap_only_component_synthetic():
     """Deviation drives the swap indicator strongly and positively at every level >= 2, and is pure
-    noise against imprecision at every level including item count 1. The per-level Block A table must
-    show the swap association significant at every level and the imprecision association null at every
-    level, and the direct paired test between them must be significant after BH correction."""
+    noise against imprecision at every level including item count 1. The per-level pooled association
+    table must show the swap association significant at every level and the imprecision association
+    null at every level, and the direct paired test between them must be significant after BH
+    correction."""
     rows = [
         _make_synthetic_row(f"synthetic_swap_only_{i}", np.random.default_rng(1000 + i), n_per_level=250,
                              swap_coef=3.0, imprecision_coef_by_level={}, seed_tag="swap_only_test")
         for i in range(N_SESSIONS)
     ]
 
-    block_a = block_a_table(rows)
-    block_a_counts = block_a_level_counts(rows)
-    heterogeneity = block_a_heterogeneity(rows)
+    per_level_table = per_level_pooled_association_table(rows)
+    per_level_counts = per_level_trial_and_swap_counts(rows)
+    heterogeneity = per_level_heterogeneity_tests(rows)
     levels_with_swap = (2, 3)
 
     for level in levels_with_swap:
-        swap_cell = block_a["swap_primary"]["deviation"][str(level)]["raw"]
-        imprecision_cell = block_a["imprecision"]["deviation"][str(level)]["raw"]
+        swap_cell = per_level_table["swap_primary"]["deviation"][str(level)]["raw"]
+        imprecision_cell = per_level_table["imprecision"]["deviation"][str(level)]["raw"]
         assert swap_cell["status"] == "tested", f"level {level} swap cell not tested"
         assert swap_cell["significant"] is True, f"level {level} swap association should be significant"
         assert imprecision_cell["status"] == "tested", f"level {level} imprecision cell not tested"
         assert imprecision_cell["significant"] is False, f"level {level} imprecision should be null"
 
-    imprecision_level1 = block_a["imprecision"]["deviation"]["1"]["raw"]
+    imprecision_level1 = per_level_table["imprecision"]["deviation"]["1"]["raw"]
     assert imprecision_level1["status"] == "tested"
     assert imprecision_level1["significant"] is False
 
-    block_b = block_b_primary(rows, levels_with_swap, outcome="swap_primary")
-    block_b_bh = _bh_family(block_b)
+    swap_vs_imprecision_result = swap_vs_imprecision_paired_test(rows, levels_with_swap, outcome="swap_primary")
+    swap_vs_imprecision_bh = _bh_family(swap_vs_imprecision_result)
     for level in levels_with_swap:
-        assert block_b[str(level)]["status"] == "tested"
-        assert block_b_bh["bh_significant"][str(level)] is True, \
+        assert swap_vs_imprecision_result[str(level)]["status"] == "tested"
+        assert swap_vs_imprecision_bh["bh_significant"][str(level)] is True, \
             f"the direct paired test at level {level} should be significant after BH correction"
 
     load1_deviation_raw = _pool_series([
@@ -223,7 +224,8 @@ def test_per_level_ladder_recovers_a_swap_only_component_synthetic():
         if r["load_1_control"]["deviation"]["raw"]["status"] == "computed"
     ])
     named = decide_named_outcomes(
-        block_a, block_a_counts, block_b, block_b_bh, block_b, block_b_bh, heterogeneity,
+        per_level_table, per_level_counts, swap_vs_imprecision_result, swap_vs_imprecision_bh,
+        swap_vs_imprecision_result, swap_vs_imprecision_bh, heterogeneity,
         levels_with_swap, load1_deviation_raw,
         reproduced_imprecision_combined={"status": "tested", "significant": False}, bias_only={})
     assert named["primary_branch"] == BRANCH_HOLDS_EVERY_LEVEL
@@ -242,13 +244,13 @@ def test_mixing_branch_fires_when_opposite_sign_levels_combine_to_a_null_synthet
         for i in range(N_SESSIONS)
     ]
 
-    block_a = block_a_table(rows)
-    block_a_counts = block_a_level_counts(rows)
-    heterogeneity = block_a_heterogeneity(rows)
+    per_level_table = per_level_pooled_association_table(rows)
+    per_level_counts = per_level_trial_and_swap_counts(rows)
+    heterogeneity = per_level_heterogeneity_tests(rows)
     levels_with_swap = (2, 3)
 
-    level2 = block_a["imprecision"]["deviation"]["2"]["raw"]
-    level3 = block_a["imprecision"]["deviation"]["3"]["raw"]
+    level2 = per_level_table["imprecision"]["deviation"]["2"]["raw"]
+    level3 = per_level_table["imprecision"]["deviation"]["3"]["raw"]
     assert level2["status"] == "tested" and level3["status"] == "tested"
     assert level2["significant"] is True and level3["significant"] is True
     assert (level2["mean_value"] > 0.0) != (level3["mean_value"] > 0.0), \
@@ -265,14 +267,15 @@ def test_mixing_branch_fires_when_opposite_sign_levels_combine_to_a_null_synthet
     assert combined["significant"] is False, \
         "the matched, opposite-signed trial counts must combine to a null, or this is not a mixing test"
 
-    block_b = block_b_primary(rows, levels_with_swap, outcome="swap_primary")
-    block_b_bh = _bh_family(block_b)
+    swap_vs_imprecision_result = swap_vs_imprecision_paired_test(rows, levels_with_swap, outcome="swap_primary")
+    swap_vs_imprecision_bh = _bh_family(swap_vs_imprecision_result)
     load1_deviation_raw = _pool_series([
         r["load_1_control"]["deviation"]["raw"]["r"] for r in rows
         if r["load_1_control"]["deviation"]["raw"]["status"] == "computed"
     ])
     named = decide_named_outcomes(
-        block_a, block_a_counts, block_b, block_b_bh, block_b, block_b_bh, heterogeneity,
+        per_level_table, per_level_counts, swap_vs_imprecision_result, swap_vs_imprecision_bh,
+        swap_vs_imprecision_result, swap_vs_imprecision_bh, heterogeneity,
         levels_with_swap, load1_deviation_raw, reproduced_imprecision_combined=combined, bias_only={})
 
     assert named[FLAG_MIXING]["fires"] is True
@@ -290,12 +293,12 @@ def test_a_bias_only_reproduced_swap_cell_cannot_carry_a_branch():
                              swap_coef=3.0, imprecision_coef_by_level={}, seed_tag="void_test")
         for i in range(N_SESSIONS)
     ]
-    block_a = block_a_table(rows)
-    block_a_counts = block_a_level_counts(rows)
-    heterogeneity = block_a_heterogeneity(rows)
+    per_level_table = per_level_pooled_association_table(rows)
+    per_level_counts = per_level_trial_and_swap_counts(rows)
+    heterogeneity = per_level_heterogeneity_tests(rows)
     levels_with_swap = (2, 3)
-    block_b = block_b_primary(rows, levels_with_swap, outcome="swap_primary")
-    block_b_bh = _bh_family(block_b)
+    swap_vs_imprecision_result = swap_vs_imprecision_paired_test(rows, levels_with_swap, outcome="swap_primary")
+    swap_vs_imprecision_bh = _bh_family(swap_vs_imprecision_result)
     load1_deviation_raw = _pool_series([
         r["load_1_control"]["deviation"]["raw"]["r"] for r in rows
         if r["load_1_control"]["deviation"]["raw"]["status"] == "computed"
@@ -304,14 +307,16 @@ def test_a_bias_only_reproduced_swap_cell_cannot_carry_a_branch():
     # Un-voided: this reproduces the per-level ladder test's own result -- a sanity check that the two
     # tests build the same scenario before the voided version is checked against it.
     named_unvoided = decide_named_outcomes(
-        block_a, block_a_counts, block_b, block_b_bh, block_b, block_b_bh, heterogeneity,
+        per_level_table, per_level_counts, swap_vs_imprecision_result, swap_vs_imprecision_bh,
+        swap_vs_imprecision_result, swap_vs_imprecision_bh, heterogeneity,
         levels_with_swap, load1_deviation_raw,
         reproduced_imprecision_combined={"status": "tested", "significant": False}, bias_only={})
     assert named_unvoided["primary_branch"] == BRANCH_HOLDS_EVERY_LEVEL
 
     bias_only = {"swap_primary|deviation|level2": {"reproduces_the_real_result": True}}
     named_voided = decide_named_outcomes(
-        block_a, block_a_counts, block_b, block_b_bh, block_b, block_b_bh, heterogeneity,
+        per_level_table, per_level_counts, swap_vs_imprecision_result, swap_vs_imprecision_bh,
+        swap_vs_imprecision_result, swap_vs_imprecision_bh, heterogeneity,
         levels_with_swap, load1_deviation_raw,
         reproduced_imprecision_combined={"status": "tested", "significant": False}, bias_only=bias_only)
 

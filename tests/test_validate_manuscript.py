@@ -21,9 +21,12 @@ def _ledger():
     ]
 
 
+def _current_count_text():
+    return f"{MODULE.CURRENT_TEST_COUNT:,}".replace(",", "{,}") + " tests"
+
+
 def _paper():
-    return r"""
-550 tests
+    return "\n" + _current_count_text() + r"""
 001187 and 000673 are NOT independent
 \citep{wolff2017} \citep{barbosa2021}
 supports neither reading
@@ -36,11 +39,11 @@ results/drift_control_payload_000469.json
 
 
 def test_accepts_current_claim_boundary():
-    assert MODULE.validate_text(_paper(), "550 tests", _ledger()) == []
+    assert MODULE.validate_text(_paper(), _current_count_text(), _ledger()) == []
 
 
 def test_rejects_stale_counts_and_forbidden_language():
-    errors = MODULE.validate_text(_paper() + "\n417 tests\ntrending", "550 tests", _ledger())
+    errors = MODULE.validate_text(_paper() + "\n417 tests\ntrending", _current_count_text(), _ledger())
     assert any("stale test count" in error for error in errors)
     assert any("forbidden" in error for error in errors)
 
@@ -50,7 +53,7 @@ def test_rejects_positive_control_claim_before_archive():
         r"\part{Retained exploratory results archive}",
         "We demonstrate control.\n" + r"\part{Retained exploratory results archive}",
     )
-    assert any("control claim" in error for error in MODULE.validate_text(paper, "550 tests", _ledger()))
+    assert any("control claim" in error for error in MODULE.validate_text(paper, _current_count_text(), _ledger()))
 
 
 def test_rejects_uncited_current_artifact_but_not_superseded_intermediate():
@@ -58,7 +61,7 @@ def test_rejects_uncited_current_artifact_but_not_superseded_intermediate():
         {"artifact_path": "results/uncited_current.json", "status": "current_exploratory"},
         {"artifact_path": "results/smoke_intermediate.json", "status": "superseded"},
     ]
-    errors = MODULE.validate_text(_paper(), "550 tests", ledger)
+    errors = MODULE.validate_text(_paper(), _current_count_text(), ledger)
     assert errors == ["current ledger artifact has no manuscript citation: uncited_current.json"]
 
 
@@ -67,5 +70,5 @@ def test_pipeline_provenance_status_exempt_but_evidence_status_still_required():
         {"artifact_path": "results/uncited_provenance.json", "status": "pipeline_provenance"},
         {"artifact_path": "results/uncited_current.json", "status": "current_exploratory"},
     ]
-    errors = MODULE.validate_text(_paper(), "550 tests", ledger)
+    errors = MODULE.validate_text(_paper(), _current_count_text(), ledger)
     assert errors == ["current ledger artifact has no manuscript citation: uncited_current.json"]

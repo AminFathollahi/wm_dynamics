@@ -802,8 +802,8 @@ def ram_ieeg_rows() -> list[dict]:
 
 
 NOT_STAGED_CORPORA = {
-    "ds004752": "modified Sternberg human simultaneous scalp+depth+MNI corpus; staging it is a separate, later step reserved for its own dedicated effort, out of scope here by explicit instruction",
-    "ds005034": "theta tACS verum-vs-sham corpus; on disk, never opened; not staged as part of this census",
+    "ds004752": "modified Sternberg human simultaneous scalp+depth+MNI corpus; now has a working tensor loader (scripts/run_recording_tier_component_transfer.py:build_beamformed_session, LCMV-beamformed cortical virtual sensors, restricted to the 9 patients shared with dandi_000574) but that loader is not wired into this census script, so it remains uncomputed here",
+    "ds005034": "theta tACS verum-vs-sham corpus; now has a working tensor loader (src/corpus_sessions.py:iter_ds005034, consumed by scripts/run_recording_tier_component_transfer.py and scripts/run_rank_free_component_identity.py) but that loader is not wired into this census script, so it remains uncomputed here",
     "campbell": "human MTL/amygdala stimulation-with-sorted-units corpus; publication not yet identified, so not usable regardless of staging",
     "dandi_000004": "human MTL single-unit recognition corpus (task-generality arm, not a maintenance arm); not staged as part of this census",
 }

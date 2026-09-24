@@ -624,7 +624,20 @@ def claim_control_model_delivered(fit: dict, cond_info: dict, rng: np.random.Gen
 
 # ── Aggregation, verdict keys, and the pre-declared escalation rules ──────────────
 
-def aggregate_effect_cells(per_session: list[dict]) -> dict:
+def session_cluster_interval(values: np.ndarray | list[float], seed_tag: str, n_boot: int = 2000) -> dict:
+    """Percentile bootstrap 95% interval on the mean of one value per session, resampling whole
+    sessions with replacement -- the pooled-effect interval reported beside every estimator cell."""
+    arr = np.asarray(values, dtype=float)
+    arr = arr[np.isfinite(arr)]
+    if len(arr) < 2:
+        return {"status": "not_computable", "n_sessions": int(len(arr))}
+    rng = np.random.default_rng(stable_seed(seed_tag))
+    boot = np.array([arr[rng.integers(0, len(arr), len(arr))].mean() for _ in range(n_boot)])
+    lo, hi = np.percentile(boot, [2.5, 97.5])
+    return {"status": "computed", "n_sessions": int(len(arr)), "interval_95pct": [float(lo), float(hi)]}
+
+
+def aggregate_effect_cells(per_session: list[dict], seed_tag: str = "") -> dict:
     effects = np.array([r["effect_size"] for r in per_session
                         if np.isfinite(r.get("effect_size", np.nan))])
     pvals = np.array([r["p_value"] for r in per_session
@@ -635,6 +648,8 @@ def aggregate_effect_cells(per_session: list[dict]) -> dict:
            "mean_effect_size": float(np.mean(effects)),
            "std_effect_size": float(np.std(effects, ddof=1)) if len(effects) > 1 else None,
            "effect_range": [float(np.min(effects)), float(np.max(effects))],
+           "pooled_effect_session_cluster_interval_95pct": session_cluster_interval(
+               effects, f"{seed_tag}|session_cluster_interval"),
            "minimum_detectable_difference": (minimum_detectable_paired_difference(effects)
                                              if len(effects) >= 2
                                              else {"status": "not_computable"})}
@@ -816,7 +831,7 @@ def rung_three_sample_size(sd: float, effect: float) -> dict:
             "estimated_wall_clock_cost_s": float(n_needed * MEDIAN_SEQUENTIAL_AUTOENCODER_FIT_COST_S)}
 
 
-def aggregate_claim(records: list[dict], cell_key: str) -> tuple[dict, str]:
+def aggregate_claim(records: list[dict], cell_key: str, candidate: str = "") -> tuple[dict, str]:
     """Aggregate one claim's cells for one estimator across sessions, and return the aggregate
     beside its pre-declared verdict key. Each claim family aggregates its own primary quantity;
     every aggregate carries n, the effect summary and its spread."""
@@ -848,6 +863,8 @@ def aggregate_claim(records: list[dict], cell_key: str) -> tuple[dict, str]:
                "vote_resolvability": dynamics_vote_resolvability(classification_counts),
                "mean_rho": float(np.mean(rhos)) if rhos else None,
                "std_rho": float(np.std(rhos, ddof=1)) if len(rhos) > 1 else None,
+               "pooled_effect_session_cluster_interval_95pct": session_cluster_interval(
+                   rhos, f"{candidate}|{cell_key}|session_cluster_interval"),
                "fraction_identifiable": float(np.mean(identifiable)) if identifiable else None,
                "rho_minimum_detectable_difference": (
                    minimum_detectable_paired_difference(np.array(rhos)) if len(rhos) >= 2
@@ -885,6 +902,8 @@ def aggregate_claim(records: list[dict], cell_key: str) -> tuple[dict, str]:
                "std_alignment_excess": (float(np.std(excesses, ddof=1)) if len(excesses) > 1
                                         else None),
                "alignment_excess_per_session": excesses,
+               "pooled_effect_session_cluster_interval_95pct": session_cluster_interval(
+                   excesses, f"{candidate}|{cell_key}|session_cluster_interval"),
                "excess_minimum_detectable_difference": (
                    minimum_detectable_paired_difference(np.array(excesses)) if len(excesses) >= 2
                    else {"status": "not_computable"}),
@@ -900,7 +919,8 @@ def aggregate_claim(records: list[dict], cell_key: str) -> tuple[dict, str]:
                       and rec.get(cell_key, {}).get("status") == "computed"]
     agg = aggregate_effect_cells([{"effect_size": node.get("effect_size", np.nan),
                                    "p_value": node.get("p_value", np.nan)}
-                                  for _, node in computed_pairs])
+                                  for _, node in computed_pairs],
+                                 seed_tag=f"{candidate}|{cell_key}")
     agg["per_session"] = [{"session_key": skey, "effect_size": node.get("effect_size"),
                            "predictable_fraction": node.get("predictable_fraction"),
                            "p_value": node.get("p_value"), "n_trials": node.get("n_trials")}
@@ -909,15 +929,48 @@ def aggregate_claim(records: list[dict], cell_key: str) -> tuple[dict, str]:
     return agg, effect_cell_verdict_key(agg)
 
 
+def _interval_sign(interval: list[float]) -> str:
+    lo, hi = interval
+    if lo > 0.0:
+        return "positive"
+    if hi < 0.0:
+        return "negative"
+    return "spans_zero"
+
+
+def interval_agreement(estimators: dict[str, dict]) -> dict:
+    """Cross-estimator agreement read off each estimator's own pooled-effect session-cluster
+    interval, never off its verdict key: whether every computed interval shares a sign, and the
+    pairwise overlap between every pair of estimator intervals."""
+    intervals = {
+        name: agg["pooled_effect_session_cluster_interval_95pct"]["interval_95pct"]
+        for name, agg in estimators.items()
+        if agg.get("pooled_effect_session_cluster_interval_95pct", {}).get("status") == "computed"
+    }
+    if len(intervals) < 2:
+        return {"status": "not_computable", "n_estimators_with_interval": len(intervals)}
+    signs = {name: _interval_sign(iv) for name, iv in intervals.items()}
+    all_share_a_sign = len(set(signs.values())) == 1 and next(iter(signs.values())) != "spans_zero"
+    names = sorted(intervals)
+    pairwise_overlap = {}
+    for i in range(len(names)):
+        for j in range(i + 1, len(names)):
+            a, b = intervals[names[i]], intervals[names[j]]
+            pairwise_overlap[f"{names[i]}__{names[j]}"] = bool(max(a[0], b[0]) <= min(a[1], b[1]))
+    return {"status": "computed", "n_estimators_with_interval": len(intervals), "signs": signs,
+            "all_intervals_share_a_sign": all_share_a_sign, "pairwise_interval_overlap": pairwise_overlap}
+
+
 def build_claim_block(records_by_candidate: dict[str, list[dict]], cell_key: str,
                       priority: int, metric_description: str) -> dict:
     estimators, verdict_keys = {}, {}
     for candidate, records in sorted(records_by_candidate.items()):
-        agg, vkey = aggregate_claim(records, cell_key)
+        agg, vkey = aggregate_claim(records, cell_key, candidate)
         agg["verdict_key"] = vkey
         estimators[candidate] = agg
         verdict_keys[candidate] = vkey
     standing = decide_claim_standing(verdict_keys)
+    standing["interval_agreement"] = interval_agreement(estimators)
     return {"priority": priority, "metric": metric_description,
             "estimator_cells": estimators, "agreement": standing}
 

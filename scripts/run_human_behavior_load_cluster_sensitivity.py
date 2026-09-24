@@ -8,12 +8,11 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from scipy.stats import norm
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from statistics import forest_meta, stable_seed  # noqa: E402
+from statistics import Z_80_POWER, forest_meta, stable_seed  # noqa: E402
 
 
 N_BOOTSTRAP = 8000
@@ -121,7 +120,7 @@ def _bootstrap_summary(draws: np.ndarray, point: float, n_requested: int) -> dic
             "n_draws_invalid": int(n_requested - len(valid)),
         }
     standard_error = float(np.std(valid, ddof=1))
-    z_power = float(norm.ppf(0.975) + norm.ppf(0.80))
+    z_power = Z_80_POWER
     return {
         "status": "computed",
         "n_draws_requested": n_requested,

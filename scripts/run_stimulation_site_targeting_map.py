@@ -294,15 +294,15 @@ def load_admitted_sessions() -> list[dict]:
     unchanged and a behavioural row joined in from the matching corpus's
     causal artifact. A session block_b admitted but this join cannot match
     is still returned, tagged with a machine-readable behaviour-join
-    failure reason -- it contributes to Block A's geometry/displacement
-    relationship and to Block B's anatomical map even without behaviour."""
+    failure reason -- it contributes to the targeting relationship's geometry/displacement
+    analysis and to the anatomical map even without behaviour."""
     component = json.loads(COMPONENT_RESPONSE_PATH.read_text())
-    block_b = component["block_b"]["per_session"]
+    displacement_per_session = component["block_b"]["per_session"]
 
     causal_tables = {name: json.loads(path.read_text())["per_session"] for name, path in CAUSAL_ARTIFACT.items()}
 
     sessions = []
-    for session_key, rec in block_b.items():
+    for session_key, rec in displacement_per_session.items():
         corpus = rec["corpus"]
         causal_table = causal_tables.get(corpus, {})
         causal_row = causal_table.get(_causal_key(session_key))
@@ -446,7 +446,7 @@ def classify_targeting_relationship(corr_by_condition: dict) -> str:
     return "underpowered_to_ask"
 
 
-# ── Block A -- the geometric targeting relationship ─────────────────────────
+# ── Geometric targeting relationship ─────────────────────────────────────────
 
 def _geometry_rows(sessions: list[dict]) -> dict:
     """Runs (and checkpoints) the per-session geometric predictor for every
@@ -460,8 +460,8 @@ def _geometry_rows(sessions: list[dict]) -> dict:
     return rows
 
 
-def run_block_a(sessions: list[dict], geometry: dict) -> dict:
-    """Open-loop (causal) corpus only; Block C repeats this in the
+def run_targeting_relationship(sessions: list[dict], geometry: dict) -> dict:
+    """Open-loop (causal) corpus only; the closed-loop replication repeats this in the
     classifier-triggered corpus. Two outcomes tested against the same
     per-condition geometric predictor: the delivered component displacement
     (all admitted sessions) and the delivered recall difference (only the
@@ -528,9 +528,9 @@ def run_block_a(sessions: list[dict], geometry: dict) -> dict:
     }
 
 
-# ── Block B -- the anatomical map, reported as description ─────────────────
+# ── Anatomical map -- reported as description ─────────────────────────────
 
-def run_block_b(sessions: list[dict], site_labels: dict) -> dict:
+def run_anatomical_map(sessions: list[dict], site_labels: dict) -> dict:
     """Descriptive and observational: coverage is clinical, no subject was
     randomised to a site, and this block never yields a causal region
     claim. Each of the three shipped labelling schemes is analysed and
@@ -631,12 +631,12 @@ def run_block_b(sessions: list[dict], site_labels: dict) -> dict:
     )}
 
 
-# ── Block C -- replication in the classifier-triggered corpus ──────────────
+# ── Closed-loop replication in the classifier-triggered corpus ─────────────
 
-def run_block_c(open_loop_a: dict, open_loop_b: dict, closed_sessions: list[dict],
+def run_closed_loop_replication(open_loop_a: dict, open_loop_b: dict, closed_sessions: list[dict],
                 closed_geometry: dict, closed_labels: dict) -> dict:
-    block_a = run_block_a(closed_sessions, closed_geometry)
-    block_b = run_block_b(closed_sessions, closed_labels)
+    closed_loop_targeting = run_targeting_relationship(closed_sessions, closed_geometry)
+    closed_loop_anatomical_map = run_anatomical_map(closed_sessions, closed_labels)
 
     def _sign_agreement(open_corr_by_cond: dict, closed_corr_by_cond: dict) -> dict:
         out = {}
@@ -657,20 +657,21 @@ def run_block_c(open_loop_a: dict, open_loop_b: dict, closed_sessions: list[dict
             "number in this block carries causal:false and is never pooled with the open-loop "
             "corpus into a single headline."
         ),
-        "block_a": block_a,
-        "block_b": block_b,
+        "block_a": closed_loop_targeting,
+        "block_b": closed_loop_anatomical_map,
         "sign_agreement_with_open_loop_displacement_relationship": _sign_agreement(
             open_loop_a["displacement_relationship"]["by_channel_condition"],
-            block_a["displacement_relationship"]["by_channel_condition"]),
+            closed_loop_targeting["displacement_relationship"]["by_channel_condition"]),
         "sign_agreement_with_open_loop_behavior_relationship": _sign_agreement(
             open_loop_a["behavior_relationship"]["by_channel_condition"],
-            block_a["behavior_relationship"]["by_channel_condition"]),
+            closed_loop_targeting["behavior_relationship"]["by_channel_condition"]),
     }
 
 
-# ── Block D -- what the non-human site evidence adds, and what it cannot ───
+# ── Non-human site evidence synthesis -- what it adds, and what it cannot ──
 
-def run_block_d(n_open_loop_subjects: int, n_open_loop_sessions: int) -> dict:
+def run_non_human_site_evidence_synthesis(n_open_loop_subjects: int, n_open_loop_sessions: int,
+                                          n_closed_loop_subjects: int, n_closed_loop_sessions: int) -> dict:
     macaque_pfc_microstimulation_path = RESULTS / "causal_macaque_pfc_microstimulation.json"
     non_human = {"status": "unavailable"}
     if macaque_pfc_microstimulation_path.exists():
@@ -679,35 +680,66 @@ def run_block_d(n_open_loop_subjects: int, n_open_loop_sessions: int) -> dict:
         animals = sorted({re.match(r"^[A-Za-z]+", k).group(0) for k in per_session if re.match(r"^[A-Za-z]+", k)})
         non_human = {"status": "computed", "n_sessions": len(per_session), "n_animals": len(animals)}
 
+    n_human_subjects_combined = n_open_loop_subjects + n_closed_loop_subjects
+    n_human_sessions_combined = n_open_loop_sessions + n_closed_loop_sessions
+
     return {
         "non_human_site_evidence": non_human,
-        "human_site_evidence": {"corpus": "open_loop_ds005489", "n_subjects": n_open_loop_subjects,
-                                "n_sessions": n_open_loop_sessions},
+        "human_site_evidence": {
+            "open_loop_ds005489": {
+                "corpus": "open_loop_ds005489", "n_subjects": n_open_loop_subjects,
+                "n_sessions": n_open_loop_sessions, "causal": CORPUS_IS_CAUSAL["open_loop_ds005489"]},
+            "closed_loop_ds005557": {
+                "corpus": "closed_loop_ds005557", "n_subjects": n_closed_loop_subjects,
+                "n_sessions": n_closed_loop_sessions, "causal": CORPUS_IS_CAUSAL["closed_loop_ds005557"]},
+            "two_independent_groups": True,
+            "independence_basis": "provenance/subject_independence_registry.json: zero subject-id "
+                "intersection between open_loop_ds005489 and closed_loop_ds005557, checked directly "
+                "on disk.",
+            "n_subjects_combined": n_human_subjects_combined,
+            "n_sessions_combined": n_human_sessions_combined,
+            "combined_count_causal_disclosure": (
+                "n_subjects_combined and n_sessions_combined sum two independent groups' "
+                "resolvable-stimulation-site evidence and must never be read as a combined CAUSAL "
+                "count: open_loop_ds005489 randomises/schedules stimulation (causal=true) while "
+                "closed_loop_ds005557 triggers stimulation from an online classifier reading the "
+                "subject's own encoding-period state (causal=false -- an association, not a causal "
+                "estimate). Any claim built on the combined count must report both group counts "
+                "and both causal flags alongside it; neither number below stands alone as a combined "
+                "causal statement."
+            ),
+        },
         "statements": [
             (
                 "The non-human corpus stimulates inside a maintenance delay at single-unit "
                 "resolution and can resolve the direction of the stimulation-evoked shift against "
                 "the population's own geometry -- whether the shift moves along, across, or off the "
-                "axis the memorandum occupies. This human corpus cannot do that: it stimulates "
-                "during list encoding, not a maintenance delay, and it records field-potential power "
+                "axis the memorandum occupies. These human corpora cannot do that: both stimulate "
+                "during list encoding, not a maintenance delay, and both record field-potential power "
                 "on macroelectrode contacts, not single-unit activity, so no comparable population "
                 "geometry is available to resolve a direction against."
             ),
             (
-                f"This human corpus resolves stimulation site across {n_open_loop_subjects} different "
-                f"brains' worth of clinically placed electrodes in the open-loop corpus alone "
-                f"({n_open_loop_sessions} sessions). The non-human corpus stimulates "
+                f"Across both human corpora, stimulation site is resolvable across "
+                f"{n_human_subjects_combined} different brains' worth of clinically placed electrodes "
+                f"({n_human_sessions_combined} sessions): {n_open_loop_subjects} subjects / "
+                f"{n_open_loop_sessions} sessions in the causal, experimenter-scheduled open-loop "
+                f"corpus, and {n_closed_loop_subjects} subjects / {n_closed_loop_sessions} sessions in "
+                f"the classifier-triggered closed-loop corpus (an association, not a causal estimate) "
+                f"-- two independent groups (zero shared subject ids), never pooled into one causal "
+                f"count. The non-human corpus stimulates "
                 f"{non_human.get('n_animals', 'a small fixed number of')} animals' own fixed implant "
                 f"sites across all {non_human.get('n_sessions', 'its')} of its sessions and cannot ask "
                 "a cross-brain site question at all."
             ),
             (
                 "Holding both narrows one targeting hypothesis: a site-distance relationship found "
-                "in this human corpus and a directionally resolved stimulation effect found in the "
+                "in either human corpus and a directionally resolved stimulation effect found in the "
                 "non-human corpus would jointly support that placing a human electrode near the "
                 "component-carrying tissue, during a period with a resolvable population direction, "
                 "is what a targeting rule should ask for -- neither corpus alone can establish both "
-                "halves of that claim."
+                "halves of that claim, and the closed-loop corpus's half of it is associational, not "
+                "causal."
             ),
             (
                 "What would settle what the non-human result can only suggest: a human intracranial "
@@ -750,12 +782,15 @@ def main() -> None:
         lambda s=s: site_labels_for_session(s["session_key"], s["corpus"], s["anode"], s["cathode"]))
         for s in closed_sessions}
 
-    block_a = run_block_a(open_sessions, open_geometry)
-    block_b = run_block_b(open_sessions, open_labels)
-    block_c = run_block_c(block_a, block_b, closed_sessions, closed_geometry, closed_labels)
+    open_loop_targeting = run_targeting_relationship(open_sessions, open_geometry)
+    open_loop_anatomical_map = run_anatomical_map(open_sessions, open_labels)
+    closed_loop_replication = run_closed_loop_replication(open_loop_targeting, open_loop_anatomical_map,
+                                                            closed_sessions, closed_geometry, closed_labels)
 
     n_subjects_open = len({s["subject"] for s in open_sessions})
-    block_d = run_block_d(n_subjects_open, len(open_sessions))
+    n_subjects_closed = len({s["subject"] for s in closed_sessions})
+    non_human_site_evidence_synthesis = run_non_human_site_evidence_synthesis(
+        n_subjects_open, len(open_sessions), n_subjects_closed, len(closed_sessions))
 
     geometry_exclusion_counts = defaultdict(int)
     for rows in (open_geometry, closed_geometry):
@@ -779,8 +814,8 @@ def main() -> None:
             "an already-delivered component-displacement artifact and an already-delivered "
             "behavioural artifact -- neither is recomputed here. Session is the unit of analysis; "
             "subject is the clustering unit for every correlation and every pooled statistic. "
-            "Block A and Block B run on the open-loop (experimenter-scheduled, causal) corpus; "
-            "Block C repeats both in the classifier-triggered corpus, which is never pooled with "
+            "The targeting relationship and the anatomical map run on the open-loop (experimenter-scheduled, causal) corpus; "
+            "the closed-loop replication repeats both in the classifier-triggered corpus, which is never pooled with "
             "the open-loop corpus into one headline."
         ),
         "zero_drop_accounting": {
@@ -792,10 +827,10 @@ def main() -> None:
             "behavior_exclusions_by_reason": dict(behavior_exclusion_counts),
             "label_exclusions_by_reason": dict(label_exclusion_counts),
         },
-        "block_a": block_a,
-        "block_b": block_b,
-        "block_c": block_c,
-        "block_d": block_d,
+        "block_a": open_loop_targeting,
+        "block_b": open_loop_anatomical_map,
+        "block_c": closed_loop_replication,
+        "block_d": non_human_site_evidence_synthesis,
     }
 
     output["wall_clock_s"] = time.time() - t0

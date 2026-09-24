@@ -1,24 +1,24 @@
-"""Tests a different, operational question from the one results/subspace_rotation_time_separation.json
-answers. That module asks, geometrically, whether a candidate subspace rotates within a session by
+"""Tests a different, operational question from the sample-size-matched rotation test.
+That test asks, geometrically, whether a candidate subspace rotates within a session by
 comparing early/late subspace overlap against chunk-matched references. This module asks whether a
 linear read-out calibrated on one stretch of trials still predicts the same quantity on a disjoint
 later (or earlier) stretch, and how that held-out performance changes with the elapsed gap between
 the two stretches -- a scalar prediction test on held-out trials, not a comparison between two noisy
-low-rank subspace fits. The two modules share session/chunk machinery and overlapping data but are
+low-rank subspace fits. The two tests share session/chunk machinery and overlapping data but are
 different estimands; neither confirms, replicates, or is confirmed by the other.
 
 Payload is the gain candidate (gain_total_spike_count, a session's per-trial total spike count summed
-across units, exactly core["spike_count"] as computed and consumed throughout
-run_component_identity_subspace_atlas.py / run_rank_free_component_identity.py) in the four corpora
-where it is computable per results/rank_free_component_identity.json: inagaki_alm5_mouse_ALM,
-dandi_000469_human, dandi_001187_human, dandi_000574_human. For dandi_000574_human, every candidate
-results/subspace_rotation_time_separation.json enumerates for that corpus is included (gain plus its
-four field-potential candidates), read directly from that delivered artifact's own cells_under_test
-rather than hardcoded, so this module's cell list tracks its stated source exactly. The two macaque
-corpora (panichello_2024_macaque_lPFC, watters_2026_macaque_multi_object) are attempted the same way;
-both carry gain_total_spike_count but fewer than the four-independent-unit floor
-(results/rank_free_component_identity.json already reports 3 and 2 independent units respectively for
-this exact candidate), so both are expected, not merely permitted, to come back not_computable here --
+across units, exactly core["spike_count"] as computed and consumed throughout the cross-animal
+component-identity estimate) in the four corpora where it is computable per that same estimate:
+inagaki_alm5_mouse_ALM, dandi_000469_human, dandi_001187_human, dandi_000574_human. For
+dandi_000574_human, every candidate the sample-size-matched rotation test enumerates for that corpus
+is included (gain plus its four field-potential candidates), read directly from that test's own
+cells_under_test rather than hardcoded, so this module's cell list tracks its stated source exactly.
+The two macaque corpora (panichello_2024_macaque_lPFC, watters_2026_macaque_multi_object) are
+attempted the same way; both carry gain_total_spike_count but fewer than the four-independent-unit
+floor (the cross-animal component-identity estimate already reports 3 and 2 independent units
+respectively for this exact candidate), so both are expected, not merely permitted, to come back
+not_computable here --
 this module does not relax that floor. watters_2026_macaque_multi_object has no _standard_sessions
 entry point (its sessions are structured by item-count level, unlike every other corpus here) and its
 gain identity is a single scalar per trial regardless of item count, so its trials are pooled across
@@ -35,10 +35,9 @@ module's read-out performance is the squared Pearson correlation between a chunk
 values and the scalar projection of that chunk's activity directions onto a basis fit on a temporally
 disjoint OTHER chunk -- an ordinary held-out prediction test, reusing only the basis-fitting step.
 _prepare_trials is reused unchanged from run_alignment_below_null_diagnostic.py (same trial-validity
-filter results/rank_free_component_identity.json's own _cell uses internally), and
+filter the cross-animal component-identity estimate's own _cell uses internally), and
 _pool_unit_scalars from the same module supplies every cluster-bootstrap interval and minimum
-detectable difference below, exactly as it already does for
-results/subspace_rotation_time_separation.json.
+detectable difference below, exactly as it already does for the sample-size-matched rotation test.
 
 Two pieces of math are new here, declared before any cell is fit: contiguous fixed-size trial
 chunking with every ordered pair of disjoint chunks scored (train on one, evaluate on the other, gap
@@ -95,7 +94,7 @@ MIN_CHUNKS_PER_SESSION = 4
 MIN_PAIRS_FOR_SLOPE = 6
 N_PERM = 1000
 FDR_ALPHA = 0.05
-NULL_CALIBRATION_REPLICATES = 200
+NULL_CALIBRATION_REPLICATES = 2000
 NULL_CALIBRATION_N_PERM = 300
 STANDARD_CORPORA = (
     "panichello_2024_macaque_lPFC", "inagaki_alm5_mouse_ALM",
@@ -252,7 +251,7 @@ def _session_curve(activity: np.ndarray | None, target, seed_prefix: str) -> dic
     per_size = {}
     for chunk_size in CHUNK_SIZES_TRIALS:
         rng = np.random.default_rng(_seed(f"{seed_prefix}|chunk={chunk_size}"))
-        per_size[chunk_size] = _session_chunk_cell(directions, filtered_target, chunk_size, rng)
+        per_size[str(chunk_size)] = _session_chunk_cell(directions, filtered_target, chunk_size, rng)
     return {"status": "computed", "n_trials": int(len(filtered_target)), "chunk_cells": per_size}
 
 
@@ -340,7 +339,7 @@ def _pool_slope_cell(sessions: list[dict], chunk_size: int, seed: str) -> dict:
         if entry.get("status") != "computed":
             n_not_computable += 1
             continue
-        cell = entry["chunk_cells"][chunk_size]
+        cell = entry["chunk_cells"][str(chunk_size)]
         if cell["status"] != "computed":
             n_not_computable += 1
             continue
@@ -401,6 +400,47 @@ def _run_pass(root: Path, needed_by_corpus: dict, identity: dict) -> dict:
 # by construction, independent of trial order/elapsed gap).
 # ================================================================================================
 
+def _calibration_summary(n_significant: int, n_computed: int) -> dict:
+    from scipy.stats import binomtest
+
+    rate = (n_significant / n_computed) if n_computed else None
+    interval = None
+    calibrated = False
+    if n_computed:
+        exact = binomtest(n_significant, n_computed, 0.05, alternative="two-sided")
+        ci = exact.proportion_ci(confidence_level=0.95, method="exact")
+        interval = [float(ci.low), float(ci.high)]
+        calibrated = bool(interval[0] <= 0.05 <= interval[1])
+    if calibrated:
+        direction = "not distinguishable from nominal at this replicate count"
+        license_statement = (
+            "nominal 0.05 lies inside this calibration's own 95% exact binomial interval on the "
+            "measured rate, so this module's permutation p-values are not shown to depart from nominal"
+        )
+    elif rate is not None and rate > 0.05:
+        direction = "anti-conservative (liberal): the test rejects its own null more often than nominal"
+        license_statement = (
+            "this makes the zero-clearing outcome reported for every cell in this module MORE secure "
+            "-- a liberal test that still rejected nothing is stronger evidence of no detectable slope "
+            "-- but any cell that HAD cleared under this null would need its permutation p-value "
+            "discounted before being trusted, since this calibration shows the test over-rejects at "
+            "nominal p=0.05"
+        )
+    else:
+        direction = "conservative: the test rejects its own null less often than nominal"
+        license_statement = (
+            "a cell that cleared under this null remains trustworthy, but a cell that did not clear "
+            "could be masking a real effect this test under-detects at nominal p=0.05"
+        )
+    return {
+        "false_positive_rate_at_p_0.05": rate,
+        "false_positive_rate_95pct_exact_binomial_interval": interval,
+        "calibrated": calibrated,
+        "direction_of_miscalibration": direction,
+        "what_this_does_and_does_not_license": license_statement,
+    }
+
+
 def _null_calibration(n_replicates: int, n_perm: int, seed: str,
                        n_trials: int = 64, n_units: int = 10, n_bins: int = 8) -> dict:
     rng = np.random.default_rng(_seed(seed))
@@ -423,11 +463,11 @@ def _null_calibration(n_replicates: int, n_perm: int, seed: str,
         p = float((1 + np.sum(np.abs(null) >= abs(cell["observed_slope"]))) / (null.size + 1))
         if p <= 0.05:
             n_significant += 1
-    rate = (n_significant / n_computed) if n_computed else None
+    summary = _calibration_summary(n_significant, n_computed)
     return {
         "n_replicates_requested": n_replicates, "n_replicates_computed": n_computed,
-        "n_perm_per_replicate": n_perm, "false_positive_rate_at_p_0.05": rate,
-        "calibrated": bool(rate is not None and abs(rate - 0.05) <= 0.03),
+        "n_perm_per_replicate": n_perm,
+        **summary,
         "generative_model": (
             "per (trial, unit) a Poisson rate drawn once per trial (shared across every bin of that "
             "trial, giving real within-trial autocorrelation with no elapsed-gap trend), spike counts "
@@ -441,29 +481,44 @@ def _null_calibration(n_replicates: int, n_perm: int, seed: str,
 # the pre-declared decision rule and its bound-for-non-clearing-cells branch
 # ================================================================================================
 
-DECISION_RULES = {
-    "payload": (
+def _gain_candidate_payload_note() -> str:
+    base = (
         "gain_total_spike_count: a session's per-trial total spike count summed across units, "
         "exactly core['spike_count'] as computed and consumed throughout "
-        "run_component_identity_subspace_atlas.py / run_rank_free_component_identity.py -- the one "
-        "candidate that clears its own refit null in all four corpora results/"
-        "rank_free_component_identity.json reports it as computable in"
-    ),
+        "run_component_identity_subspace_atlas.py / run_rank_free_component_identity.py"
+    )
+    rank_free_path = ROOT / "results" / "rank_free_component_identity.json"
+    if not rank_free_path.exists():
+        return base
+    per_corpus = json.loads(rank_free_path.read_text()).get("summary", {}).get("per_corpus", {})
+    cells = {corpus: cands["gain_total_spike_count"] for corpus, cands in per_corpus.items()
+             if "gain_total_spike_count" in cands}
+    computed = {corpus: cell for corpus, cell in cells.items() if cell.get("status") == "computed"}
+    aligned = [corpus for corpus, cell in computed.items() if cell.get("aligned") is True]
+    return (
+        f"{base} -- the cross-animal component-identity estimate reports it computable in "
+        f"{len(computed)} of {len(cells)} attempted corpora and aligned in {len(aligned)} of those "
+        f"{len(computed)} ({', '.join(sorted(aligned))})"
+    )
+
+
+DECISION_RULES = {
+    "payload": _gain_candidate_payload_note(),
     "cells_under_test": (
         "gain_total_spike_count in inagaki_alm5_mouse_ALM, dandi_000469_human, dandi_001187_human, "
-        "dandi_000574_human, plus every candidate results/subspace_rotation_time_separation.json's "
-        "own cells_under_test lists for dandi_000574_human (read from that delivered artifact, not "
-        "hardcoded), plus an attempt at gain_total_spike_count in panichello_2024_macaque_lPFC and "
-        "watters_2026_macaque_multi_object -- results/rank_free_component_identity.json already "
+        "dandi_000574_human, plus every candidate the sample-size-matched rotation test's own "
+        "cells_under_test lists for dandi_000574_human (read from that test, not hardcoded), plus an "
+        "attempt at gain_total_spike_count in panichello_2024_macaque_lPFC and "
+        "watters_2026_macaque_multi_object -- the cross-animal component-identity estimate already "
         "reports 3 and 2 independent units respectively for this candidate in those two corpora, "
         "below the four-independent-unit floor this module does not relax"
     ),
     "chunking": (
-        f"a session's kept trials (after the same trial-validity filter results/"
-        f"rank_free_component_identity.json's own _cell applies) are cut into contiguous chunks of a "
+        f"a session's kept trials (after the same trial-validity filter the cross-animal "
+        f"component-identity estimate's own _cell applies) are cut into contiguous chunks of a "
         f"fixed trial count, swept over {list(CHUNK_SIZES_TRIALS)} trials with "
-        f"{PRIMARY_CHUNK_SIZE_TRIALS} trials as primary, matching results/"
-        "subspace_rotation_time_separation.json's own sweep so the two are comparable. A session "
+        f"{PRIMARY_CHUNK_SIZE_TRIALS} trials as primary, matching the sample-size-matched rotation "
+        "test's own sweep so the two are comparable. A session "
         f"needs at least {MIN_CHUNKS_PER_SESSION} chunks of a given size to be computable at that size"
     ),
     "core_measurement": (
@@ -478,8 +533,8 @@ DECISION_RULES = {
         "the slope of held-out performance against gap, fit per session by ordinary least squares "
         "over that session's own ordered chunk pairs, then pooled with equal weight per session "
         "within its own independent unit and equal weight across independent units "
-        "(_pool_unit_scalars, reused unchanged from results/alignment_below_null_diagnostic.json's "
-        "own estimator); the confidence interval is that function's whole-independent-unit cluster "
+        "(_pool_unit_scalars, reused unchanged from the alignment-below-null diagnostic's own "
+        "estimator); the confidence interval is that function's whole-independent-unit cluster "
         "bootstrap, never a trial-count formula or an ICC design effect. The gap-zero intercept of "
         "the same per-session regression is pooled identically and reported as the matched "
         "no-separation reference -- an interior point of the same curve, not a separate arm"
@@ -518,7 +573,7 @@ DECISION_RULES = {
         "slope at 80% power (from the same session cluster bootstrap _pool_unit_scalars already "
         "computes) is compared against an internal, same-corpus, same-scale reference decay rate: "
         "the absolute value of that corpus/candidate's own gain-identity alignment-above-null in "
-        "results/rank_free_component_identity.json, divided by the mean trial count of this cell's "
+        "the cross-animal component-identity estimate, divided by the mean trial count of this cell's "
         "own contributing sessions -- the per-trial slope that would fully consume that already-"
         "measured effect over the span of one session. If the minimum detectable slope is smaller "
         "than that reference, the cell is a bounded negative: a decay large enough to consume the "
@@ -556,10 +611,34 @@ def _load_rank_free_reference(corpus: str, name: str) -> dict | None:
     cell = delivered.get("summary", {}).get("per_corpus", {}).get(corpus, {}).get(name)
     if cell is None or cell.get("status") != "computed":
         return None
-    return {"mean_alignment_above_null": cell["mean_alignment_above_null"]}
+    return {
+        "mean_alignment_above_null": cell["mean_alignment_above_null"],
+        "reliably_above_null": bool(cell.get("aligned")),
+    }
 
 
-def _cell_verdict(pooled: dict, reference: dict | None) -> dict:
+def _bound_stability(sweep: dict, reference_decay_rate: float) -> dict:
+    bounded_at = {}
+    for chunk_size in CHUNK_SIZES_TRIALS:
+        if chunk_size == 2:
+            continue
+        cell = sweep.get(str(chunk_size), {})
+        if cell.get("status") != "computed":
+            continue
+        bounded_at[str(chunk_size)] = cell["slope"]["minimum_detectable_difference_80pct_power"] < reference_decay_rate
+    return {
+        "chunk_size_2_excluded_because": (
+            "a held-out evaluation chunk of exactly 2 trials always scores squared Pearson correlation "
+            "1.0 against its training chunk (any two points define a perfect line), so chunk size 2 "
+            "slope estimates are a floating-point-zero degeneracy that carries no information about "
+            "whether a real decay would be detected"
+        ),
+        "bounded_at_chunk_size": bounded_at,
+        "stable": len(set(bounded_at.values())) <= 1 if bounded_at else False,
+    }
+
+
+def _cell_verdict(pooled: dict, reference: dict | None, sweep: dict | None = None) -> dict:
     if pooled.get("status") != "computed":
         return {"verdict": "not_computable", "reason": pooled.get("reason")}
     slope = pooled["slope"]
@@ -569,6 +648,19 @@ def _cell_verdict(pooled: dict, reference: dict | None) -> dict:
     q_clears = q is not None and q < FDR_ALPHA
     if q_clears and ci_excludes_zero:
         return {"verdict": "clears", "permutation_q_value": q, "cluster_bootstrap_interval_95pct": ci}
+    if ci_excludes_zero:
+        direction = "positive" if ci[0] > 0.0 else "negative"
+        return {
+            "verdict": "inconclusive_interval_excludes_zero_not_fdr_significant",
+            "permutation_q_value": q, "cluster_bootstrap_interval_95pct": ci,
+            "evidence_disagreement": (
+                f"the cluster-bootstrap interval excludes zero on the {direction} side (evidence of a "
+                f"{direction} slope) while the BH-FDR-corrected permutation q-value ({q}) does not "
+                f"clear alpha={FDR_ALPHA}; the pre-declared rule requires both to clear, so this cell "
+                "does not clear, and no decay bound is drawn from a cell whose own interval already "
+                "disagrees with its own significance test"
+            ),
+        }
     mdd = slope["minimum_detectable_difference_80pct_power"]
     if reference is None or pooled.get("mean_trials_per_contributing_session", 0) <= 0:
         return {
@@ -576,16 +668,44 @@ def _cell_verdict(pooled: dict, reference: dict | None) -> dict:
             "permutation_q_value": q, "cluster_bootstrap_interval_95pct": ci,
             "minimum_detectable_slope_80pct_power": mdd,
         }
-    reference_decay_rate = abs(reference["mean_alignment_above_null"]) / pooled["mean_trials_per_contributing_session"]
+    reference_alignment = reference["mean_alignment_above_null"]
+    reliably_above_null = bool(reference.get("reliably_above_null", False))
+    if reference_alignment <= 0.0 or not reliably_above_null:
+        return {
+            "verdict": "inconclusive_for_want_of_a_reference",
+            "permutation_q_value": q, "cluster_bootstrap_interval_95pct": ci,
+            "minimum_detectable_slope_80pct_power": mdd,
+            "reference_gain_alignment_above_null": reference_alignment,
+            "reference_reliably_above_own_null": reliably_above_null,
+            "reason": (
+                "no bound is computable: this corpus/candidate's own gain-identity "
+                "alignment-above-null is not a usable positive, reliably-above-its-own-null "
+                "magnitude, so there is no internal same-scale reference to compare the minimum "
+                "detectable slope against"
+            ),
+        }
+    reference_decay_rate = reference_alignment / pooled["mean_trials_per_contributing_session"]
     bounded = mdd < reference_decay_rate
-    return {
+    record = {
         "verdict": "bounded_negative" if bounded else "inconclusive_underpowered_relative_to_reference",
         "permutation_q_value": q, "cluster_bootstrap_interval_95pct": ci,
         "minimum_detectable_slope_80pct_power": mdd,
         "reference_decay_rate_per_trial": reference_decay_rate,
-        "reference_gain_alignment_above_null": reference["mean_alignment_above_null"],
+        "reference_gain_alignment_above_null": reference_alignment,
         "reference_mean_trials_per_session": pooled["mean_trials_per_contributing_session"],
     }
+    if bounded and sweep is not None:
+        stability = _bound_stability(sweep, reference_decay_rate)
+        record["sweep_stability_of_bound"] = stability
+        if not stability["stable"]:
+            record["verdict"] = "inconclusive_sweep_unstable_bound"
+            record["reason"] = (
+                "the minimum-detectable-slope-versus-reference-decay-rate comparison that determines "
+                "bounded_negative does not agree across the non-degenerate chunk sizes (4, 8, 16 "
+                "trials); a bound whose verdict moves with this arbitrary analysis parameter is not "
+                "reported as a bound"
+            )
+    return record
 
 
 def _apply_fdr_and_verdicts(cells: dict) -> list[dict]:
@@ -605,7 +725,7 @@ def _apply_fdr_and_verdicts(cells: dict) -> list[dict]:
         for name, result in candidates.items():
             primary = result["primary"]
             reference = _load_rank_free_reference(corpus, name)
-            verdict = _cell_verdict(primary, reference)
+            verdict = _cell_verdict(primary, reference, result["chunk_size_sweep"])
             table.append({"corpus": corpus, "candidate": name, "primary": primary, "verdict": verdict})
     return table
 

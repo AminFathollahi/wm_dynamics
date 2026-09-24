@@ -34,18 +34,16 @@ TWO OUTCOMES, NEVER MERGED: the component's own displacement score on the CURREN
 the current word was subsequently recalled.
 
 MODEL. Per subject, the interaction between the current word's stimulation status and the moderator
-is tested two ways, both reused unchanged from src/statistics.py and reported side by side rather
-than one silently standing in for the other: (1) a single pooled fit with a subject random intercept
+is tested three ways and reported side by side: (1) a single pooled fit with a subject random intercept
 (linear_mixed_effects_test) over every admitted word event across all subjects at once, giving an
 analytic Wald estimate, interval and p; (2) a subject-clustered statistic -- per subject, the partial
 correlation (partial_correlation_permutation_test) between the interaction term and the outcome,
 controlling for the two main effects and every covariate below, averaged across subjects -- with its
-own interval from a subject-level bootstrap and its own p from a WITHIN-SUBJECT permutation null (the
-moderator values are shuffled among a subject's own word events, the subject-clustered mean
-recomputed, repeated many times). The decision rule below is fired off this second, within-subject-
-permutation statistic, because it is the one this module's own null is built for; the pooled
-random-intercept fit is reported alongside as a second, independent check, never silently substituted
-for it.
+own interval from a subject-level bootstrap; and (3) a list-label permutation null that reassigns
+each participant's observed list labels while retaining the corresponding within-list alternation
+pattern. The decision rule uses the third statistic because treatment assignment was randomised at
+the list level. The event-level shuffle is retained only as a diagnostic archive, while the pooled
+random-intercept fit is an analytic check.
 
 CONTROLS, ALL MANDATORY, applied identically to both outcomes:
   1. Bias-only: every word's moderator is replaced by its own session's mean moderator (the same
@@ -61,16 +59,20 @@ CONTROLS, ALL MANDATORY, applied identically to both outcomes:
   4. List number: included as a covariate (time on task).
 
 DECISION RULE, fixed before any result was read: for EACH outcome independently,
-  - pre_stimulation_state_moderates_the_stimulation_effect: native significant (p<0.05), the
-    restricted arm agrees in sign, and the bias-only arm does NOT reach p<0.05.
+  - pre_stimulation_state_moderates_the_stimulation_effect: the native arm's list-label
+    permutation p<0.05, the restricted arm agrees in sign, and the bias-only arm's list-label
+    permutation p does NOT reach 0.05.
   - moderation_is_between_session_only: the bias-only arm reproduces the native estimate's sign and
-    itself reaches p<0.05.
-  - no_moderation_above_the_reported_bound: native not significant AND its minimum detectable effect
-    at 80% power is below the 0.14 correlation-unit reference this project uses throughout.
-  - underpowered_to_ask: native not significant and its minimum detectable effect is at or above 0.14.
+    its list-label permutation p is below 0.05.
+  - native_not_detected_with_mdd_below_reference: the native list-label permutation p is not below
+    0.05 AND its minimum detectable effect at 80% power is below the 0.14 correlation-unit reference.
+    This records design sensitivity, not an equivalence bound on the true effect.
+  - underpowered_to_ask: the native list-label permutation p is not below 0.05 and its minimum
+    detectable effect is at or above 0.14.
   - native_significant_but_restricted_arm_disagrees_in_sign: a combination none of the four rules
-    above covers (native significant, but the restricted arm's sign disagrees, and bias-only is not
-    itself significant) -- disclosed explicitly rather than forced onto the nearest label.
+    above covers (the native list-label permutation p is below 0.05, but the restricted arm's sign
+    disagrees, and the bias-only list-label permutation p is not below 0.05) -- disclosed
+    explicitly rather than forced onto the nearest label.
   - outcomes_disagree is reported as a top-level comparison if the two outcomes' branches differ;
     both branches are always reported in full regardless.
 
@@ -90,7 +92,9 @@ import os
 for _var in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
     os.environ[_var] = "1"
 
+import argparse
 import csv
+import hashlib
 import json
 import math
 import sys
@@ -116,6 +120,7 @@ from run_ram_openloop_pipeline import DATA, build_session_features  # noqa: E402
 
 RESULTS = ROOT / "results"
 OUTPUT_PATH = RESULTS / "randomised_prestimulation_moderation_open_loop.json"
+RE_ADJUDICATION_OUTPUT_PATH = RESULTS / "moderation_design_based_re_adjudication.json"
 CHECKPOINT_DIR = RESULTS / ".checkpoints" / "run_ram_randomised_prestimulation_moderation"
 SCHEMA_TAG = "v1_openloop_component_moderation_2026_08_28"
 
@@ -159,10 +164,9 @@ DESIGN_BASED_NULL_RATIONALE = (
     "that same subject's own list slots, holding every word's own moderator value attached to its "
     "own word and holding each list's own internal stimulated-serial-position pattern intact, so "
     "the resulting null distribution is the one this experiment's own list-level randomisation "
-    "actually generates. It does not replace the within-subject or between-subject null reported "
-    "for every arm above; every arm's significance flag keeps the same basis it already had, "
-    "recorded explicitly in that arm's own p_value_source field, and the design-based p-value is "
-    "reported alongside for comparison rather than substituted in."
+    "actually generates. The list-label p-value is the treatment-decision p-value. The inherited "
+    "within-subject and between-subject p-values remain archived diagnostics only and are never "
+    "used to classify the treatment decision."
 )
 
 BETWEEN_SUBJECT_NULL_REASON = (
@@ -182,13 +186,14 @@ BETWEEN_SUBJECT_NULL_REASON = (
 
 WINNERS_CURSE_CAVEAT = (
     "This arm's own observed effect magnitude is SMALLER than the minimum effect this design could "
-    "detect 80% of the time. Reaching significance despite sitting below that detection threshold "
-    "is, conditional on significance, the standard winner's-curse situation: among the estimates a "
-    "design this size can call significant at all, the ones that do reach significance while "
+    "detect 80% of the time. Reaching the list-label permutation threshold despite sitting below that "
+    "detection threshold is, conditional on that selection, the standard winner's-curse situation: "
+    "among the estimates a design this size can select at all, the ones that reach that threshold while "
     "sitting below the design's own 80%-power detection threshold are expected to overstate the "
-    "true effect. This does not weaken the significance finding itself -- the permutation test "
-    "already accounts for the sample actually observed -- but the reported magnitude should be read "
-    "as an upper bound on the true effect rather than a precise, robustly sized point estimate of it."
+    "true effect. This does not weaken the list-label permutation finding itself -- the test "
+    "already accounts for the sample actually observed -- but selection on reaching the threshold can "
+    "bias the selected magnitude upward. The point estimate is therefore not a reliably calibrated "
+    "estimate of the true effect size and should be interpreted with that selection bias in view."
 )
 
 
@@ -746,8 +751,8 @@ def _pooled_mixed_effects_check(rows: list[dict], outcome_key: str, moderator_ke
 def _fit_arm(rows: list[dict], outcome_key: str, moderator_key: str, include_preceding_stim: bool,
              seed_tag: str, extra_keys: tuple[str, ...] = (), significance_null: str = "within_subject",
              subject_list_inventory: dict[str, list[dict]] | None = None) -> dict:
-    """significance_null selects which permutation null the 'significant' flag and reported
-    p_value_source are drawn from: 'within_subject' (default, appropriate whenever the moderator
+    """significance_null selects which archived non-design-based diagnostic is reported:
+    'within_subject' (default, appropriate whenever the moderator
     varies from word to word within a subject, e.g. the native and restricted arms) or
     'between_subject' (appropriate for a bias-only arm, whose moderator is constant within a
     session -- see BETWEEN_SUBJECT_NULL_REASON for why a within-subject shuffle cannot test that
@@ -755,8 +760,8 @@ def _fit_arm(rows: list[dict], outcome_key: str, moderator_key: str, include_pre
     differs. A third null, appropriate to how this experiment actually randomises stimulation --
     at the level of a whole list, holding every word's own moderator value fixed to its own word
     (see DESIGN_BASED_NULL_RATIONALE) -- is ALSO always computed and reported whenever
-    subject_list_inventory is supplied, again never substituted for whichever null
-    significance_null already names."""
+    subject_list_inventory is supplied. That list-label permutation is exposed in
+    list_unit_design_based_inference and is the sole treatment-decision inference."""
     if len(rows) < MIN_WORDS_PER_SUBJECT_FOR_EFFECT:
         return {"status": "not_computable", "reason": "fewer_than_min_trials", "n_words": len(rows)}
     effects, excluded = _subject_partial_effects(rows, outcome_key, moderator_key, include_preceding_stim,
@@ -838,7 +843,7 @@ def _fit_arm(rows: list[dict], outcome_key: str, moderator_key: str, include_pre
             "significant": bool(within_p < 0.05) if np.isfinite(within_p) else False,
         })
 
-    # Winner's-curse disclosure: whenever a significant estimate's own magnitude sits below the
+    # Winner's-curse disclosure: whenever an estimate selected by the list-level treatment test sits below the
     # design's own 80%-power detection threshold, that reported magnitude is expected to be
     # upward-biased -- checked for every arm, not only the one it was first noticed in, since the
     # relationship between an observed effect and its own MDD is a property of any arm's fit.
@@ -846,10 +851,61 @@ def _fit_arm(rows: list[dict], outcome_key: str, moderator_key: str, include_pre
         mdd.get("status") == "computed" and np.isfinite(observed_mean) and abs(observed_mean) < mdd["mdd"]
     )
     result["effect_magnitude_below_its_own_minimum_detectable_difference"] = effect_below_own_mdd
-    result["winners_curse_caveat"] = WINNERS_CURSE_CAVEAT if (effect_below_own_mdd and result["significant"]) else None
     result["significance_null_basis"] = result["p_value_source"]
     result["design_based_null_rationale"] = DESIGN_BASED_NULL_RATIONALE
+    result["list_unit_design_based_inference"] = _list_unit_design_based_inference(result)
+    result["winners_curse_caveat"] = (
+        WINNERS_CURSE_CAVEAT
+        if (effect_below_own_mdd and result["list_unit_design_based_inference"].get("significant") is True)
+        else None
+    )
+    result["legacy_non_design_based_diagnostic"] = {
+        "p_value_source": result["p_value_source"],
+        "p_value": (result.get("between_subject_permutation_p") if significance_null == "between_subject"
+                    else result.get("within_subject_permutation_p")),
+        "significant_under_legacy_null": result["significant"],
+        "status": "diagnostic_only_not_valid_for_the_randomized_treatment_decision",
+    }
     return result
+
+
+def _list_unit_design_based_inference(arm: dict) -> dict:
+    """Return the treatment decision input for the experiment's list-level assignment.
+
+    A missing or non-finite list-label permutation p-value is non-identified.  It must never be
+    silently replaced by an event-level shuffle merely because that diagnostic happens to exist.
+    """
+    if arm.get("status") != "computed":
+        return {
+            "status": "non_identified",
+            "reason": "arm_not_computed",
+            "unit_of_randomization": "list",
+        }
+    p_value = arm.get("design_based_permutation_p")
+    if p_value is None or not np.isfinite(p_value):
+        return {
+            "status": "non_identified",
+            "reason": "missing_finite_list_unit_design_based_permutation_p",
+            "unit_of_randomization": "list",
+            "effect_size": arm.get("subject_clustered_mean"),
+            "bootstrap_ci95_lo": arm.get("bootstrap_ci95_lo"),
+            "bootstrap_ci95_hi": arm.get("bootstrap_ci95_hi"),
+            "n_words": arm.get("n_words"),
+            "n_subjects": arm.get("n_subjects_admissible"),
+        }
+    return {
+        "status": "computed",
+        "unit_of_randomization": "list",
+        "p_value": float(p_value),
+        "p_value_source": "list_label_permutation",
+        "significant": bool(p_value < 0.05),
+        "effect_size": arm.get("subject_clustered_mean"),
+        "bootstrap_ci95_lo": arm.get("bootstrap_ci95_lo"),
+        "bootstrap_ci95_hi": arm.get("bootstrap_ci95_hi"),
+        "n_words": arm.get("n_words"),
+        "n_subjects": arm.get("n_subjects_admissible"),
+        "minimum_detectable_difference_80pct_power": arm.get("minimum_detectable_difference_80pct_power"),
+    }
 
 
 def _add_bias_only_moderator(rows: list[dict]) -> None:
@@ -857,7 +913,7 @@ def _add_bias_only_moderator(rows: list[dict]) -> None:
     'moderator_native' across every row in the same session -- the bias-only construction this
     control always uses: replace every word's moderator with its own session's mean moderator, so
     the predictor carries only between-session information. If this reproduces the native result's
-    sign and significance, the native result is not a trial-by-trial one."""
+    sign and list-label permutation finding, the native result is not a trial-by-trial one."""
     by_session = defaultdict(list)
     for r in rows:
         by_session[r["session"]].append(r["moderator_native"])
@@ -898,10 +954,12 @@ def _nuisance_partialling_ladder(restricted: dict, restricted_nuisance_partialle
     def _summary(arm: dict) -> dict:
         if arm.get("status") != "computed":
             return {"status": arm.get("status"), "reason": arm.get("reason")}
+        design_inference = _list_unit_design_based_inference(arm)
         return {
             "subject_clustered_mean": arm["subject_clustered_mean"],
-            "within_subject_permutation_p": arm["within_subject_permutation_p"],
-            "significant": arm["significant"], "n_words": arm["n_words"],
+            "list_unit_design_based_inference": design_inference,
+            "legacy_non_design_based_diagnostic": _legacy_non_design_based_diagnostic(arm),
+            "n_words": arm["n_words"],
             "bootstrap_ci95_lo": arm["bootstrap_ci95_lo"], "bootstrap_ci95_hi": arm["bootstrap_ci95_hi"],
         }
 
@@ -934,30 +992,31 @@ def _nuisance_partialling_ladder(restricted: dict, restricted_nuisance_partialle
 
 
 def _restricted_vs_its_bias_only_sign_relationship(restricted: dict, restricted_bias_only: dict) -> str:
-    """Plain-words statement of whether the restricted arm's own within-subject estimate and its
-    own restricted-population bias-only control (between-subject null) agree or disagree in sign,
-    stated explicitly rather than left implicit in a table of numbers."""
-    if restricted.get("status") != "computed" or not restricted["significant"]:
-        return ("not applicable: the restricted arm itself does not reach significance, so there is no "
-                "significant within-subject estimate to compare against its own bias-only control")
-    if restricted_bias_only.get("status") != "computed" or not restricted_bias_only["significant"]:
-        return ("not applicable: the restricted arm's own bias-only control does not itself reach "
-                "significance, so there is no significant between-subject estimate to compare against "
-                "the restricted arm's own within-subject estimate")
+    """State whether the restricted arm and its scoped bias-only control agree in sign.
+
+    List-label permutation inferences determine whether either arm reached the treatment-test
+    threshold; inherited word-level shuffles remain diagnostic only.
+    """
+    restricted_inference = _list_unit_design_based_inference(restricted)
+    bias_inference = _list_unit_design_based_inference(restricted_bias_only)
+    if restricted_inference.get("status") != "computed" or not restricted_inference["significant"]:
+        return ("not applicable: the restricted arm's list-label permutation result does not reach "
+                "the treatment-test threshold, so there is no selected restricted estimate to compare "
+                "against its scoped bias-only control")
+    if bias_inference.get("status") != "computed" or not bias_inference["significant"]:
+        return ("not applicable: the restricted arm's scoped bias-only control does not reach the "
+                "list-label permutation threshold, so there is no selected bias-only estimate to compare")
     if np.sign(restricted["subject_clustered_mean"]) == np.sign(restricted_bias_only["subject_clustered_mean"]):
-        return ("the restricted arm's own within-subject estimate and its own restricted-population "
-                "bias-only control are both significant and point in the SAME direction, so the "
+        return ("the restricted arm and its scoped bias-only control both reach the list-label "
+                "permutation threshold and point in the SAME direction, so the "
                 "between-subject association could in principle be part of the explanation for the "
-                "within-subject one")
+                "restricted-arm estimate")
     return (
-        "SIGN REVERSAL: the restricted arm's own within-subject estimate is significant in one "
-        "direction while its own restricted-population bias-only control (tested with the between-"
-        "subject null) is significant in the OPPOSITE direction. The association between the pre-"
-        "stimulation state and this outcome runs one way ACROSS subjects and the other way WITHIN a "
-        "subject. Because the two point in opposite directions, the between-subject association "
-        "cannot be the explanation for the within-subject one -- but the two numbers describe two "
-        "different comparisons at two different levels and must never be pooled, averaged, or quoted "
-        "together as a single association."
+        "SIGN REVERSAL: the restricted arm and its scoped bias-only control both reach the list-label "
+        "permutation threshold but point in OPPOSITE directions. Because the two point in opposite "
+        "directions, the bias-only association cannot explain the restricted-arm estimate; the two "
+        "numbers describe different comparisons and must never be pooled, averaged, or quoted together "
+        "as a single association."
     )
 
 
@@ -967,7 +1026,7 @@ def _fmt_p(value) -> str:
 
 def _stimulated_lists_only_control_reading(restricted: dict, restricted_stimulated_lists_only: dict) -> str:
     """Plain-words statement of whether the restricted arm's own displacement interaction estimate
-    survives once no-stimulation lists are dropped entirely, so every remaining row -- both the
+    remains directionally consistent after no-stimulation lists are dropped entirely, so every remaining row -- both the
     current-word-stimulated and current-word-unstimulated rows alike -- is drawn from a list that
     itself received stimulation. Without this restriction, part of the restricted arm's own
     contrast could be a plain difference between words from stimulated lists and words from
@@ -978,11 +1037,13 @@ def _stimulated_lists_only_control_reading(restricted: dict, restricted_stimulat
         return (f"not computable: {restricted_stimulated_lists_only.get('reason', restricted_stimulated_lists_only.get('status'))}")
     same_sign = (np.sign(restricted["subject_clustered_mean"])
                  == np.sign(restricted_stimulated_lists_only["subject_clustered_mean"]))
-    survives = bool(restricted_stimulated_lists_only["significant"] and same_sign)
-    verdict = "SURVIVES" if survives else "DOES NOT SURVIVE"
+    stimulated_lists_inference = _list_unit_design_based_inference(restricted_stimulated_lists_only)
+    supports_same_direction = bool(stimulated_lists_inference.get("significant") is True and same_sign)
+    verdict = ("CONSISTENT WITH THE RESTRICTED-ARM DIRECTION"
+               if supports_same_direction else "DOES NOT SUPPORT THE RESTRICTED-ARM DIRECTION")
     explanation = (
         "the effect is not explained by a plain difference between stimulated-list words and "
-        "no-stimulation-list words" if survives else
+        "no-stimulation-list words" if supports_same_direction else
         "part of the restricted arm's own contrast could be a difference between stimulated-list "
         "words and no-stimulation-list words rather than a within-list moderation effect"
     )
@@ -990,11 +1051,12 @@ def _stimulated_lists_only_control_reading(restricted: dict, restricted_stimulat
         f"{verdict}: restricted to words drawn only from lists that themselves received "
         f"stimulation, the interaction estimate is "
         f"{restricted_stimulated_lists_only['subject_clustered_mean']:.6f} "
-        f"(within-subject permutation p={_fmt_p(restricted_stimulated_lists_only['within_subject_permutation_p'])}, "
-        f"design-based permutation p={_fmt_p(restricted_stimulated_lists_only['design_based_permutation_p'])}), "
+        f"(list-label permutation p={_fmt_p(stimulated_lists_inference.get('p_value'))}; "
+        f"word-level shuffle p={_fmt_p(restricted_stimulated_lists_only['within_subject_permutation_p'])}, diagnostic only), "
         f"versus the unrestricted-by-list-type restricted arm's {restricted['subject_clustered_mean']:.6f} "
-        f"(within-subject permutation p={_fmt_p(restricted['within_subject_permutation_p'])}, "
-        f"design-based permutation p={_fmt_p(restricted['design_based_permutation_p'])}). {explanation}."
+        f"(list-label permutation p={_fmt_p(_list_unit_design_based_inference(restricted).get('p_value'))}; "
+        f"word-level shuffle p={_fmt_p(restricted['within_subject_permutation_p'])}, diagnostic only). "
+        f"{explanation}."
     )
 
 
@@ -1099,12 +1161,14 @@ def _restriction_composition_and_contamination_check(all_rows: list[dict], restr
 
 def _classify_branch(native: dict, bias_only: dict, restricted: dict, restricted_bias_only: dict,
                       restricted_nuisance_partialled: dict) -> str:
-    if native.get("status") != "computed":
-        return "not_computable"
-    native_sig = native["significant"]
+    native_inference = _list_unit_design_based_inference(native)
+    bias_inference = _list_unit_design_based_inference(bias_only)
+    if native_inference["status"] != "computed":
+        return "non_identified_missing_list_unit_inference"
+    native_sig = native_inference["significant"]
     native_mdd = native["minimum_detectable_difference_80pct_power"]
     native_sign = np.sign(native["subject_clustered_mean"])
-    bias_sig = bias_only.get("status") == "computed" and bias_only["significant"]
+    bias_sig = bias_inference.get("status") == "computed" and bias_inference["significant"]
     bias_sign_matches = (bias_only.get("status") == "computed"
                           and np.sign(bias_only["subject_clustered_mean"]) == native_sign)
     restricted_sign_matches = (restricted.get("status") == "computed"
@@ -1115,40 +1179,174 @@ def _classify_branch(native: dict, bias_only: dict, restricted: dict, restricted
     if bias_sig and bias_sign_matches:
         return "moderation_is_between_session_only"
 
-    # New branch, added alongside the rules above without amending any of their text: covers a
-    # native contrast that does not itself reach significance while the restricted arm -- current
-    # words whose own preceding word was not stimulated, i.e. an unperturbed pre-stimulation state
-    # -- is significant on its own terms, corroborated by its own restricted-population bias-only
-    # control (which either is not itself significant, or is significant in a DIFFERENT direction
-    # and so cannot be the explanation for the restricted arm's own sign -- the same
-    # significant-AND-same-sign standard the "moderation_is_between_session_only" rule above
-    # applies to the native arm) and its own nuisance-partialled re-fit (still significant, same
-    # sign as the unpartialled restricted estimate).
-    restricted_sig = restricted.get("status") == "computed" and restricted["significant"]
-    restricted_bias_sig = restricted_bias_only.get("status") == "computed" and restricted_bias_only["significant"]
-    restricted_bias_explains_restricted = (
-        restricted_bias_sig and restricted.get("status") == "computed"
-        and np.sign(restricted_bias_only["subject_clustered_mean"]) == np.sign(restricted["subject_clustered_mean"])
-    )
-    partialled_sig = (restricted_nuisance_partialled.get("status") == "computed"
-                       and restricted_nuisance_partialled["significant"])
-    partialled_sign_matches = (
-        restricted.get("status") == "computed"
-        and restricted_nuisance_partialled.get("status") == "computed"
-        and np.sign(restricted_nuisance_partialled["subject_clustered_mean"])
-        == np.sign(restricted["subject_clustered_mean"])
-    )
-    if (not native_sig and restricted_sig and not restricted_bias_explains_restricted
-            and partialled_sig and partialled_sign_matches):
-        return "restricted_arm_significant_with_its_own_controls_despite_native_null"
-
     if not native_sig and native_mdd.get("status") == "computed" and native_mdd["mdd"] < BEHAVIOURAL_REFERENCE_R_UNITS:
-        return "no_moderation_above_the_reported_bound"
+        return "native_not_detected_with_mdd_below_reference"
     if not native_sig and native_mdd.get("status") == "computed" and native_mdd["mdd"] >= BEHAVIOURAL_REFERENCE_R_UNITS:
         return "underpowered_to_ask"
     if native_sig and not restricted_sign_matches:
         return "native_significant_but_restricted_arm_disagrees_in_sign"
     return "branch_criteria_not_matched_see_full_object"
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _legacy_non_design_based_diagnostic(arm: dict) -> dict:
+    """Archive the inherited non-design-based result without allowing it to decide a branch."""
+    source = arm.get("p_value_source")
+    if source == "between_subject_permutation":
+        p_value = arm.get("between_subject_permutation_p")
+    else:
+        p_value = arm.get("within_subject_permutation_p")
+    return {
+        "status": "diagnostic_only_not_valid_for_the_randomized_treatment_decision",
+        "p_value_source": source,
+        "p_value": p_value,
+        "significant_under_legacy_null": arm.get("significant"),
+        "reason": "the treatment labels were assigned to lists, so this null does not preserve the treatment randomization unit",
+    }
+
+
+def _sensitivity_summary(arm: dict) -> dict:
+    return {
+        "list_unit_design_based_inference": _list_unit_design_based_inference(arm),
+        "legacy_non_design_based_diagnostic": _legacy_non_design_based_diagnostic(arm),
+    }
+
+
+def _zero_drop_summary(source: dict) -> dict:
+    """Keep the source accounting auditable without duplicating every event-level status row."""
+    fields = {
+        "session_zero_drop_accounting": ("sessions_seen", "sessions_analysed", "sessions_refused", "reconciles"),
+        "list_zero_drop_accounting": ("lists_seen", "lists_analysed", "lists_refused", "reconciles"),
+        "word_zero_drop_accounting": ("words_seen", "words_analysed", "words_refused", "reconciles"),
+        "subject_zero_drop_accounting": (
+            "subjects_seen", "subjects_contributing_at_least_one_analysed_word",
+            "subjects_with_zero_analysed_words", "reconciles"),
+    }
+    return {
+        name: {field: source.get(name, {}).get(field) for field in wanted}
+        for name, wanted in fields.items()
+    }
+
+
+def _re_adjudicate_stored_artifact(source_path: Path, output_path: Path) -> dict:
+    """Re-adjudicate stored permutation statistics without rerunning raw feature extraction.
+
+    The source artifact must already contain the observed effect and its list-label permutation
+    p-value for every decision arm.  Missing fields are retained as non-identified outcomes.
+    """
+    source = json.loads(source_path.read_text())
+    source_outcomes = source.get("outcomes")
+    if not isinstance(source_outcomes, dict):
+        raise ValueError("source artifact has no outcomes object")
+
+    outcomes = {}
+    for name, outcome in source_outcomes.items():
+        required_arms = ("native", "bias_only", "restricted", "restricted_bias_only",
+                         "restricted_nuisance_partialled")
+        missing_arms = [key for key in required_arms if not isinstance(outcome.get(key), dict)]
+        if missing_arms:
+            outcomes[name] = {
+                "status": "non_identified",
+                "reason": "missing_required_decision_arm",
+                "missing_arms": missing_arms,
+            }
+            continue
+        native = outcome["native"]
+        bias_only = outcome["bias_only"]
+        restricted = outcome["restricted"]
+        restricted_bias_only = outcome["restricted_bias_only"]
+        nuisance = outcome["restricted_nuisance_partialled"]
+        arms = {key: outcome[key] for key in required_arms}
+        arm_inferences = {key: _list_unit_design_based_inference(arm) for key, arm in arms.items()}
+        missing_list_unit_inference = [
+            key for key, inference in arm_inferences.items() if inference.get("status") != "computed"
+        ]
+        if missing_list_unit_inference:
+            outcomes[name] = {
+                "status": "non_identified",
+                "reason": "missing_finite_list_unit_inference_in_required_decision_arm",
+                "arms_without_finite_list_unit_inference": missing_list_unit_inference,
+                "arms": {key: _sensitivity_summary(arm) for key, arm in arms.items()},
+            }
+            continue
+        branch = _classify_branch(native, bias_only, restricted, restricted_bias_only, nuisance)
+        native_inference = arm_inferences["native"]
+        restricted_inference = arm_inferences["restricted"]
+        nuisance_inference = arm_inferences["restricted_nuisance_partialled"]
+        effect_delta = None
+        if (restricted.get("status") == "computed" and nuisance.get("status") == "computed"):
+            effect_delta = (nuisance.get("subject_clustered_mean")
+                            - restricted.get("subject_clustered_mean"))
+        outcomes[name] = {
+            "status": "complete" if native_inference["status"] == "computed" else "non_identified",
+            "primary_branch": branch,
+            "primary_decision_arm": "native",
+            "primary_decision_inference": native_inference,
+            "arms": {key: _sensitivity_summary(arms[key]) for key in required_arms},
+            "restricted_arm_sensitivity": {
+                "role": "sensitivity; it does not replace the declared native decision arm",
+                "base": restricted_inference,
+                "nuisance_partialled": nuisance_inference,
+                "change_in_effect_size_after_added_nuisances": effect_delta,
+                "interpretation": (
+                    "The base restricted analysis and the added-nuisance analysis are reported together. "
+                    "The sensitivity is not an additional requirement for the declared primary branch."
+                ),
+            },
+            "causal_use": (
+                "The list-label randomization identifies the treatment contrast tested here, but this "
+                "moderation analysis does not establish a stimulation policy and is not policy-ready."
+            ),
+        }
+
+    named = [v for v in outcomes.values() if v.get("status") == "complete"]
+    primary_branches = [v["primary_branch"] for v in named]
+    output = {
+        "analysis_id": "randomised_prestimulation_moderation_open_loop_design_based_re_adjudication",
+        "schema_version": "1.0.0",
+        "status": "complete" if len(named) == len(outcomes) else "non_identified",
+        "source_artifact": {
+            "path": str(source_path),
+            "sha256": _sha256_file(source_path),
+            "analysis_id": source.get("analysis_id"),
+            "schema_version": source.get("schema_version"),
+            "code_commit": source.get("code_commit"),
+            "derivation": "deterministic re-adjudication of stored effect estimates and stored list-label permutation p-values; no raw-data fitting was rerun",
+        },
+        "producer": {
+            "path": str(Path(__file__).relative_to(ROOT)),
+            "sha256": _sha256_file(Path(__file__)),
+            "code_commit": git_commit(ROOT),
+        },
+        "decision_basis": {
+            "treatment_randomization_unit": "list",
+            "primary_p_value_source": "list_label_permutation",
+            "decision_rule": "the stored p < 0.05 rule is applied only to the list-label permutation p-value",
+            "legacy_diagnostic_status": "archived_not_valid_for_the_randomized_treatment_decision",
+        },
+        "scope": source.get("scope"),
+        "source_zero_drop_accounting": _zero_drop_summary(source),
+        "outcomes": outcomes,
+        "branch_comparison": (
+            "outcomes_agree" if len(set(primary_branches)) == 1 else "outcomes_disagree"
+        ) if primary_branches else "non_identified",
+        "re_adjudication_provenance": (
+            "This file was generated by the producer from the named source artifact. Numeric results "
+            "are copied only from stored source fields and are linked to that source by SHA-256."
+        ),
+    }
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    scratch = output_path.with_suffix(output_path.suffix + ".partial")
+    scratch.write_text(json.dumps(_json_safe(output), indent=2, allow_nan=False, default=float))
+    os.replace(scratch, output_path)
+    return output
 
 
 # =======================================================================================================
@@ -1397,6 +1595,15 @@ def main() -> None:
                 restricted, restricted_nuisance_partialled, nuisance_keys),
             "restricted_vs_its_bias_only_sign_relationship": _restricted_vs_its_bias_only_sign_relationship(
                 restricted, restricted_bias_only),
+            "primary_decision_inference": _list_unit_design_based_inference(native),
+            "legacy_non_design_based_diagnostics": {
+                "native": _legacy_non_design_based_diagnostic(native),
+                "bias_only": _legacy_non_design_based_diagnostic(bias_only),
+                "restricted": _legacy_non_design_based_diagnostic(restricted),
+                "restricted_bias_only": _legacy_non_design_based_diagnostic(restricted_bias_only),
+                "restricted_nuisance_partialled": _legacy_non_design_based_diagnostic(
+                    restricted_nuisance_partialled),
+            },
             "restricted_arm_n_words": len(restricted_rows), "branch": branch,
         }
         if outcome_key == "displacement":
@@ -1507,4 +1714,13 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--re-adjudicate-source", type=Path)
+    parser.add_argument("--re-adjudication-output", type=Path,
+                        default=RE_ADJUDICATION_OUTPUT_PATH)
+    args = parser.parse_args()
+    if args.re_adjudicate_source:
+        repaired = _re_adjudicate_stored_artifact(args.re_adjudicate_source, args.re_adjudication_output)
+        _log(f"wrote {args.re_adjudication_output} with status={repaired['status']}")
+    else:
+        main()

@@ -187,11 +187,11 @@ def _fake_cell(slope, intercept, n_trials=40, null_slopes=None):
 
 def test_pool_slope_cell_weights_independent_units_not_sessions():
     sessions = [
-        {"session": "s1", "independent_unit": "u1", "entry": {"status": "computed", "chunk_cells": {4: _fake_cell(0.0, 0.1)}}},
-        {"session": "s2", "independent_unit": "u1", "entry": {"status": "computed", "chunk_cells": {4: _fake_cell(0.2, 0.1)}}},
-        {"session": "s3", "independent_unit": "u2", "entry": {"status": "computed", "chunk_cells": {4: _fake_cell(0.6, 0.1)}}},
-        {"session": "s4", "independent_unit": "u3", "entry": {"status": "computed", "chunk_cells": {4: _fake_cell(0.6, 0.1)}}},
-        {"session": "s5", "independent_unit": "u4", "entry": {"status": "computed", "chunk_cells": {4: _fake_cell(0.6, 0.1)}}},
+        {"session": "s1", "independent_unit": "u1", "entry": {"status": "computed", "chunk_cells": {"4": _fake_cell(0.0, 0.1)}}},
+        {"session": "s2", "independent_unit": "u1", "entry": {"status": "computed", "chunk_cells": {"4": _fake_cell(0.2, 0.1)}}},
+        {"session": "s3", "independent_unit": "u2", "entry": {"status": "computed", "chunk_cells": {"4": _fake_cell(0.6, 0.1)}}},
+        {"session": "s4", "independent_unit": "u3", "entry": {"status": "computed", "chunk_cells": {"4": _fake_cell(0.6, 0.1)}}},
+        {"session": "s5", "independent_unit": "u4", "entry": {"status": "computed", "chunk_cells": {"4": _fake_cell(0.6, 0.1)}}},
     ]
     pooled = decay._pool_slope_cell(sessions, 4, "seed-a")
     assert pooled["status"] == "computed"
@@ -200,8 +200,8 @@ def test_pool_slope_cell_weights_independent_units_not_sessions():
 
 def test_pool_slope_cell_not_computable_below_independent_unit_floor():
     sessions = [
-        {"session": "s1", "independent_unit": "u1", "entry": {"status": "computed", "chunk_cells": {4: _fake_cell(0.1, 0.0)}}},
-        {"session": "s2", "independent_unit": "u2", "entry": {"status": "computed", "chunk_cells": {4: _fake_cell(0.1, 0.0)}}},
+        {"session": "s1", "independent_unit": "u1", "entry": {"status": "computed", "chunk_cells": {"4": _fake_cell(0.1, 0.0)}}},
+        {"session": "s2", "independent_unit": "u2", "entry": {"status": "computed", "chunk_cells": {"4": _fake_cell(0.1, 0.0)}}},
     ]
     pooled = decay._pool_slope_cell(sessions, 4, "seed-b")
     assert pooled["status"] == "not_computable"
@@ -211,12 +211,12 @@ def test_pool_slope_cell_not_computable_below_independent_unit_floor():
 def test_pool_slope_cell_skips_sessions_with_uncomputed_chunk_size():
     sessions = [
         {"session": f"s{i}", "independent_unit": f"u{i}",
-         "entry": {"status": "computed", "chunk_cells": {4: _fake_cell(0.3, 0.0)}}}
+         "entry": {"status": "computed", "chunk_cells": {"4": _fake_cell(0.3, 0.0)}}}
         for i in range(4)
     ]
     sessions.append({
         "session": "s5", "independent_unit": "u5",
-        "entry": {"status": "computed", "chunk_cells": {4: {"status": "not_computable"}}},
+        "entry": {"status": "computed", "chunk_cells": {"4": {"status": "not_computable"}}},
     })
     pooled = decay._pool_slope_cell(sessions, 4, "seed-c")
     assert pooled["status"] == "computed"
@@ -249,21 +249,19 @@ def _pooled(mean, lo, hi, mdd, q, mean_trials=100.0):
 
 def test_verdict_clears_when_q_significant_and_ci_excludes_zero():
     pooled = _pooled(-0.01, -0.02, -0.005, 0.001, q=0.01)
-    verdict = decay._cell_verdict(pooled, {"mean_alignment_above_null": 0.05})
+    verdict = decay._cell_verdict(pooled, {"mean_alignment_above_null": 0.05, "reliably_above_null": True})
     assert verdict["verdict"] == "clears"
 
 
 def test_verdict_does_not_clear_when_only_one_half_passes():
     pooled_q_only = _pooled(-0.01, -0.02, 0.001, 0.02, q=0.01)  # CI covers zero
-    pooled_ci_only = _pooled(-0.01, -0.02, -0.005, 0.02, q=0.2)  # q not significant
-    ref = {"mean_alignment_above_null": 0.05}
+    ref = {"mean_alignment_above_null": 0.05, "reliably_above_null": True}
     assert decay._cell_verdict(pooled_q_only, ref)["verdict"] != "clears"
-    assert decay._cell_verdict(pooled_ci_only, ref)["verdict"] != "clears"
 
 
 def test_verdict_bounded_negative_when_mdd_below_reference_decay_rate():
     pooled = _pooled(-0.001, -0.02, 0.02, mdd=0.0001, q=0.5, mean_trials=100.0)
-    reference = {"mean_alignment_above_null": 0.05}  # reference decay rate = 0.05/100 = 0.0005
+    reference = {"mean_alignment_above_null": 0.05, "reliably_above_null": True}  # decay rate = 0.0005
     verdict = decay._cell_verdict(pooled, reference)
     assert verdict["verdict"] == "bounded_negative"
     assert verdict["minimum_detectable_slope_80pct_power"] == pytest.approx(0.0001)
@@ -272,7 +270,7 @@ def test_verdict_bounded_negative_when_mdd_below_reference_decay_rate():
 
 def test_verdict_inconclusive_when_mdd_above_reference_decay_rate():
     pooled = _pooled(-0.001, -0.02, 0.02, mdd=0.01, q=0.5, mean_trials=100.0)
-    reference = {"mean_alignment_above_null": 0.05}  # reference decay rate = 0.0005
+    reference = {"mean_alignment_above_null": 0.05, "reliably_above_null": True}  # decay rate = 0.0005
     verdict = decay._cell_verdict(pooled, reference)
     assert verdict["verdict"] == "inconclusive_underpowered_relative_to_reference"
 
@@ -283,12 +281,103 @@ def test_verdict_not_computable_passthrough():
     assert verdict["verdict"] == "not_computable"
 
 
-def test_verdict_uses_absolute_reference_effect_for_negative_alignment():
-    pooled = _pooled(-0.001, -0.02, 0.02, mdd=0.0003, q=0.5, mean_trials=100.0)
-    reference = {"mean_alignment_above_null": -0.04}  # negative delivered effect, e.g. below-null cell
+# ---------------------------------------------------------------------------------------------------
+# _cell_verdict: a cell's own interval excluding zero while its q-value does not clear FDR is reported
+# as an evidence disagreement, never collapsed into bounded_negative or any other one-word verdict
+# ---------------------------------------------------------------------------------------------------
+
+def test_verdict_reports_disagreement_when_ci_excludes_zero_but_q_not_significant():
+    pooled = _pooled(0.0002, 0.000003, 0.00033, mdd=0.0001, q=0.18, mean_trials=100.0)
+    reference = {"mean_alignment_above_null": 0.05, "reliably_above_null": True}
     verdict = decay._cell_verdict(pooled, reference)
-    assert verdict["reference_decay_rate_per_trial"] == pytest.approx(0.04 / 100.0)
+    assert verdict["verdict"] == "inconclusive_interval_excludes_zero_not_fdr_significant"
+    assert verdict["verdict"] != "bounded_negative"
+    assert verdict["permutation_q_value"] == pytest.approx(0.18)
+    assert verdict["cluster_bootstrap_interval_95pct"] == [0.000003, 0.00033]
+    assert "positive" in verdict["evidence_disagreement"]
+
+
+def test_verdict_disagreement_names_negative_direction_when_ci_is_below_zero():
+    pooled = _pooled(-0.0002, -0.00033, -0.000003, mdd=0.0001, q=0.18, mean_trials=100.0)
+    verdict = decay._cell_verdict(pooled, {"mean_alignment_above_null": 0.05, "reliably_above_null": True})
+    assert verdict["verdict"] == "inconclusive_interval_excludes_zero_not_fdr_significant"
+    assert "negative" in verdict["evidence_disagreement"]
+
+
+# ---------------------------------------------------------------------------------------------------
+# _cell_verdict: a negative or not-reliably-significant internal reference licenses no bound
+# ---------------------------------------------------------------------------------------------------
+
+def test_verdict_negative_reference_yields_no_bound_not_a_bound():
+    pooled = _pooled(-0.001, -0.02, 0.02, mdd=0.0003, q=0.5, mean_trials=100.0)
+    reference = {"mean_alignment_above_null": -0.04, "reliably_above_null": False}
+    verdict = decay._cell_verdict(pooled, reference)
+    assert verdict["verdict"] == "inconclusive_for_want_of_a_reference"
+    assert verdict["verdict"] != "bounded_negative"
+    assert "reference_decay_rate_per_trial" not in verdict
+    assert verdict["reference_gain_alignment_above_null"] == pytest.approx(-0.04)
+
+
+def test_verdict_positive_but_not_significant_reference_yields_no_bound():
+    pooled = _pooled(-0.001, -0.02, 0.02, mdd=0.0003, q=0.5, mean_trials=100.0)
+    reference = {"mean_alignment_above_null": 0.003, "reliably_above_null": False}
+    verdict = decay._cell_verdict(pooled, reference)
+    assert verdict["verdict"] == "inconclusive_for_want_of_a_reference"
+
+
+# ---------------------------------------------------------------------------------------------------
+# _bound_stability / _cell_verdict: a bounded_negative verdict is demoted when the minimum-detectable-
+# slope-vs-reference comparison disagrees across chunk sizes 4/8/16 (2 is excluded: its evaluation
+# chunks always score squared correlation 1.0, a floating-point-zero degeneracy)
+# ---------------------------------------------------------------------------------------------------
+
+def _sweep_cell(mdd):
+    return {"status": "computed", "slope": {"minimum_detectable_difference_80pct_power": mdd}}
+
+
+def test_bound_stability_excludes_chunk_size_two():
+    sweep = {
+        "2": _sweep_cell(1e-20), "4": _sweep_cell(0.0001),
+        "8": _sweep_cell(0.0002), "16": _sweep_cell(0.0003),
+    }
+    stability = decay._bound_stability(sweep, reference_decay_rate=0.0005)
+    assert "2" not in stability["bounded_at_chunk_size"]
+    assert stability["bounded_at_chunk_size"] == {"4": True, "8": True, "16": True}
+    assert stability["stable"] is True
+
+
+def test_bound_stability_unstable_when_bound_flips_across_sizes():
+    sweep = {
+        "2": _sweep_cell(1e-20), "4": _sweep_cell(0.0001),
+        "8": _sweep_cell(0.002), "16": _sweep_cell(0.003),
+    }
+    stability = decay._bound_stability(sweep, reference_decay_rate=0.0005)
+    assert stability["bounded_at_chunk_size"] == {"4": True, "8": False, "16": False}
+    assert stability["stable"] is False
+
+
+def test_verdict_demotes_bounded_negative_when_sweep_unstable():
+    pooled = _pooled(-0.001, -0.02, 0.02, mdd=0.0001, q=0.5, mean_trials=100.0)
+    reference = {"mean_alignment_above_null": 0.05, "reliably_above_null": True}  # decay rate = 0.0005
+    sweep = {
+        "2": _sweep_cell(1e-20), "4": _sweep_cell(0.0001),
+        "8": _sweep_cell(0.002), "16": _sweep_cell(0.003),
+    }
+    verdict = decay._cell_verdict(pooled, reference, sweep)
+    assert verdict["verdict"] == "inconclusive_sweep_unstable_bound"
+    assert verdict["sweep_stability_of_bound"]["stable"] is False
+
+
+def test_verdict_keeps_bounded_negative_when_sweep_stable():
+    pooled = _pooled(-0.001, -0.02, 0.02, mdd=0.0001, q=0.5, mean_trials=100.0)
+    reference = {"mean_alignment_above_null": 0.05, "reliably_above_null": True}  # decay rate = 0.0005
+    sweep = {
+        "2": _sweep_cell(1e-20), "4": _sweep_cell(0.0001),
+        "8": _sweep_cell(0.0002), "16": _sweep_cell(0.0003),
+    }
+    verdict = decay._cell_verdict(pooled, reference, sweep)
     assert verdict["verdict"] == "bounded_negative"
+    assert verdict["sweep_stability_of_bound"]["stable"] is True
 
 
 # ---------------------------------------------------------------------------------------------------
@@ -313,14 +402,53 @@ def test_compare_cells_flags_a_real_mismatch():
 
 
 # ---------------------------------------------------------------------------------------------------
-# null calibration: mechanism runs and returns a plausible rate (full 200-replicate run happens in
-# the actual analysis execution, not here -- this just checks the calibration harness is correct)
+# null calibration: mechanism runs and returns a plausible rate (the full NULL_CALIBRATION_REPLICATES
+# run happens in the actual analysis execution, not here -- this just checks the harness is correct)
 # ---------------------------------------------------------------------------------------------------
 
 def test_null_calibration_check_runs_and_returns_a_rate_in_bounds():
     result = decay._null_calibration(n_replicates=20, n_perm=100, seed="test-calibration", n_trials=48, n_units=6, n_bins=6)
     assert result["n_replicates_computed"] > 0
     assert 0.0 <= result["false_positive_rate_at_p_0.05"] <= 1.0
+    assert "calibrated" in result
+    assert "false_positive_rate_95pct_exact_binomial_interval" in result
+    assert "direction_of_miscalibration" in result
+    assert "what_this_does_and_does_not_license" in result
+
+
+# ---------------------------------------------------------------------------------------------------
+# _calibration_summary: the binomial-interval calibration flag, isolated from the stochastic harness
+# ---------------------------------------------------------------------------------------------------
+
+def test_calibration_summary_flags_anti_conservative_when_nominal_excluded_above():
+    summary = decay._calibration_summary(n_significant=140, n_computed=2000)  # rate 0.07
+    assert summary["false_positive_rate_at_p_0.05"] == pytest.approx(0.07)
+    lo, hi = summary["false_positive_rate_95pct_exact_binomial_interval"]
+    assert lo > 0.05
+    assert summary["calibrated"] is False
+    assert "anti-conservative" in summary["direction_of_miscalibration"]
+    assert "MORE secure" in summary["what_this_does_and_does_not_license"]
+
+
+def test_calibration_summary_calibrated_when_nominal_inside_interval():
+    summary = decay._calibration_summary(n_significant=10, n_computed=200)  # rate 0.05, exact match
+    assert summary["calibrated"] is True
+    lo, hi = summary["false_positive_rate_95pct_exact_binomial_interval"]
+    assert lo <= 0.05 <= hi
+
+
+def test_calibration_summary_flags_conservative_when_nominal_excluded_below():
+    summary = decay._calibration_summary(n_significant=1, n_computed=2000)  # rate 0.0005
+    assert summary["calibrated"] is False
+    assert "conservative" in summary["direction_of_miscalibration"]
+    assert "anti-conservative" not in summary["direction_of_miscalibration"]
+
+
+def test_calibration_summary_uncomputed_is_not_calibrated():
+    summary = decay._calibration_summary(n_significant=0, n_computed=0)
+    assert summary["false_positive_rate_at_p_0.05"] is None
+    assert summary["calibrated"] is False
+    assert summary["false_positive_rate_95pct_exact_binomial_interval"] is None
 
 
 # ---------------------------------------------------------------------------------------------------

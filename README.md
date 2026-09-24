@@ -194,6 +194,12 @@ python scripts/run_geometry_from_drift_parameters_000469.py
 python scripts/run_rotation_adjudication.py
 python scripts/run_switching_adjudication.py --replicates 200
 
+# Matched native/PCA/FA/GPFA/CEBRA/T-PHATE/LFADS information benchmark
+python scripts/run_info_benchmark.py --smoke
+
+# Metadata-only EEG/ECG/PPG working-memory feasibility audit
+python scripts/run_ds006848_feasibility.py
+
 # Rebuild every figure from the current artifacts
 python scripts/generate_paper_figures.py
 ```
@@ -203,6 +209,17 @@ locations plus shared non-scientific runtime defaults. `WM_DYNAMICS_CONFIG` can 
 machine-local replacement; the per-path environment variables listed in the file take precedence.
 Scripts should resolve datasets with `src.project_config.dataset_path()` rather than constructing
 absolute paths.
+
+Development and validation conventions are documented in [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
+The completed information benchmark covers 28 representation/decoder/corpus cells with no failures.
+It is a two-cell exploratory comparison, not a cross-session method ranking. See
+[`docs/info_benchmark.md`](docs/info_benchmark.md) for the matched-fold design, complete scope, and
+interpretation.
+
+The ds006848 metadata audit reads BIDS sidecars and trial tables without opening signal payloads.
+Its current result finds 15 of 30 complete working-memory recordings, 10 of which also have exact
+condition-count linkage, and records the remaining payload and event-linkage gaps.
 
 `scripts/_full_rerun.sh` runs the per-dataset pipelines and then the aggregators so
 `results/forest_syntheses.json` is rebuilt last from fresh inputs.

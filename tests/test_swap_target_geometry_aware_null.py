@@ -25,10 +25,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from run_swap_target_geometry_aware_null import (  # noqa: E402
-    BLOCK_A_MDD_POWERED_NULL_THRESHOLD, BRANCH_A_TARGET, BRANCH_B_NOT_SEPARABLE, BRANCH_MISCENTRED_STOP,
+    PRECEDING_ITEM_BEHAVIOURAL_MDD_POWERED_NULL_THRESHOLD, BRANCH_A_TARGET, BRANCH_B_NOT_SEPARABLE, BRANCH_MISCENTRED_STOP,
     BRANCH_TOP_DOES_NOT_FOLLOW, BRANCH_TOP_FOLLOWS, BRANCH_TOP_INCONCLUSIVE, CENTRING_Z_THRESHOLD,
     PERCENTILE_ALPHA, STAT_RESPONSE, STAT_TARGET, _build_session_arrays, _collect_observed_and_nulls,
-    _decide_block_a, _decide_block_b, _decide_top_branch, _indicators, _percentile_result,
+    _decide_preceding_item_behavioural, _decide_serial_pull_neural, _decide_top_branch, _indicators, _percentile_result,
     _session_statistics, _split_half_centring,
 )
 
@@ -54,7 +54,7 @@ def _synthetic_sessions(mode: str, seed: int = 11):
         else:
             raise ValueError(mode)
         prev_response = prev_target + rng.normal(0.0, np.radians(10.0), TRIALS_PER_SESSION)
-        # serial pull carries no group structure except under 'planted_block_b'
+        # serial pull carries no group structure except under 'planted_serial_pull_group'
         pull = rng.normal(0.0, 0.01, TRIALS_PER_SESSION)
         spike = rng.poisson(12.0, TRIALS_PER_SESSION).astype(float)
         if mode == "planted":
@@ -179,7 +179,7 @@ def test_headline_decider_returns_stop_branch_when_centring_fails():
     assert top["branch"] == BRANCH_MISCENTRED_STOP
 
 
-def test_block_deciders_stay_inside_pre_declared_cells():
+def test_preceding_item_and_serial_pull_deciders_stay_inside_pre_declared_cells():
     def pct(significant, direction, observed=0.6, null_mean=0.5):
         return {"status": "estimated", "significant": significant, "direction": direction,
                 "observed": observed, "null_mean": null_mean,
@@ -188,23 +188,23 @@ def test_block_deciders_stay_inside_pre_declared_cells():
                     {"status": "computed", "mdd": 0.01}}
 
     # target above and response not -> the remembered-item cell
-    fine_a = _decide_block_a(pct(True, "above"), pct(False, "not_significant"), pct(False, "not_significant"),
+    fine_a = _decide_preceding_item_behavioural(pct(True, "above"), pct(False, "not_significant"), pct(False, "not_significant"),
                              [0.6] * 10, [0.5] * 10)
     assert fine_a["branch"] == BRANCH_A_TARGET
 
     # either statistic below its null centre -> avoidance
-    assert _decide_block_a(pct(True, "below"), pct(False, "not_significant"), pct(False, "not_significant"),
+    assert _decide_preceding_item_behavioural(pct(True, "below"), pct(False, "not_significant"), pct(False, "not_significant"),
                            [0.4] * 10, [0.5] * 10)["branch"] == "swaps_avoid_the_preceding_trials_item"
 
     # neither significant with a small minimum detectable difference -> powered null
-    powered = _decide_block_a(pct(False, "not_significant"), pct(False, "not_significant"),
+    powered = _decide_preceding_item_behavioural(pct(False, "not_significant"), pct(False, "not_significant"),
                               pct(False, "not_significant"), [0.5] * 10, [0.5] * 10)
     assert powered["branch"] == "powered_null_swap_destination_is_unrelated_to_the_preceding_trial"
-    assert powered["target_minimum_detectable_paired_difference"] < BLOCK_A_MDD_POWERED_NULL_THRESHOLD
+    assert powered["target_minimum_detectable_paired_difference"] < PRECEDING_ITEM_BEHAVIOURAL_MDD_POWERED_NULL_THRESHOLD
 
     # a leave-one-out control that fires makes the association inseparable from a session offset
     bias = pct(True, "above")
-    fine_b = _decide_block_b(pct(False, "not_significant"), pct(False, "not_significant"), bias,
+    fine_b = _decide_serial_pull_neural(pct(False, "not_significant"), pct(False, "not_significant"), bias,
                              pct(False, "not_significant"), reference_effect=1e9)
     assert fine_b["branch"] == BRANCH_B_NOT_SEPARABLE
     top = _decide_top_branch(True, pct(False, "not_significant"), powered["branch"], 0.01,
@@ -212,6 +212,6 @@ def test_block_deciders_stay_inside_pre_declared_cells():
     assert top["branch"] == "not_separable_from_a_session_level_offset"
 
     # raw significant below its null centre -> the opposite-direction cell
-    assert _decide_block_b(pct(True, "below"), pct(False, "not_significant"), pct(False, "not_significant"),
+    assert _decide_serial_pull_neural(pct(True, "below"), pct(False, "not_significant"), pct(False, "not_significant"),
                            pct(False, "not_significant"), reference_effect=1e9)["branch"] == \
         "serial_pull_is_larger_on_swaps_that_avoid_the_preceding_trials_item"

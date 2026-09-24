@@ -89,6 +89,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from provenance import canonical_json, git_commit  # noqa: E402
 from statistics import (  # noqa: E402
+    Z_80_POWER,
     bootstrap_ci,
     fdr_bh,
     forest_meta,
@@ -142,14 +143,14 @@ SESSION_MEDIAN_DEGENERATE_REL_FRAC = 0.05
 # after seeing the numbers.
 ROTATION_NULL_DISTINGUISHABLE_FRACTION_FLOOR = 0.05
 
-# Block B's displacement is reported in raw cosine-deviation units and, in
+# The stimulation displacement is reported in raw cosine-deviation units and, in
 # parallel, normalised by each session's own spontaneous (non-stimulated
 # trial-to-trial) standard deviation -- a session-specific score is not
-# comparable across sessions on the raw scale alone (Block D's own rule,
-# applied here too for the same reason). A normalised displacement of 1.0 is
+# comparable across sessions on the raw scale alone (the task-period dose
+# response's own rule, applied here too for the same reason). A normalised displacement of 1.0 is
 # "as large as this session's own ordinary non-stimulated fluctuation", the
 # natural, unit-free floor for "the smallest effect this design would call
-# meaningful" and this module's pre-declared reference effect for Block B.
+# meaningful" and this module's pre-declared reference effect for the stimulation displacement.
 MEANINGFUL_EFFECT_THRESHOLD_NORMALISED_DISPLACEMENT = 1.0
 
 MIN_SUBJECTS_FOR_WITHIN_SUBJECT_DOSE = 6
@@ -157,7 +158,7 @@ MIN_SUBJECTS_FOR_WITHIN_SUBJECT_DOSE = 6
 # Forward-only: gates the two-arm dose-scaling meta-analysis's own heterogeneity check (a standard
 # rule of thumb -- Cochran's Q or I^2 this large means the two arms are not measuring one common
 # effect and their pooled point estimate should not be presented as an answer). Does not touch or
-# re-gate anything Block D or the pre-task titration arm already fires.
+# re-gate anything the task-period dose response or the pre-task titration arm already fires.
 TWO_ARM_META_HETEROGENEITY_I_SQUARED_FLOOR = 50.0
 CONFOUND_LIST_FOR_BETWEEN_SUBJECT_DOSE = [
     "clinical titration threshold", "electrode target location", "tissue type",
@@ -279,7 +280,7 @@ def _bipolar_channel_shanks(channel_name: str) -> set[str]:
 
 
 def channel_condition_masks(ch_names: list[str], anode: str, cathode: str, stim_ch: str) -> dict:
-    """The three channel sets Block B's mandatory artifact control compares:
+    """The three channel sets the stimulation-displacement arm's mandatory artifact control compares:
     every channel, every channel except the driven bipolar pair, and every
     channel except the driven pair AND any channel sharing a lead with
     either the anode or the cathode contact -- the mandatory control for a
@@ -341,8 +342,8 @@ def _deviation_from_reference(activity_by_unit: np.ndarray, reference_direction:
     return deviation
 
 
-def compute_block_b_displacement(activity_by_unit: np.ndarray, stim_flag: np.ndarray) -> dict:
-    """The core Block B computation for one session and one channel
+def compute_stimulation_displacement(activity_by_unit: np.ndarray, stim_flag: np.ndarray) -> dict:
+    """The core stimulation-displacement computation for one session and one channel
     condition: leave-one-out deviation among control trials only
     (rate_free_state_deviation, unmodified, called on the control subset
     alone so a stimulated trial can never enter any control trial's
@@ -668,9 +669,9 @@ def evaluate_precondition(session_records: list[dict]) -> dict:
     }
 
 
-# ── Block A ──────────────────────────────────────────────────────────────────
+# ── Component-vs-recall-failure link ──────────────────────────────────────────
 
-def _block_a_session(rec: dict) -> dict:
+def _component_recall_failure_session(rec: dict) -> dict:
     arrays = rec["arrays"]
     ctrl_mask = arrays["stim_flag"] == 0
     activity = _bin_averaged(arrays)[ctrl_mask]
@@ -698,7 +699,7 @@ def _block_a_session(rec: dict) -> dict:
     }
 
 
-def _classify_block_a(main_test: dict, mdd: dict | None, void_test: dict) -> str:
+def _classify_component_recall_failure_link(main_test: dict, mdd: dict | None, void_test: dict) -> str:
     if main_test["status"] != "computed":
         return "not_computable"
     significant = main_test["p_value"] <= ALPHA
@@ -713,10 +714,10 @@ def _classify_block_a(main_test: dict, mdd: dict | None, void_test: dict) -> str
     return "underpowered_to_ask"
 
 
-def run_block_a(session_records: list[dict]) -> dict:
+def run_component_recall_failure_link(session_records: list[dict]) -> dict:
     per_session = {}
     for rec in session_records:
-        result = run_checkpointed(f"blockA__{rec['corpus']}__{rec['session_key']}", lambda rec=rec: _block_a_session(rec))
+        result = run_checkpointed(f"blockA__{rec['corpus']}__{rec['session_key']}", lambda rec=rec: _component_recall_failure_session(rec))
         per_session[rec["session_key"]] = {"corpus": rec["corpus"], "subject": rec["subject_id"], **result}
 
     session_r = np.array([v["correlation_deviation_vs_failure"]["r"] for v in per_session.values()
@@ -744,7 +745,7 @@ def run_block_a(session_records: list[dict]) -> dict:
         if pooled.get("status") == "computed" else {"status": "not_computable"}
     void_test = {"status": void.get("status"), "r": void.get("r"), "p_value": void.get("p_value")} \
         if void.get("status") == "computed" else {"status": "not_computable"}
-    branch = _classify_block_a(main_test, pooled.get("mdd") if pooled.get("status") == "computed" else None, void_test)
+    branch = _classify_component_recall_failure_link(main_test, pooled.get("mdd") if pooled.get("status") == "computed" else None, void_test)
 
     return {
         "per_session": per_session,
@@ -761,9 +762,9 @@ def run_block_a(session_records: list[dict]) -> dict:
     }
 
 
-# ── Block B ──────────────────────────────────────────────────────────────────
+# ── Stimulation displacement ──────────────────────────────────────────────────
 
-def _block_b_session(rec: dict) -> dict:
+def _stimulation_displacement_session(rec: dict) -> dict:
     arrays = rec["arrays"]
     ch_names = arrays["ch_names"].tolist()
     anode, cathode, stim_ch = str(arrays["anode"]), str(arrays["cathode"]), str(arrays["stim_channel"])
@@ -773,7 +774,7 @@ def _block_b_session(rec: dict) -> dict:
     conditions = {}
     for name, mask in masks.items():
         activity = _bin_averaged(arrays, mask)
-        out = compute_block_b_displacement(activity, stim_flag)
+        out = compute_stimulation_displacement(activity, stim_flag)
         ctrl_dev, stim_dev = out["control_deviation"], out["stim_deviation"]
         finite_ctrl, finite_stim = np.isfinite(ctrl_dev), np.isfinite(stim_dev)
         if finite_ctrl.sum() < 8 or finite_stim.sum() < 4:
@@ -796,7 +797,7 @@ def _block_b_session(rec: dict) -> dict:
             "conditions": conditions, "stim_channel": stim_ch, "anode": anode, "cathode": cathode}
 
 
-def _classify_block_b(pooled_by_condition: dict) -> str:
+def _classify_stimulation_displacement(pooled_by_condition: dict) -> str:
     full = pooled_by_condition.get("full_channel_set", {})
     shank = pooled_by_condition.get("excluding_stimulated_shank", {})
     if full.get("status") != "computed":
@@ -814,10 +815,10 @@ def _classify_block_b(pooled_by_condition: dict) -> str:
     return "underpowered_to_ask"
 
 
-def run_block_b(session_records: list[dict]) -> dict:
+def run_stimulation_displacement(session_records: list[dict]) -> dict:
     per_session = {}
     for rec in session_records:
-        result = run_checkpointed(f"blockB__{rec['corpus']}__{rec['session_key']}", lambda rec=rec: _block_b_session(rec))
+        result = run_checkpointed(f"blockB__{rec['corpus']}__{rec['session_key']}", lambda rec=rec: _stimulation_displacement_session(rec))
         per_session[rec["session_key"]] = {"corpus": rec["corpus"], "subject": rec["subject_id"], **result}
 
     condition_names = ["full_channel_set", "excluding_stimulated_pair", "excluding_stimulated_shank"]
@@ -833,7 +834,7 @@ def run_block_b(session_records: list[dict]) -> dict:
         pooled_by_condition[cond] = subject_clustered_mean_test(np.array(vals), subj) if vals else {"status": "not_computable"}
         pooled_power_by_condition[cond] = subject_clustered_mean_test(np.array(power_vals), subj) if power_vals else {"status": "not_computable"}
 
-    branch = _classify_block_b(pooled_by_condition)
+    branch = _classify_stimulation_displacement(pooled_by_condition)
     return {
         "per_session": per_session,
         "pooled_normalised_displacement_by_channel_condition": pooled_by_condition,
@@ -843,7 +844,7 @@ def run_block_b(session_records: list[dict]) -> dict:
         "meaningful_effect_threshold_source": (
             "one spontaneous (non-stimulated trial-to-trial) standard deviation of the same session's own "
             "control-trial deviation -- the natural, session-comparable floor for 'the smallest displacement "
-            "this design would call meaningful', on the normalised scale Block D also uses."
+            "this design would call meaningful', on the normalised scale the task-period dose response also uses."
         ),
         "epoch_overlap_disclosure": (
             "The stimulation pulse train in both RAM corpora outlasts a single word presentation, so the "
@@ -854,17 +855,17 @@ def run_block_b(session_records: list[dict]) -> dict:
     }
 
 
-# ── Block C ──────────────────────────────────────────────────────────────────
+# ── Displacement-behaviour mediation ────────────────────────────────────────────
 
-def run_block_c(session_records: list[dict], block_b: dict) -> dict:
-    if block_b["branch"] == "stimulation_displacement_not_separable_from_recording_artifact":
+def run_displacement_behaviour_mediation(session_records: list[dict], stimulation_displacement: dict) -> dict:
+    if stimulation_displacement["branch"] == "stimulation_displacement_not_separable_from_recording_artifact":
         return {"status": "mediation_not_askable_because_the_displacement_is_not_separable_from_artifact",
                 "branch": "mediation_not_askable_because_the_displacement_is_not_separable_from_artifact"}
 
     displacement_x, recall_diff_y, subj = [], [], []
     per_session = {}
     for rec in session_records:
-        b_rec = block_b["per_session"].get(rec["session_key"], {})
+        b_rec = stimulation_displacement["per_session"].get(rec["session_key"], {})
         cond = b_rec.get("conditions", {}).get("excluding_stimulated_shank", {})
         arrays = rec["arrays"]
         stim_mask, ctrl_mask = arrays["stim_flag"] == 1, arrays["stim_flag"] == 0
@@ -890,7 +891,7 @@ def run_block_c(session_records: list[dict], block_b: dict) -> dict:
     elif mediation.get("mdd", {}).get("status") == "computed" and \
             mediation["mdd"]["mdd"] < MEANINGFUL_EFFECT_THRESHOLD_R_UNITS:
         # subject_aggregated_correlation's mdd is already on the Pearson-r scale, the same scale
-        # MEANINGFUL_EFFECT_THRESHOLD_R_UNITS names for Block A -- reused directly, not rescaled.
+        # MEANINGFUL_EFFECT_THRESHOLD_R_UNITS names for the component-recall-failure link -- reused directly, not rescaled.
         branch = "no_mediation_above_the_reported_bound"
     else:
         branch = "underpowered_to_ask"
@@ -900,7 +901,7 @@ def run_block_c(session_records: list[dict], block_b: dict) -> dict:
             "meaningful_effect_threshold_r_units": MEANINGFUL_EFFECT_THRESHOLD_R_UNITS}
 
 
-# ── Block D ──────────────────────────────────────────────────────────────────
+# ── Task-period dose response ───────────────────────────────────────────────────
 
 def _dose_fields(arrays: dict) -> dict:
     stim_mask = arrays["stim_flag"] == 1
@@ -931,10 +932,10 @@ DOSE_FIELD_UNITS_NOTE = (
 )
 
 
-def run_block_d(session_records: list[dict], block_b: dict) -> dict:
+def run_task_period_dose_response(session_records: list[dict], stimulation_displacement: dict) -> dict:
     rows = []
     for rec in session_records:
-        b_rec = block_b["per_session"].get(rec["session_key"], {})
+        b_rec = stimulation_displacement["per_session"].get(rec["session_key"], {})
         cond = b_rec.get("conditions", {}).get("excluding_stimulated_shank", {})
         dose = _dose_fields(rec["arrays"])
         if dose["status"] != "computed" or cond.get("normalised_displacement") is None:
@@ -965,7 +966,7 @@ def run_block_d(session_records: list[dict], block_b: dict) -> dict:
     }
 
     if n_dose_varying_subjects < MIN_SUBJECTS_FOR_WITHIN_SUBJECT_DOSE:
-        between = _block_d_between_subject(rows, controls)
+        between = _dose_response_between_subject(rows, controls)
         return {
             "n_subjects_with_within_subject_dose_variation": n_dose_varying_subjects,
             "branch": "too_few_subjects_with_within_subject_dose_variation",
@@ -1053,7 +1054,7 @@ def run_block_d(session_records: list[dict], block_b: dict) -> dict:
     }
 
 
-def _block_d_between_subject(rows: list[dict], controls: dict) -> dict:
+def _dose_response_between_subject(rows: list[dict], controls: dict) -> dict:
     if len(rows) < 8:
         return {"status": "not_computable", "reason": "fewer than 8 sessions", "causal": False}
     x = np.array([r["amplitude_uA"] for r in rows])
@@ -1085,16 +1086,16 @@ def _block_d_between_subject(rows: list[dict], controls: dict) -> dict:
     }
 
 
-# ── Block E (closed-loop arm only) ──────────────────────────────────────────
+# ── Pre-stimulation component moderation (closed-loop arm only) ─────────────
 
-def _block_e_session(rec: dict) -> dict:
+def _pre_stim_component_moderation_session(rec: dict) -> dict:
     arrays = rec["arrays"]
     stim_flag, recalled = arrays["stim_flag"], arrays["recalled"].astype(float)
     ch_names = arrays["ch_names"].tolist()
     anode, cathode, stim_ch = str(arrays["anode"]), str(arrays["cathode"]), str(arrays["stim_channel"])
     masks = channel_condition_masks(ch_names, anode, cathode, stim_ch)
     activity = _bin_averaged(arrays, masks["excluding_stimulated_shank"])
-    out = compute_block_b_displacement(activity, stim_flag)
+    out = compute_stimulation_displacement(activity, stim_flag)
     n_trials = len(stim_flag)
     component = np.full(n_trials, np.nan)
     component[stim_flag == 0] = out["control_deviation"]
@@ -1130,10 +1131,10 @@ def _float_array_none_as_nan(values) -> np.ndarray:
     return np.array([np.nan if v is None else v for v in values], dtype=float)
 
 
-def run_block_e(closedloop_records: list[dict]) -> dict:
+def run_pre_stimulation_component_moderation(closedloop_records: list[dict]) -> dict:
     per_session, pooled_rows, all_rows = {}, [], []
     for rec in closedloop_records:
-        result = run_checkpointed(f"blockE__{rec['corpus']}__{rec['session_key']}", lambda rec=rec: _block_e_session(rec))
+        result = run_checkpointed(f"blockE__{rec['corpus']}__{rec['session_key']}", lambda rec=rec: _pre_stim_component_moderation_session(rec))
         stored = {k: v for k, v in result.items() if k not in ("pre_stim_component", "recalled", "stim_flag")}
         per_session[rec["session_key"]] = {"subject": rec["subject_id"], **stored}
         if result.get("status") == "computed" and result.get("moderation_session_level") is not None:
@@ -1195,12 +1196,12 @@ def run_block_e(closedloop_records: list[dict]) -> dict:
     }
 
 
-# ── Block F ──────────────────────────────────────────────────────────────────
+# ── Displacement-vs-alignment correlation ───────────────────────────────────────
 
-def run_block_f(session_records: list[dict], block_b: dict) -> dict:
+def run_displacement_alignment_correlation(session_records: list[dict], stimulation_displacement: dict) -> dict:
     displacement, alignment, subj = [], [], []
     for rec in session_records:
-        b_rec = block_b["per_session"].get(rec["session_key"], {})
+        b_rec = stimulation_displacement["per_session"].get(rec["session_key"], {})
         cond = b_rec.get("conditions", {}).get("excluding_stimulated_shank", {})
         if cond.get("status") != "computed":
             continue
@@ -1223,7 +1224,7 @@ def run_block_f(session_records: list[dict], block_b: dict) -> dict:
     }
 
 
-# ── Block G ──────────────────────────────────────────────────────────────────
+# ── Cross-preparation comparison narrative ──────────────────────────────────────
 
 def _read_json(path: Path) -> dict | None:
     if not path.exists():
@@ -1234,16 +1235,17 @@ def _read_json(path: Path) -> dict | None:
         return None
 
 
-def run_block_g(block_a: dict, block_b: dict, block_c: dict) -> dict:
+def run_cross_preparation_comparison_narrative(component_recall_failure_link: dict, stimulation_displacement: dict,
+                                                displacement_behaviour_mediation: dict) -> dict:
     non_human_a = _read_json(RESULTS / "rate_free_state_geometry_behavior_link.json")
     non_human_bc = _read_json(RESULTS / "causal_macaque_pfc_microstimulation.json")
 
-    a_pooled = block_a.get("pooled_deviation_vs_failure", {})
+    a_pooled = component_recall_failure_link.get("pooled_deviation_vs_failure", {})
     a_text = (
-        "Block A (does the component predict recall failure on non-stimulated trials): the human open-/"
+        "The component-recall-failure link (does the component predict recall failure on non-stimulated trials): the human open-/"
         f"closed-loop arm's pooled subject-clustered result is r={a_pooled.get('mean_value')}, "
         f"p={a_pooled.get('p_value')}, n_sessions={a_pooled.get('n_sessions')}, "
-        f"n_subjects={a_pooled.get('n_subjects')}, branch='{block_a.get('branch')}'. "
+        f"n_subjects={a_pooled.get('n_subjects')}, branch='{component_recall_failure_link.get('branch')}'. "
     )
     if non_human_a is not None:
         macaque_pooled = non_human_a.get("pooled", {}).get("raw_outcome_vs_deviation", {})
@@ -1261,15 +1263,15 @@ def run_block_g(block_a: dict, block_b: dict, block_c: dict) -> dict:
     else:
         a_text += "The delivered non-human comparison artifact was not readable at run time."
 
-    b_full = block_b.get("pooled_normalised_displacement_by_channel_condition", {}).get("full_channel_set", {})
-    b_shank = block_b.get("pooled_normalised_displacement_by_channel_condition", {}).get("excluding_stimulated_shank", {})
-    c_med = block_c.get("mediation", {})
+    b_full = stimulation_displacement.get("pooled_normalised_displacement_by_channel_condition", {}).get("full_channel_set", {})
+    b_shank = stimulation_displacement.get("pooled_normalised_displacement_by_channel_condition", {}).get("excluding_stimulated_shank", {})
+    c_med = displacement_behaviour_mediation.get("mediation", {})
     bc_text = (
-        "Blocks B/C (does stimulation displace the component, and does the induced displacement predict "
-        f"induced behaviour change): human displacement branch='{block_b.get('branch')}', full-channel-set "
+        "The stimulation displacement and the displacement-behaviour mediation (does stimulation displace the component, and does the induced displacement predict "
+        f"induced behaviour change): human displacement branch='{stimulation_displacement.get('branch')}', full-channel-set "
         f"normalised displacement={b_full.get('mean_value')} (p={b_full.get('p_value')}), artifact-cleaned "
         f"(shank-excluded) normalised displacement={b_shank.get('mean_value')} (p={b_shank.get('p_value')}); "
-        f"mediation branch='{block_c.get('branch')}', slope/correlation r={c_med.get('r')}, "
+        f"mediation branch='{displacement_behaviour_mediation.get('branch')}', slope/correlation r={c_med.get('r')}, "
         f"p={c_med.get('p_value')}, n_sessions={c_med.get('n_sessions')}, n_subjects={c_med.get('n_subjects')}. "
     )
     if non_human_bc is not None:
@@ -1295,8 +1297,8 @@ def run_block_g(block_a: dict, block_b: dict, block_c: dict) -> dict:
         "a field-potential-scale, rate-free geometric signature of working-memory state' from 'does it move a "
         "single-unit-scale one', because the two differ simultaneously in species, recording modality, and "
         "epoch. Where both arms point the same direction on the same named question, that is two independent, "
-        "differently-instrumented handles on it, not a replication in the strict sense (Block F asks whether "
-        "the human arm's own two numbers -- Block B's displacement and its own alignment to v* -- are one "
+        "differently-instrumented handles on it, not a replication in the strict sense (the displacement-alignment correlation asks whether "
+        "the human arm's own two numbers -- the stimulation displacement and its own alignment to v* -- are one "
         "object or two, but says nothing about whether the human and non-human arms are the same object). "
         "Where they disagree, the disagreement is left on the record rather than reconciled: a positive, "
         "well-powered result in one preparation and a null (bounded or underpowered) in the other constrains "
@@ -1323,8 +1325,9 @@ def run_block_g(block_a: dict, block_b: dict, block_c: dict) -> dict:
 # so these events are otherwise never reached by any arm above. This section epochs them directly,
 # reusing build_session_features's own EDF load and notch/high-gamma path (line_noise_notch,
 # high_gamma_power) rather than a second signal path, and scores each event against the SAME
-# control-trial reference direction and normalising spontaneous SD Block B already builds from that
-# session's own non-stimulated word trials -- so these numbers sit on the identical scale.
+# control-trial reference direction and normalising spontaneous SD the stimulation-displacement arm
+# already builds from that session's own non-stimulated word trials -- so these numbers sit on the
+# identical scale.
 
 def _pretask_events_tsv_path(ieeg_json: Path) -> Path:
     stem = str(ieeg_json).replace("_ieeg.json", "")
@@ -1459,10 +1462,11 @@ def load_pretask_series_events(corpus_name: str, session_key: str, ieeg_json: Pa
 def _pretask_series_analysis(rec: dict, series_idx: int, series: dict) -> dict:
     """One pre-task titration series scored against its own session's word-control reference
     direction and spontaneous SD -- the SAME reference construction (_reference_direction /
-    _deviation_from_reference) and normalising SD Block B's own displacement uses, applied here to
-    the pre-task baseline/post windows instead of to word-epoch control/stimulated trials, on the
-    artifact-safe channel condition (excluding the stimulated shank) Blocks C/D/F already standardise
-    on for any downstream question built on top of Block B."""
+    _deviation_from_reference) and normalising SD the stimulation-displacement arm's own displacement
+    uses, applied here to the pre-task baseline/post windows instead of to word-epoch
+    control/stimulated trials, on the artifact-safe channel condition (excluding the stimulated
+    shank) the mediation, dose-response and alignment-correlation arms already standardise on for
+    any downstream question built on top of the stimulation-displacement arm."""
     loaded = load_pretask_series_events(rec["corpus"], rec["session_key"], Path(rec["ieeg_json"]), series_idx, series)
     if loaded.get("status") != "computed":
         return loaded
@@ -1551,7 +1555,7 @@ def _classify_pretask_titration(pooled: dict, shuffle_p: float | None,
     return "underpowered_to_ask"
 
 
-def run_pretask_amplitude_titration(closedloop_corpus: dict, block_b: dict) -> dict:
+def run_pretask_amplitude_titration(closedloop_corpus: dict, stimulation_displacement: dict) -> dict:
     usable_by_key = {r["session_key"]: r for r in closedloop_corpus["records"]}
     exclusions = closedloop_corpus["exclusions"]
 
@@ -1670,11 +1674,11 @@ def run_pretask_amplitude_titration(closedloop_corpus: dict, block_b: dict) -> d
                                           if minimum_detectable_displacement_by_series is not None else None)
 
     # Separate cell: does the titration slope measured minutes before the task predict this same
-    # session's own task-period stimulation displacement (Block B, excluding-stimulated-shank
-    # condition), computed at the amplitude the task itself subsequently used?
+    # session's own task-period stimulation displacement (the stimulation-displacement arm's own
+    # excluding-stimulated-shank condition), computed at the amplitude the task itself subsequently used?
     slope_x, task_disp_y, subj_task = [], [], []
     for v in computed.values():
-        b_rec = block_b["per_session"].get(v["session_key"], {})
+        b_rec = stimulation_displacement["per_session"].get(v["session_key"], {})
         cond = b_rec.get("conditions", {}).get("excluding_stimulated_shank", {})
         if cond.get("status") == "computed" and cond.get("normalised_displacement") is not None:
             slope_x.append(v["amplitude_uA_slope"])
@@ -1737,7 +1741,7 @@ def run_pretask_amplitude_titration(closedloop_corpus: dict, block_b: dict) -> d
 
 # ── Two-arm dose-scaling meta-analysis (task-period + pre-task titration, disjoint subjects) ───────────
 #
-# The task-period dose arm (Block D) and the pre-task titration arm each carry confound-free
+# The task-period dose response arm and the pre-task titration arm each carry confound-free
 # within-subject-and-within-electrode-pair amplitude variation, but in two disjoint subject sets, and
 # neither alone clears its own subject-count bar. This combines them AS TWO ARMS of one meta-analysis
 # (never by pooling rows across the two subject sets, which would treat a task-period session and a
@@ -1750,7 +1754,7 @@ def run_pretask_amplitude_titration(closedloop_corpus: dict, block_b: dict) -> d
 def _spontaneous_control_sd_direct(arrays: dict) -> float | None:
     """Recomputes one session's own control-trial rate-free-deviation standard deviation directly
     from its cached raw arrays, on the excluding_stimulated_shank channel condition -- the identical
-    formula both Block B's own spontaneous_control_sd and the pre-task titration arm's own internal
+    formula both the stimulation-displacement arm's own spontaneous_control_sd and the pre-task titration arm's own internal
     spontaneous_sd already compute, reproduced here independently of either call site so the two can
     be compared rather than merely read from the same source code."""
     ch_names = arrays["ch_names"].tolist()
@@ -1764,19 +1768,19 @@ def _spontaneous_control_sd_direct(arrays: dict) -> float | None:
     return float(np.nanstd(control_deviation[finite], ddof=1))
 
 
-def _verify_commensurable_normalisation(pretask: dict, block_b: dict, closedloop_records: list[dict]) -> dict:
+def _verify_commensurable_normalisation(pretask: dict, stimulation_displacement: dict, closedloop_records: list[dict]) -> dict:
     """For every session the pre-task titration arm actually used, independently recomputes that
-    session's own spontaneous control-trial SD and compares it against Block B's own stored value for
-    the same session and channel condition -- if every one matches, both arms normalise their raw
-    displacement by the identical reference dispersion definition and may be combined; if any
-    disagree, they must not be."""
+    session's own spontaneous control-trial SD and compares it against the stimulation-displacement
+    arm's own stored value for the same session and channel condition -- if every one matches, both
+    arms normalise their raw displacement by the identical reference dispersion definition and may be
+    combined; if any disagree, they must not be."""
     records_by_key = {r["session_key"]: r for r in closedloop_records}
     computed_sessions = sorted({v["session_key"] for v in pretask["per_series"].values()
                                 if v.get("status") == "computed"})
     checked = []
     for sk in computed_sessions:
         rec = records_by_key.get(sk)
-        b_cond = block_b["per_session"].get(sk, {}).get("conditions", {}).get("excluding_stimulated_shank", {})
+        b_cond = stimulation_displacement["per_session"].get(sk, {}).get("conditions", {}).get("excluding_stimulated_shank", {})
         if rec is None or b_cond.get("status") != "computed":
             continue
         recomputed = _spontaneous_control_sd_direct(rec["arrays"])
@@ -1804,14 +1808,15 @@ def _verify_commensurable_normalisation(pretask: dict, block_b: dict, closedloop
     }
 
 
-def _task_period_dose_arm(block_d_rows: list[dict], exclude_subjects: set) -> tuple[dict, dict, set]:
-    """The within-subject-and-within-electrode-pair amplitude slope Block D itself would fit for a
-    subject at or above MIN_SUBJECTS_FOR_WITHIN_SUBJECT_DOSE, run here unconditionally on Block D's
-    own already-serialised rows -- this is a separate, forward-only question about this arm's own
-    displacement-scale estimate for a meta-analysis, not a re-firing of Block D's own dose-scaling
-    branch, and changes nothing Block D itself returns."""
+def _task_period_dose_arm(dose_response_rows: list[dict], exclude_subjects: set) -> tuple[dict, dict, set]:
+    """The within-subject-and-within-electrode-pair amplitude slope the task-period dose response
+    itself would fit for a subject at or above MIN_SUBJECTS_FOR_WITHIN_SUBJECT_DOSE, run here
+    unconditionally on the task-period dose response's own already-serialised rows -- this is a
+    separate, forward-only question about this arm's own displacement-scale estimate for a
+    meta-analysis, not a re-firing of the task-period dose response's own dose-scaling branch, and
+    changes nothing the task-period dose response itself returns."""
     by_subject_pair: dict[tuple, list] = {}
-    for row in block_d_rows:
+    for row in dose_response_rows:
         if row["subject"] in exclude_subjects:
             continue
         by_subject_pair.setdefault((row["subject"], row["stim_channel"]), []).append(row)
@@ -1856,14 +1861,14 @@ def _pretask_titration_dose_arm(pretask: dict, exclude_subjects: set) -> tuple[d
     return pooled, range_summary, set(subj)
 
 
-def _task_period_subject_level_slopes(block_d_rows: list[dict], exclude_subjects: set) -> np.ndarray:
+def _task_period_subject_level_slopes(dose_response_rows: list[dict], exclude_subjects: set) -> np.ndarray:
     """The same per-subject-pair-then-per-subject collapse _task_period_dose_arm feeds into
     subject_clustered_mean_test, returned as the one-value-per-subject array directly -- so a
     caller that needs to resample subjects (a bootstrap) or exhaustively enumerate their sign
     assignments (a permutation-null capacity check) does not have to re-derive the pooled test's
     own internal collapse."""
     by_subject_pair: dict[tuple, list] = {}
-    for row in block_d_rows:
+    for row in dose_response_rows:
         if row["subject"] in exclude_subjects:
             continue
         by_subject_pair.setdefault((row["subject"], row["stim_channel"]), []).append(row)
@@ -2114,13 +2119,11 @@ def _dose_scaling_interpretability_note(branch: str, interpretable: bool) -> str
     )
 
 
-def run_dose_scaling_two_arm_meta_analysis(block_d: dict, pretask: dict, block_b: dict,
+def run_dose_scaling_two_arm_meta_analysis(task_period_dose_response: dict, pretask: dict, stimulation_displacement: dict,
                                            closedloop_records: list[dict]) -> dict:
-    from scipy.stats import norm
+    verification = _verify_commensurable_normalisation(pretask, stimulation_displacement, closedloop_records)
 
-    verification = _verify_commensurable_normalisation(pretask, block_b, closedloop_records)
-
-    task_pooled_full, task_range_full, task_subj_full = _task_period_dose_arm(block_d["rows"], set())
+    task_pooled_full, task_range_full, task_subj_full = _task_period_dose_arm(task_period_dose_response["rows"], set())
     pretask_subj_full = {v["subject"] for v in pretask["per_series"].values() if v.get("status") == "computed"}
     overlap = task_subj_full & pretask_subj_full
     disjointness = {
@@ -2162,7 +2165,7 @@ def run_dose_scaling_two_arm_meta_analysis(block_d: dict, pretask: dict, block_b
         pretask_pooled, pretask_range = (pretask["pooled_amplitude_slope_subject_clustered"],
                                          pretask["realised_amplitude_range_uA_summary"])
 
-    z_factor = float(norm.ppf(1.0 - ALPHA / 2.0) + norm.ppf(POWER))
+    z_factor = Z_80_POWER
     task_arm = _displacement_scale_arm(task_pooled, task_range, "task_period", z_factor)
     pretask_arm = _displacement_scale_arm(pretask_pooled, pretask_range, "pretask_titration", z_factor)
 
@@ -2195,7 +2198,7 @@ def run_dose_scaling_two_arm_meta_analysis(block_d: dict, pretask: dict, block_b
     task_sign_flip_capacity: dict = {"status": "not_computable"}
     pretask_sign_flip_capacity: dict = {"status": "not_computable"}
     if task_pooled.get("status") == "computed":
-        task_subject_values = _task_period_subject_level_slopes(block_d["rows"], set())
+        task_subject_values = _task_period_subject_level_slopes(task_period_dose_response["rows"], set())
         task_sign_flip_capacity = _sign_flip_null_capacity(task_pooled["n_subjects"])
         task_sign_flip_capacity["exhaustive_check"] = _exhaustive_sign_flip_check(task_subject_values)
     if pretask_pooled.get("status") == "computed":
@@ -2367,7 +2370,7 @@ def run_dose_scaling_two_arm_meta_analysis(block_d: dict, pretask: dict, block_b
 
 # ── Dose-variation attrition ladders (measurement only -- fires no branch, moves no threshold) ────────
 #
-# Both the task-period dose arm (Block D) and the pre-task titration arm read the same underlying
+# Both the task-period dose response arm and the pre-task titration arm read the same underlying
 # stimulation-parameter tables but land at very different subject counts. This section measures, at
 # every named processing step between the raw BIDS event tables and each arm's own analysed rows,
 # exactly how many subjects are gained or lost and why -- so a reader can tell a scientifically required
@@ -2439,7 +2442,8 @@ def _ladder_rung(name: str, reason: str, seen: set, retained: set) -> dict:
 
 
 def compute_dose_variation_attrition_ladders(openloop_corpus: dict, closedloop_corpus: dict,
-                                             all_records: list[dict], block_b: dict, block_d: dict,
+                                             all_records: list[dict], stimulation_displacement: dict,
+                                             task_period_dose_response: dict,
                                              pretask: dict) -> dict:
     raw_open = _raw_stim_on_events(OPENLOOP_DATA)
     raw_closed = _raw_stim_on_events(CLOSEDLOOP_DATA)
@@ -2456,7 +2460,7 @@ def compute_dose_variation_attrition_ladders(openloop_corpus: dict, closedloop_c
             "subjects_with_amplitude_variation_within_a_single_electrode_pair": sorted(within_pair),
         }
 
-    # ── Task-period dose arm (Block D) ──────────────────────────────────────────────────────────────
+    # ── Task-period dose response arm ───────────────────────────────────────────────────────────────
     _, within_pair_open_task = _subjects_with_amplitude_variation(raw_open, task_period_only=True)
     _, within_pair_closed_task = _subjects_with_amplitude_variation(raw_closed, task_period_only=True)
     stage1 = within_pair_open_task | within_pair_closed_task
@@ -2482,7 +2486,7 @@ def compute_dose_variation_attrition_ladders(openloop_corpus: dict, closedloop_c
 
     pair_amp_stage4: dict[tuple, set] = {}
     for rec in all_records:
-        cond = block_b["per_session"].get(rec["session_key"], {}).get("conditions", {}).get(
+        cond = stimulation_displacement["per_session"].get(rec["session_key"], {}).get("conditions", {}).get(
             "excluding_stimulated_shank", {})
         if cond.get("status") != "computed" or cond.get("normalised_displacement") is None:
             continue
@@ -2496,10 +2500,10 @@ def compute_dose_variation_attrition_ladders(openloop_corpus: dict, closedloop_c
     stage4 = {s for (s, _pair), amps in pair_amp_stage4.items() if len(amps) > 1}
 
     pair_amp_stage5: dict[tuple, set] = {}
-    for row in block_d["rows"]:
+    for row in task_period_dose_response["rows"]:
         pair_amp_stage5.setdefault((row["subject"], row["stim_channel"]), set()).add(row["amplitude_uA"])
     stage5 = {s for (s, _pair), amps in pair_amp_stage5.items() if len(amps) > 1}
-    assert len(stage5) == block_d["n_subjects_with_within_subject_dose_variation"]
+    assert len(stage5) == task_period_dose_response["n_subjects_with_within_subject_dose_variation"]
 
     task_period_ladder = [
         _ladder_rung(
@@ -2665,13 +2669,13 @@ def main() -> None:
         _write_output(output, t0)
         return
 
-    output["block_a"] = run_block_a(all_records)
-    output["block_b"] = run_block_b(all_records)
-    output["block_c"] = run_block_c(all_records, output["block_b"])
-    output["block_d"] = run_block_d(all_records, output["block_b"])
-    output["block_e"] = run_block_e(closedloop["records"])
-    output["block_f"] = run_block_f(all_records, output["block_b"])
-    output["block_g"] = run_block_g(output["block_a"], output["block_b"], output["block_c"])
+    output["block_a"] = run_component_recall_failure_link(all_records)
+    output["block_b"] = run_stimulation_displacement(all_records)
+    output["block_c"] = run_displacement_behaviour_mediation(all_records, output["block_b"])
+    output["block_d"] = run_task_period_dose_response(all_records, output["block_b"])
+    output["block_e"] = run_pre_stimulation_component_moderation(closedloop["records"])
+    output["block_f"] = run_displacement_alignment_correlation(all_records, output["block_b"])
+    output["block_g"] = run_cross_preparation_comparison_narrative(output["block_a"], output["block_b"], output["block_c"])
     output["pretask_amplitude_titration"] = run_pretask_amplitude_titration(closedloop, output["block_b"])
     output["dose_variation_attrition_ladders"] = compute_dose_variation_attrition_ladders(
         openloop, closedloop, all_records, output["block_b"], output["block_d"],

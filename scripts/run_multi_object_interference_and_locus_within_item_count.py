@@ -54,8 +54,8 @@ stable_seed, iter_watters, data_root, unit_direction_vectors, _detrend,
 _cosine_at_lag, _sub_window_bins and the detrending-window / sub-window-split
 constants are every one imported unchanged from where this project already
 defines them. The only new functions this module introduces are the
-within-item-count-level decisive-partial computation Block A needs and the
-within-item-count-level sub-window recomputation Block B needs, together
+within-item-count-level decisive-partial computation the interference test needs and the
+within-item-count-level sub-window recomputation the temporal-locus test needs, together
 with the trial-count-weighted combination formula _session_observable_arm
 already applies to its own stat family, applied here to the decisive-partial
 coefficients that estimator does not itself compute.
@@ -110,7 +110,7 @@ SERIAL_DEPENDENCE_ARTIFACT_PATH = ROOT / "results" / "deviation_serial_dependenc
 
 PRIMARY_WINDOW = DETREND_WINDOWS_TRIALS[0]
 
-BLOCK_A_DECISION_RULE_DECLARED_BEFORE_FITTING = (
+INTERFERENCE_DECISION_RULE_DECLARED_BEFORE_FITTING = (
     "Read live from results/deviation_serial_dependence_and_temporal_locus.json (not recomputed here, "
     "because it is a property of the trial sequence alone): this corpus's pooled detrended lag-1-versus-"
     "background-lag adjacency statistic at the primary detrending window is positive and significant "
@@ -136,7 +136,7 @@ BLOCK_A_DECISION_RULE_DECLARED_BEFORE_FITTING = (
     "and the disagreement is stated, never resolved by picking one."
 )
 
-BLOCK_B_DECISION_RULE_DECLARED_BEFORE_FITTING = (
+TEMPORAL_LOCUS_DECISION_RULE_DECLARED_BEFORE_FITTING = (
     "The delay epoch is split into halves (primary) and thirds (sensitivity). In each sub-window, the "
     "deviation, its own orthogonality gate against total spike count, and its raw association with "
     "behaviour are recomputed from scratch, each formed within item-count level and combined by the same "
@@ -295,7 +295,7 @@ def _reproduction_rows(loaded: list[dict]) -> tuple[list[dict], list[dict], int]
     """Builds this corpus's within-item-count deviation arm at the single_and_multi_unit tier, one
     session at a time, from _observable_arrays and _session_observable_arm unchanged. Each session's
     statistical fit is checkpointed individually (a small dict of floats and permutation-test results);
-    the session bundles Block A and Block B reuse are kept in memory only, never checkpointed, so a rerun
+    the session bundles the interference test and the temporal-locus test reuse are kept in memory only, never checkpointed, so a rerun
     never re-serialises a raw spike tensor."""
     rows: list[dict] = []
     bundles: list[dict] = []
@@ -415,7 +415,7 @@ def _pool_decisive_partial_within_item_count(per_session: list[dict], key: str) 
     return pooled
 
 
-def _block_a_branch_within_item_count(raw_pooled: dict, joint_pooled: dict, established_positive: bool) -> dict:
+def _interference_branch_within_item_count(raw_pooled: dict, joint_pooled: dict, established_positive: bool) -> dict:
     if raw_pooled.get("status") != "tested" or joint_pooled.get("status") != "tested":
         return {"branch": "not_computable", "reason": "raw_or_joint_pooled_result_not_tested"}
     raw_mean, joint_mean = raw_pooled["mean_value"], joint_pooled["mean_value"]
@@ -442,7 +442,7 @@ def _aggregate_level_trial_counts(decisive_sessions: list[dict]) -> dict:
     return {"total_trials_by_item_count_level": totals, "n_sessions_contributing_by_item_count_level": n_sessions_by_level}
 
 
-def run_block_a(bundles: list[dict], adjacency_reference: dict, reproduction_reference: dict, seed_prefix: str) -> dict:
+def run_interference_within_item_count(bundles: list[dict], adjacency_reference: dict, reproduction_reference: dict, seed_prefix: str) -> dict:
     decisive: dict[int, list[dict]] = {w: [] for w in DETREND_WINDOWS_TRIALS}
     for bundle in bundles:
         tag = f"{seed_prefix}|{bundle['session']}"
@@ -466,7 +466,7 @@ def run_block_a(bundles: list[dict], adjacency_reference: dict, reproduction_ref
             "joint_partial_controlling_lag1_alignment_spike_count_and_trial_index": joint_pooled,
             "item_count_level_trial_counts": _aggregate_level_trial_counts(decisive[window]),
         }
-        branch_by_window[str(window)] = _block_a_branch_within_item_count(raw_pooled, joint_pooled, established_positive)["branch"]
+        branch_by_window[str(window)] = _interference_branch_within_item_count(raw_pooled, joint_pooled, established_positive)["branch"]
         accounting_by_window[str(window)] = {
             "n_sessions_total": len(decisive[window]),
             "n_sessions_computed": sum(1 for d in decisive[window] if d.get("status") == "computed"),
@@ -482,7 +482,7 @@ def run_block_a(bundles: list[dict], adjacency_reference: dict, reproduction_ref
     windows_agree = len(set(branch_by_window.values())) == 1
 
     return {
-        "decision_rule_declared_before_fitting": BLOCK_A_DECISION_RULE_DECLARED_BEFORE_FITTING,
+        "decision_rule_declared_before_fitting": INTERFERENCE_DECISION_RULE_DECLARED_BEFORE_FITTING,
         "adjacency_input_read_live": adjacency_reference,
         "established_sign_source": "reproduction reference's own within-item-count-level raw correlation, positive means worse behaviour",
         "established_sign_is_positive": established_positive,
@@ -582,7 +582,7 @@ def _split_result_within_item_count(bundles: list[dict], n_windows: int, corpus_
     }
 
 
-def _block_b_branch_within_item_count(split: dict, full_epoch_behaviour_link_present: bool) -> dict:
+def _temporal_locus_branch_within_item_count(split: dict, full_epoch_behaviour_link_present: bool) -> dict:
     surviving = [w for w in split["windows"] if not w["void"]]
     if not surviving:
         return {"branch": "temporal_locus_unreachable_at_this_count_per_window", "sub_label": None}
@@ -607,14 +607,14 @@ def _block_b_branch_within_item_count(split: dict, full_epoch_behaviour_link_pre
             "sub_label": "behaviour_link_present_in_some_but_not_all_surviving_sub_windows"}
 
 
-def run_block_b(bundles: list[dict], full_epoch_behaviour_link_present: bool, corpus_seed_prefix: str) -> dict:
+def run_temporal_locus_within_item_count(bundles: list[dict], full_epoch_behaviour_link_present: bool, corpus_seed_prefix: str) -> dict:
     splits = {name: _split_result_within_item_count(bundles, n, f"{corpus_seed_prefix}|{name}")
               for name, n in SUB_WINDOW_SPLITS.items()}
     primary = splits[PRIMARY_SPLIT]
-    branch = _block_b_branch_within_item_count(primary, full_epoch_behaviour_link_present)
-    thirds_branch = _block_b_branch_within_item_count(splits["thirds"], full_epoch_behaviour_link_present)
+    branch = _temporal_locus_branch_within_item_count(primary, full_epoch_behaviour_link_present)
+    thirds_branch = _temporal_locus_branch_within_item_count(splits["thirds"], full_epoch_behaviour_link_present)
     return {
-        "decision_rule_declared_before_fitting": BLOCK_B_DECISION_RULE_DECLARED_BEFORE_FITTING,
+        "decision_rule_declared_before_fitting": TEMPORAL_LOCUS_DECISION_RULE_DECLARED_BEFORE_FITTING,
         "primary_split": PRIMARY_SPLIT, "full_epoch_behaviour_link_present": full_epoch_behaviour_link_present,
         "splits": splits, "branch": branch, "thirds_sensitivity_branch": thirds_branch,
         "primary_and_sensitivity_agree": branch["branch"] == thirds_branch["branch"],
@@ -686,21 +686,25 @@ def main() -> None:
 
     full_epoch_link_present = bool(reproduction_reference["raw_vs_report_error"]["p"] <= 0.05)
 
-    _log(f"Block A: {len(bundles)} sessions")
-    block_a = run_block_a(bundles, adjacency_reference, reproduction_reference,
-                           "multi_object_interference_and_locus_within_item_count|block_a")
-    output["block_a"] = block_a
+    _log(f"interference test: {len(bundles)} sessions")
+    interference_result = run_interference_within_item_count(
+        bundles, adjacency_reference, reproduction_reference,
+        "multi_object_interference_and_locus_within_item_count|block_a")
+    output["block_a"] = interference_result
     _flush(output)
-    _log(f"Block A branch at primary window: {block_a['branch_at_primary_window']} elapsed={time.time() - t0:.0f}s")
+    _log(f"interference test branch at primary window: {interference_result['branch_at_primary_window']} "
+         f"elapsed={time.time() - t0:.0f}s")
 
-    _log(f"Block B: {len(bundles)} sessions")
-    block_b = run_block_b(bundles, full_epoch_link_present,
-                           "multi_object_interference_and_locus_within_item_count|block_b")
-    output["block_b"] = block_b
+    _log(f"temporal-locus test: {len(bundles)} sessions")
+    temporal_locus_result = run_temporal_locus_within_item_count(
+        bundles, full_epoch_link_present,
+        "multi_object_interference_and_locus_within_item_count|block_b")
+    output["block_b"] = temporal_locus_result
     _flush(output)
-    _log(f"Block B branch: {block_b['branch']['branch']} elapsed={time.time() - t0:.0f}s")
+    _log(f"temporal-locus test branch: {temporal_locus_result['branch']['branch']} elapsed={time.time() - t0:.0f}s")
 
-    primary_raw = block_a["decisive_partial_within_item_count_level_pooled_by_window"][str(PRIMARY_WINDOW)]["raw"]
+    primary_raw = interference_result[
+        "decisive_partial_within_item_count_level_pooled_by_window"][str(PRIMARY_WINDOW)]["raw"]
     signs_differ = bool(
         pooled_across_item_count_reference.get("mean_value") is not None
         and primary_raw.get("mean_value") is not None
@@ -726,9 +730,9 @@ def main() -> None:
     _flush(output)
     print(json.dumps({
         "reproduction_gate": gate_result["status"],
-        "block_a_primary_window_branch": block_a["branch_at_primary_window"],
-        "block_a_windows_agree": block_a["windows_agree"],
-        "block_b_branch": block_b["branch"]["branch"],
+        "block_a_primary_window_branch": interference_result["branch_at_primary_window"],
+        "block_a_windows_agree": interference_result["windows_agree"],
+        "block_b_branch": temporal_locus_result["branch"]["branch"],
         "signs_differ_from_pooled_across_item_count": signs_differ,
     }, indent=2, default=float))
 

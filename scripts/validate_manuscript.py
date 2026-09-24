@@ -15,8 +15,13 @@ PAPER = ROOT / "PAPER_REPORT.tex"
 README = ROOT / "README.md"
 LEDGER = ROOT / "provenance" / "evidence_ledger.json"
 
-CURRENT_TEST_COUNT = 550
-STALE_TEST_COUNTS = (341, 402, 408, 417, 446, 454, 483, 492, 500, 515, 535, 540)
+# Update this constant whenever the suite's collection count changes. It is intentionally a
+# constant, not a live pytest --collect-only count: collection and an executed full-suite run
+# have disagreed by one test in the past (1909 vs 1910, 2026-09-10), an unexplained discrepancy
+# that would make a live count flap. Current value from a full executed run, 2026-09-11, data
+# volume mounted: 1929 passed, 14 skipped, 0 failed.
+CURRENT_TEST_COUNT = 1943
+STALE_TEST_COUNTS = (341, 402, 408, 417, 446, 454, 483, 492, 500, 515, 535, 540, 550, 1910)
 FORBIDDEN_RESULTS_WORDS = re.compile(
     r"\btrends?\b|\btrending\b|\bmarginal(?:ly)?\b|\bnearly significant\b",
     re.IGNORECASE,
@@ -42,7 +47,10 @@ def validate_text(paper: str, readme: str, ledger: list[dict]) -> list[str]:
         )
         if any(re.search(pattern, combined, re.IGNORECASE) for pattern in patterns):
             errors.append(f"stale test count {count}")
-    if not re.search(rf"\b{CURRENT_TEST_COUNT}\s+tests?\b", combined, re.IGNORECASE):
+    # LaTeX renders four-digit counts with a braced thousands separator (\numprint-style
+    # "1{,}910"), so the literal digit run never appears contiguously in the source.
+    count_pattern = re.sub(r"(?<=\d)(?=(\d{3})+$)", r"(?:\\{,\\}|,)?", str(CURRENT_TEST_COUNT))
+    if not re.search(rf"\b{count_pattern}\s+tests?\b", combined, re.IGNORECASE):
         errors.append(f"current test count {CURRENT_TEST_COUNT} absent")
 
     identity_window = re.compile(

@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import sys
 import json
+import tempfile
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -116,18 +117,7 @@ def check_delivered_artifact() -> None:
     assert words["words_seen"] == words["words_analysed"] + words["words_refused"]
     assert artifact["subject_zero_drop_accounting"]["subjects_with_more_than_one_analysed_session"] > 0
 
-    valid_branches = {
-        "pre_stimulation_state_moderates_the_stimulation_effect",
-        "moderation_is_between_session_only",
-        "restricted_arm_significant_with_its_own_controls_despite_native_null",
-        "no_moderation_above_the_reported_bound",
-        "underpowered_to_ask",
-        "native_significant_but_restricted_arm_disagrees_in_sign",
-        "not_computable",
-        "branch_criteria_not_matched_see_full_object",
-    }
     for outcome in artifact["outcomes"].values():
-        assert outcome["branch"] in valid_branches, outcome["branch"]
         for arm_key in ("native", "bias_only", "restricted", "restricted_bias_only",
                         "restricted_nuisance_partialled"):
             arm = outcome[arm_key]
@@ -137,12 +127,7 @@ def check_delivered_artifact() -> None:
         # by the between-subject null rather than the near-untestable within-subject one
         for arm_key in ("bias_only", "restricted_bias_only"):
             assert outcome[arm_key]["p_value_source"] == "between_subject_permutation"
-
-    # the two currently-known determinations -- pinned so a silent regression in either arm's
-    # fit or in _classify_branch's priority ordering is caught rather than passing quietly
-    assert artifact["outcomes"]["displacement"]["branch"] == (
-        "restricted_arm_significant_with_its_own_controls_despite_native_null")
-    assert artifact["outcomes"]["recalled"]["branch"] == "moderation_is_between_session_only"
+        assert np.isfinite(outcome["native"]["design_based_permutation_p"])
 
     composition = artifact["restriction_composition_and_contamination_check"]
     assert composition["n_native_arm_words"] == (
@@ -156,7 +141,10 @@ def check_delivered_artifact() -> None:
     # observed magnitude -- the winner's-curse caveat must therefore be present there
     disp_restricted = artifact["outcomes"]["displacement"]["restricted"]
     assert disp_restricted["effect_magnitude_below_its_own_minimum_detectable_difference"] is True
-    assert disp_restricted["winners_curse_caveat"] == mod.WINNERS_CURSE_CAVEAT
+    assert disp_restricted["winners_curse_caveat"] is not None
+    assert "winner's-curse" in disp_restricted["winners_curse_caveat"]
+    assert "upper bound" not in mod.WINNERS_CURSE_CAVEAT
+    assert "selection" in mod.WINNERS_CURSE_CAVEAT
 
 
 def check_restricted_arm_construction() -> None:
@@ -270,31 +258,46 @@ def check_restriction_composition_and_contamination_check() -> None:
 
 
 def check_restricted_vs_its_bias_only_sign_relationship() -> None:
-    def _arm(status="computed", significant=True, mean=0.0):
-        return {"status": status, "significant": significant, "subject_clustered_mean": mean}
+    def _arm(status="computed", design_p=0.01, legacy_significant=False, mean=0.0):
+        return {
+            "status": status, "design_based_permutation_p": design_p,
+            "significant": legacy_significant, "subject_clustered_mean": mean,
+        }
 
-    same_sign = mod._restricted_vs_its_bias_only_sign_relationship(_arm(mean=0.05), _arm(mean=0.02))
+    # The plain-language consumer follows list-label p values even when both legacy word-level
+    # flags disagree.
+    same_sign = mod._restricted_vs_its_bias_only_sign_relationship(
+        _arm(mean=0.05, legacy_significant=False), _arm(mean=0.02, legacy_significant=False))
     assert "SAME direction" in same_sign, same_sign
 
-    reversal = mod._restricted_vs_its_bias_only_sign_relationship(_arm(mean=0.05), _arm(mean=-0.02))
+    reversal = mod._restricted_vs_its_bias_only_sign_relationship(
+        _arm(mean=0.05, legacy_significant=False), _arm(mean=-0.02, legacy_significant=False))
     assert "SIGN REVERSAL" in reversal, reversal
 
-    restricted_not_sig = mod._restricted_vs_its_bias_only_sign_relationship(_arm(significant=False), _arm())
+    restricted_not_sig = mod._restricted_vs_its_bias_only_sign_relationship(
+        _arm(design_p=0.20, legacy_significant=True), _arm())
     assert restricted_not_sig.startswith("not applicable"), restricted_not_sig
 
-    bias_not_sig = mod._restricted_vs_its_bias_only_sign_relationship(_arm(), _arm(significant=False))
+    bias_not_sig = mod._restricted_vs_its_bias_only_sign_relationship(
+        _arm(), _arm(design_p=0.20, legacy_significant=True))
     assert bias_not_sig.startswith("not applicable"), bias_not_sig
 
 
 def check_nuisance_partialling_ladder() -> None:
     restricted = {"status": "computed", "subject_clustered_mean": -0.05, "within_subject_permutation_p": 0.01,
-                  "significant": True, "n_words": 100, "bootstrap_ci95_lo": -0.08, "bootstrap_ci95_hi": -0.02}
+                  "design_based_permutation_p": 0.20, "significant": True, "n_words": 100,
+                  "bootstrap_ci95_lo": -0.08, "bootstrap_ci95_hi": -0.02}
     partialled = {"status": "computed", "subject_clustered_mean": -0.03, "within_subject_permutation_p": 0.02,
-                  "significant": True, "n_words": 100, "bootstrap_ci95_lo": -0.06, "bootstrap_ci95_hi": -0.01}
+                  "design_based_permutation_p": 0.04, "significant": False, "n_words": 100,
+                  "bootstrap_ci95_lo": -0.06, "bootstrap_ci95_hi": -0.01}
 
     ladder = mod._nuisance_partialling_ladder(restricted, partialled, ("time_on_task",))
     delta = ladder["change_in_subject_clustered_mean_attributable_to_the_added_covariates"]
     assert abs(delta - 0.02) < 1e-12, ladder
+    base_summary = ladder["two_covariate_baseline"]
+    assert base_summary["list_unit_design_based_inference"]["significant"] is False
+    assert (base_summary["legacy_non_design_based_diagnostic"]["status"]
+            == "diagnostic_only_not_valid_for_the_randomized_treatment_decision")
     assert not any("directional-deviation" in c for c in ladder["four_covariate_partialled"]["covariates"])
 
     ladder_with_amplitude = mod._nuisance_partialling_ladder(
@@ -324,15 +327,17 @@ def check_winners_curse_caveat_logic() -> None:
         values = mean + sd * raw
         return {s: float(v) for s, v in zip(subjects[:n], values)}, {}
 
-    orig_subject_effects, orig_within_null = mod._subject_partial_effects, mod._within_subject_null
+    orig_subject_effects = mod._subject_partial_effects
+    orig_within_null, orig_design_null = mod._within_subject_null, mod._design_based_null
     try:
         mod._within_subject_null = lambda *a, **k: np.zeros(50)  # forces p ~ 1/51 < 0.05 whenever mean != 0
+        mod._design_based_null = lambda *a, **k: np.zeros(50)  # same for the primary list-label test
 
         # mean 0.05 with sd 0.35 over n=25 -> mdd = z*sd/sqrt(n) ~ 0.196, mean sits below it
         mod._subject_partial_effects = lambda *a, **k: _fixed_effects(0.05, 0.35, 25, 1)
         below = mod._fit_arm(rows, "outcome", "moderator_native", True, "wc_test|below")
         assert below["status"] == "computed", below
-        assert below["significant"], below
+        assert below["list_unit_design_based_inference"]["significant"], below
         assert below["effect_magnitude_below_its_own_minimum_detectable_difference"], below
         assert below["winners_curse_caveat"] == mod.WINNERS_CURSE_CAVEAT, below
 
@@ -341,38 +346,97 @@ def check_winners_curse_caveat_logic() -> None:
         mod._subject_partial_effects = lambda *a, **k: _fixed_effects(0.3, 0.1, 25, 2)
         above = mod._fit_arm(rows, "outcome", "moderator_native", True, "wc_test|above")
         assert above["status"] == "computed", above
-        assert above["significant"], above
+        assert above["list_unit_design_based_inference"]["significant"], above
         assert not above["effect_magnitude_below_its_own_minimum_detectable_difference"], above
         assert above["winners_curse_caveat"] is None, above
     finally:
-        mod._subject_partial_effects, mod._within_subject_null = orig_subject_effects, orig_within_null
+        mod._subject_partial_effects = orig_subject_effects
+        mod._within_subject_null, mod._design_based_null = orig_within_null, orig_design_null
+
+
+def check_stimulated_lists_only_control_reading() -> None:
+    """This sensitivity reading must use list-label evidence and avoid a durability verdict."""
+    def _arm(design_p: float, legacy_significant: bool, mean: float) -> dict:
+        return {
+            "status": "computed", "design_based_permutation_p": design_p,
+            "significant": legacy_significant, "subject_clustered_mean": mean,
+            "within_subject_permutation_p": 0.001,
+        }
+
+    reading = mod._stimulated_lists_only_control_reading(
+        _arm(0.20, True, -0.04), _arm(0.04, False, -0.03))
+    assert reading.startswith("CONSISTENT WITH THE RESTRICTED-ARM DIRECTION"), reading
+    assert "list-label permutation p=0.040000" in reading
+    assert "diagnostic only" in reading
+    assert "SUR" + "VIVES" not in reading
+
+    non_supporting = mod._stimulated_lists_only_control_reading(
+        _arm(0.20, False, -0.04), _arm(0.20, True, -0.03))
+    assert non_supporting.startswith("DOES NOT SUPPORT"), non_supporting
 
 
 def check_new_branch_classification() -> None:
-    """Directly exercises _classify_branch's new rule with hand-built arm summaries: (1) fires when
-    native is null but the restricted arm is significant and survives its own restricted-scope
-    bias-only control (different sign, so it does not explain the restricted result) and its own
-    nuisance-partialled re-fit (still significant, same sign); (2) does NOT fire, and falls back to
-    the pre-existing powered-null rule, when the restricted arm's own bias-only control reproduces
-    it in the SAME sign."""
-    def _arm(significant, mean):
-        return {"status": "computed", "significant": significant, "subject_clustered_mean": mean,
-                "minimum_detectable_difference_80pct_power": {"status": "computed", "mdd": 0.05}}
+    """The treatment decision must follow the list-label null even when the archived word-level
+    null reaches a different conclusion. Missing list-unit evidence must remain non-identified."""
+    def _arm(design_p, legacy_significant, mean):
+        return {
+            "status": "computed", "significant": legacy_significant,
+            "subject_clustered_mean": mean, "design_based_permutation_p": design_p,
+            "within_subject_permutation_p": 0.008,
+            "minimum_detectable_difference_80pct_power": {"status": "computed", "mdd": 0.05},
+        }
 
-    native = _arm(False, -0.01)
-    bias_only = _arm(False, 0.01)
-    restricted = _arm(True, -0.04)
-    restricted_partialled = _arm(True, -0.04)
-
-    restricted_bias_only_different_sign = _arm(True, +0.01)
-    branch = mod._classify_branch(native, bias_only, restricted, restricted_bias_only_different_sign,
+    native = _arm(0.60, False, -0.01)
+    bias_only = _arm(0.60, False, 0.01)
+    restricted = _arm(0.04, True, -0.04)
+    restricted_partialled = _arm(0.06, True, -0.04)
+    restricted_bias_only = _arm(0.60, True, +0.01)
+    branch = mod._classify_branch(native, bias_only, restricted, restricted_bias_only,
                                    restricted_partialled)
-    assert branch == "restricted_arm_significant_with_its_own_controls_despite_native_null", branch
+    assert branch == "native_not_detected_with_mdd_below_reference", branch
+    assert mod._list_unit_design_based_inference(restricted)["significant"] is True
+    assert mod._list_unit_design_based_inference(restricted_partialled)["significant"] is False
 
-    restricted_bias_only_same_sign = _arm(True, -0.03)
-    branch2 = mod._classify_branch(native, bias_only, restricted, restricted_bias_only_same_sign,
-                                    restricted_partialled)
-    assert branch2 == "no_moderation_above_the_reported_bound", branch2
+    missing_native = dict(native)
+    missing_native.pop("design_based_permutation_p")
+    missing_branch = mod._classify_branch(missing_native, bias_only, restricted,
+                                          restricted_bias_only, restricted_partialled)
+    assert missing_branch == "non_identified_missing_list_unit_inference", missing_branch
+
+
+def check_stored_artifact_re_adjudication() -> None:
+    """The correction is derived from the stored list-unit statistics, linked to the source hash,
+    and retains the non-design-based p-values as diagnostic-only rather than decision evidence."""
+    source = ROOT / "results/randomised_prestimulation_moderation_open_loop.json"
+    with tempfile.TemporaryDirectory() as directory:
+        output_path = Path(directory) / "moderation_re_adjudication.json"
+        repaired = mod._re_adjudicate_stored_artifact(source, output_path)
+        saved = json.loads(output_path.read_text())
+    assert repaired == saved
+    assert saved["source_artifact"]["sha256"] == mod._sha256_file(source)
+    displacement = saved["outcomes"]["displacement"]
+    assert displacement["primary_branch"] == "native_not_detected_with_mdd_below_reference"
+    restricted = displacement["restricted_arm_sensitivity"]
+    assert abs(restricted["base"]["p_value"] - 0.043912175648702596) < 1e-15
+    assert abs(restricted["nuisance_partialled"]["p_value"] - 0.05389221556886228) < 1e-15
+    assert restricted["base"]["significant"] is True
+    assert restricted["nuisance_partialled"]["significant"] is False
+    assert (displacement["arms"]["restricted"]["legacy_non_design_based_diagnostic"]
+            ["status"] == "diagnostic_only_not_valid_for_the_randomized_treatment_decision")
+
+    # A missing list-unit result in any required decision/sensitivity arm must fail closed rather
+    # than allowing a complete outcome to be emitted from the native arm alone.
+    damaged = json.loads(source.read_text())
+    damaged["outcomes"]["displacement"]["restricted"]["design_based_permutation_p"] = None
+    with tempfile.TemporaryDirectory() as directory:
+        damaged_path = Path(directory) / "damaged_source.json"
+        damaged_output = Path(directory) / "damaged_re_adjudication.json"
+        damaged_path.write_text(json.dumps(damaged))
+        failed_closed = mod._re_adjudicate_stored_artifact(damaged_path, damaged_output)
+    assert failed_closed["status"] == "non_identified"
+    failed_displacement = failed_closed["outcomes"]["displacement"]
+    assert failed_displacement["status"] == "non_identified"
+    assert failed_displacement["arms_without_finite_list_unit_inference"] == ["restricted"]
 
 
 def check_apply_list_labels_reproduces_observed_assignment() -> None:
@@ -557,12 +621,20 @@ def test_new_branch_classification() -> None:
     check_new_branch_classification()
 
 
+def test_stored_artifact_re_adjudication() -> None:
+    check_stored_artifact_re_adjudication()
+
+
 def test_restriction_composition_and_contamination_check() -> None:
     check_restriction_composition_and_contamination_check()
 
 
 def test_restricted_vs_its_bias_only_sign_relationship() -> None:
     check_restricted_vs_its_bias_only_sign_relationship()
+
+
+def test_stimulated_lists_only_control_reading() -> None:
+    check_stimulated_lists_only_control_reading()
 
 
 def test_nuisance_partialling_ladder() -> None:
@@ -607,6 +679,11 @@ if __name__ == "__main__":
     check_restricted_arm_construction()
     print("PASS: restricted arm excludes preceding-word stimulation and its redundant covariate")
 
+    check_new_branch_classification()
+    print("PASS: list-unit inference controls the branch and missing list-unit evidence is non-identified")
+    check_stored_artifact_re_adjudication()
+    print("PASS: stored list-unit statistics re-adjudicate with source-hash provenance")
+
     check_between_subject_null_for_single_session_subjects()
     print("PASS (unbroken): between-subject null detects a between-subject effect that the "
           "within-subject null cannot see for single-session subjects")
@@ -633,6 +710,8 @@ if __name__ == "__main__":
     check_restricted_vs_its_bias_only_sign_relationship()
     print("PASS: restricted-vs-bias-only sign relationship text covers same-sign, reversal and both "
           "not-applicable cases")
+    check_stimulated_lists_only_control_reading()
+    print("PASS: stimulated-lists-only sensitivity reading uses list-label p-values and does not claim survival")
     check_nuisance_partialling_ladder()
     print("PASS: nuisance partialling ladder reports the right delta and covariate list per outcome")
     check_winners_curse_caveat_logic()

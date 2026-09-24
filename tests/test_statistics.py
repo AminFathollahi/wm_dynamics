@@ -416,6 +416,34 @@ class TestLinearMixedEffectsTest:
         assert np.isnan(result["beta"])
         assert np.isnan(result["p_value"])
 
+    def test_nested_group_recovers_planted_effect_and_converges(self, rng):
+        n_subj, n_nested_per_subj, n_trials_per_nested = 5, 6, 15
+        subject, nested, condition, metric = [], [], [], []
+        for s in range(n_subj):
+            subj_effect = rng.standard_normal()
+            for u in range(n_nested_per_subj):
+                nested_effect = rng.standard_normal() * 1.5
+                for _ in range(n_trials_per_nested):
+                    c = float(rng.integers(0, 2))
+                    y = 2.0 + 0.8 * c + subj_effect + nested_effect + rng.standard_normal()
+                    subject.append(f"s{s}")
+                    nested.append(f"s{s}_n{u}")
+                    condition.append(c)
+                    metric.append(y)
+        result = linear_mixed_effects_test(np.array(metric), np.array(condition), np.array(subject),
+                                            nested_group=np.array(nested))
+        assert result["converged"] is True
+        assert result["beta"] == pytest.approx(0.8, abs=0.4)
+        assert result["n_nested_groups"] == n_subj * n_nested_per_subj
+
+    def test_nested_group_length_mismatch_reports_explicit_failure(self, rng):
+        x = rng.standard_normal(40)
+        c = np.tile([0, 1], 20).astype(float)
+        s = np.repeat(np.arange(10), 4)
+        result = linear_mixed_effects_test(x, c, s, nested_group=np.arange(5))
+        assert result["converged"] is False
+        assert result["reason"]
+
 
 class TestRayleighTest:
     def test_uniform_not_significant(self, rng):

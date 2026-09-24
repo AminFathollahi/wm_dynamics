@@ -43,12 +43,12 @@ specific serial pull, deviation arms) are reused verbatim from the earlier
 analysis's completed-fit checkpoint; nothing already delivered is modified,
 re-run or re-labelled.
 
-CONTROLS. Block B's bias-only control (leave-one-out session mean of the
+CONTROLS. The serial-pull neural test's bias-only control (leave-one-out session mean of the
 serial pull substituted for each trial's own value) and its rate-versus-
 bias distinction (total spike count substitution plus the spike-count
 partial) carry over in percentile-test form: each control statistic is
 judged against its own permutation null. The earlier analysis additionally
-ran a session-mean-reference spatial-bias control beside block A; that
+ran a session-mean-reference spatial-bias control beside the preceding-item behavioural test; that
 control is not part of this analysis's pre-declared control set and is not
 recomputed here. A sensitivity re-run excluding trials whose uncued-object
 separation is below 15 degrees is reported beside the primary and decides
@@ -84,7 +84,7 @@ from run_swap_target_and_preceding_trial_item import (  # noqa: E402
     BRANCH_A_NOT_COVERED, BRANCH_A_POWERED_NULL, BRANCH_A_RESPONSE, BRANCH_A_TARGET,
     BRANCH_B_INCONCLUSIVE, BRANCH_B_NOT_COVERED, BRANCH_B_NOT_SEPARABLE,
     BRANCH_B_OPPOSITE, BRANCH_B_POSITIVE, BRANCH_B_POWERED_NULL,
-    BLOCK_A_MDD_POWERED_NULL_THRESHOLD, BRANCH_GATE_FAILED, BRANCH_TOO_FEW_TRIALS,
+    PRECEDING_ITEM_BEHAVIOURAL_MDD_POWERED_NULL_THRESHOLD, BRANCH_GATE_FAILED, BRANCH_TOO_FEW_TRIALS,
     CHECKPOINT_PATH as SOURCE_CHECKPOINT_PATH, DROP_SESSION_ARRAYS, MIN_POOLED_ADMISSIBLE_SWAP_TRIALS,
     NEAR_SEPARATION_THRESHOLD_DEGREES, SURVIVING, _circular_distance_rad, _residualize,
     analyse_session,
@@ -170,7 +170,7 @@ TOP_BRANCH_RULE_DECLARED_BEFORE_RUNNING = (
     "the confound rather than by the preceding trial's item."
 )
 
-BLOCK_A_PERCENTILE_RULE_DECLARED_BEFORE_RUNNING = (
+PRECEDING_ITEM_BEHAVIOURAL_PERCENTILE_RULE_DECLARED_BEFORE_RUNNING = (
     "Mirrors the delivered two-alternative decision rule with every sign-flip-vs-one-half test replaced "
     "by the statistic's own two-sided percentile test. Checked in this order:\n"
     "  0. Either statistic significantly below its null centre -> 'swaps_avoid_the_preceding_trials_item'.\n"
@@ -188,7 +188,7 @@ BLOCK_A_PERCENTILE_RULE_DECLARED_BEFORE_RUNNING = (
     "Any pattern not covered records 'outcome_not_covered_by_the_pre_declared_rule' with every number."
 )
 
-BLOCK_B_PERCENTILE_RULE_DECLARED_BEFORE_RUNNING = (
+SERIAL_PULL_NEURAL_PERCENTILE_RULE_DECLARED_BEFORE_RUNNING = (
     "Mirrors the delivered decision rule with the same substitution. Per session, the mean per-trial "
     "content-specific serial pull difference on previous-item swaps minus the same mean on other trials, "
     "pooled across sessions; raw, rate-control (total spike count substituted), bias-only-control "
@@ -435,10 +435,10 @@ def _split_half_centring(draws: list[float | None]) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Decision rules -- mirrors of the delivered blocks with percentile tests
+# Decision rules -- mirrors of the delivered preceding-item behavioural and serial-pull neural arms with percentile tests
 # ---------------------------------------------------------------------------
 
-def _decide_block_a(target_pct: dict, response_pct: dict, paired_pct: dict,
+def _decide_preceding_item_behavioural(target_pct: dict, response_pct: dict, paired_pct: dict,
                     target_pooled_for_mdd: float | None, response_pooled_for_mdd: float | None) -> dict:
     def direction_of(pct: dict) -> str | None:
         if pct.get("status") != "estimated":
@@ -485,14 +485,14 @@ def _decide_block_a(target_pct: dict, response_pct: dict, paired_pct: dict,
         mdds[f"{label}_minimum_detectable_paired_difference"] = \
             mdd.get("mdd") if mdd.get("status") == "computed" else None
     result.update(mdds)
-    both_below_floor = all(mdds[k] is not None and mdds[k] < BLOCK_A_MDD_POWERED_NULL_THRESHOLD
+    both_below_floor = all(mdds[k] is not None and mdds[k] < PRECEDING_ITEM_BEHAVIOURAL_MDD_POWERED_NULL_THRESHOLD
                            for k in mdds)
     result["branch"] = BRANCH_A_POWERED_NULL if both_below_floor else BRANCH_A_INCONCLUSIVE
-    result["mdd_reference_named"] = BLOCK_A_MDD_POWERED_NULL_THRESHOLD
+    result["mdd_reference_named"] = PRECEDING_ITEM_BEHAVIOURAL_MDD_POWERED_NULL_THRESHOLD
     return result
 
 
-def _decide_block_b(raw_pct: dict, rate_pct: dict, bias_pct: dict, partial_pct: dict,
+def _decide_serial_pull_neural(raw_pct: dict, rate_pct: dict, bias_pct: dict, partial_pct: dict,
                     reference_effect: float) -> dict:
     result: dict = {}
     bias_sig = bool(bias_pct.get("status") == "estimated" and bias_pct["significant"])
@@ -536,8 +536,8 @@ def _decide_block_b(raw_pct: dict, rate_pct: dict, bias_pct: dict, partial_pct: 
     return result
 
 
-def _decide_top_branch(centring_ok: bool, target_pct: dict, block_a_fine_branch: str,
-                       target_mdd: float | None, block_b_fine_branch: str) -> dict:
+def _decide_top_branch(centring_ok: bool, target_pct: dict, preceding_item_fine_branch: str,
+                       target_mdd: float | None, serial_pull_fine_branch: str) -> dict:
     """Pre-declared precedence for the headline verdict. Steps 0-1 (gate, count floor) are enforced
     upstream; this function starts at the centring gate."""
     result: dict = {"centring_gate_passed": bool(centring_ok)}
@@ -548,7 +548,7 @@ def _decide_top_branch(centring_ok: bool, target_pct: dict, block_a_fine_branch:
         result["branch"] = BRANCH_TOP_FOLLOWS
         result["effect_size_observed"] = target_pct["observed"]
         result["effect_size_null_mean"] = target_pct["null_mean"]
-        result["block_a_fine_branch"] = block_a_fine_branch
+        result["preceding_item_fine_branch"] = preceding_item_fine_branch
         return result
     if target_pct.get("status") == "estimated" and target_pct["significant"] and target_pct["direction"] == "below":
         result["branch"] = BRANCH_TOP_NOT_COVERED
@@ -557,15 +557,15 @@ def _decide_top_branch(centring_ok: bool, target_pct: dict, block_a_fine_branch:
         result["effect_size_observed"] = target_pct["observed"]
         result["effect_size_null_mean"] = target_pct["null_mean"]
         return result
-    if block_b_fine_branch == BRANCH_B_NOT_SEPARABLE:
+    if serial_pull_fine_branch == BRANCH_B_NOT_SEPARABLE:
         result["branch"] = BRANCH_TOP_NOT_SEPARABLE
-        result["block_a_fine_branch"] = block_a_fine_branch
+        result["preceding_item_fine_branch"] = preceding_item_fine_branch
         return result
-    if target_mdd is not None and target_mdd < BLOCK_A_MDD_POWERED_NULL_THRESHOLD:
+    if target_mdd is not None and target_mdd < PRECEDING_ITEM_BEHAVIOURAL_MDD_POWERED_NULL_THRESHOLD:
         result["branch"] = BRANCH_TOP_DOES_NOT_FOLLOW
         result["minimum_detectable_paired_difference"] = target_mdd
         result["reference_named"] = (
-            f"a minimum detectable difference of {BLOCK_A_MDD_POWERED_NULL_THRESHOLD} proportion units, "
+            f"a minimum detectable difference of {PRECEDING_ITEM_BEHAVIOURAL_MDD_POWERED_NULL_THRESHOLD} proportion units, "
             "the powered-null floor declared with the mirrored block A rule")
         return result
     result["branch"] = BRANCH_TOP_INCONCLUSIVE
@@ -625,8 +625,8 @@ def main() -> None:
         "percentile_test_rule_declared_before_running": PERCENTILE_TEST_DECLARATION,
         "realised_null_centring_rule_declared_before_running": CENTRING_CHECK_DECLARATION,
         "top_branch_rule_declared_before_running": TOP_BRANCH_RULE_DECLARED_BEFORE_RUNNING,
-        "block_a_rule_declared_before_running": BLOCK_A_PERCENTILE_RULE_DECLARED_BEFORE_RUNNING,
-        "block_b_rule_declared_before_running": BLOCK_B_PERCENTILE_RULE_DECLARED_BEFORE_RUNNING,
+        "block_a_rule_declared_before_running": PRECEDING_ITEM_BEHAVIOURAL_PERCENTILE_RULE_DECLARED_BEFORE_RUNNING,
+        "block_b_rule_declared_before_running": SERIAL_PULL_NEURAL_PERCENTILE_RULE_DECLARED_BEFORE_RUNNING,
         "n_shuffle_draws": N_SHUFFLE_DRAWS,
         "percentile_alpha": PERCENTILE_ALPHA,
         "centring_z_threshold": CENTRING_Z_THRESHOLD,
@@ -819,7 +819,7 @@ def main() -> None:
         print(json.dumps({"branch": BRANCH_MISCENTRED_STOP, "max_z": max_z}, indent=2))
         return
 
-    # -- block A -------------------------------------------------------------
+    # -- preceding-item behavioural test -----------------------------------
     target_pct = percentile_results[STAT_TARGET]
     response_pct = percentile_results[STAT_RESPONSE]
     paired_pct = percentile_results[STAT_PAIRED]
@@ -828,11 +828,11 @@ def main() -> None:
         node = pct.get("minimum_detectable_paired_difference_at_80pct_power", {})
         return node.get("mdd") if isinstance(node, dict) and node.get("status") == "computed" else None
 
-    block_a_branch = _decide_block_a(target_pct, response_pct, paired_pct,
+    preceding_item_behavioural_branch = _decide_preceding_item_behavioural(target_pct, response_pct, paired_pct,
                                      target_pct.get("per_session_values"),
                                      response_pct.get("per_session_values"))
-    block_a_branch["target_minimum_detectable_paired_difference"] = _mdd_value(target_pct)
-    block_a_branch["response_minimum_detectable_paired_difference"] = _mdd_value(response_pct)
+    preceding_item_behavioural_branch["target_minimum_detectable_paired_difference"] = _mdd_value(target_pct)
+    preceding_item_behavioural_branch["response_minimum_detectable_paired_difference"] = _mdd_value(response_pct)
 
     near_mask = sep_arr < NEAR_SEPARATION_THRESHOLD_DEGREES
     if near_mask.any():
@@ -856,15 +856,15 @@ def main() -> None:
     output["block_a_behavioural"] = {
         "primary": {"target_referenced": target_pct, "response_referenced": response_pct,
                     "target_minus_response_direct_paired": paired_pct},
-        "branch": block_a_branch,
+        "branch": preceding_item_behavioural_branch,
         "sensitivity_excluding_near_15_degree_trials_decides_nothing": sens_results,
     }
     _flush(output)
-    _log(f"block A branch: {block_a_branch['branch']} elapsed={time.time() - t0:.0f}s")
+    _log(f"preceding-item behavioural branch: {preceding_item_behavioural_branch['branch']} elapsed={time.time() - t0:.0f}s")
 
-    # -- block B -------------------------------------------------------------
+    # -- serial-pull neural test ----------------------------------------------
     reference_effect = abs(serial_pull_reference["mean_value"])
-    block_b_branch = _decide_block_b(percentile_results[STAT_PULL_RAW], percentile_results[STAT_RATE],
+    serial_pull_neural_branch = _decide_serial_pull_neural(percentile_results[STAT_PULL_RAW], percentile_results[STAT_RATE],
                                      percentile_results[STAT_BIAS], percentile_results[STAT_PARTIAL],
                                      reference_effect)
     output["block_b_neural"] = {
@@ -873,21 +873,21 @@ def main() -> None:
         "bias_only_control_group_difference": percentile_results[STAT_BIAS],
         "spike_count_partial_group_difference": percentile_results[STAT_PARTIAL],
         "reference_effect_size_delivered_pooled_content_specific_serial_pull": reference_effect,
-        "branch": block_b_branch,
+        "branch": serial_pull_neural_branch,
     }
     _flush(output)
-    _log(f"block B branch: {block_b_branch['branch']} elapsed={time.time() - t0:.0f}s")
+    _log(f"serial-pull neural branch: {serial_pull_neural_branch['branch']} elapsed={time.time() - t0:.0f}s")
 
     # -- headline verdict -----------------------------------------------------
     top = _decide_top_branch(centring_ok=True, target_pct=target_pct,
-                             block_a_fine_branch=block_a_branch["branch"],
+                             preceding_item_fine_branch=preceding_item_behavioural_branch["branch"],
                              target_mdd=_mdd_value(target_pct),
-                             block_b_fine_branch=block_b_branch["branch"])
+                             serial_pull_fine_branch=serial_pull_neural_branch["branch"])
     output["branch"] = {
         "top": top,
         "top_branch": top["branch"],
-        "block_a": block_a_branch["branch"],
-        "block_b": block_b_branch["branch"],
+        "block_a": preceding_item_behavioural_branch["branch"],
+        "block_b": serial_pull_neural_branch["branch"],
     }
     output["how_this_artifact_was_assembled"] = _assembly_block()
     output["status"] = "complete"
@@ -897,7 +897,7 @@ def main() -> None:
     print(json.dumps({
         "reproduction_gate": gate_status, "n_pooled_surviving": n_pooled_surviving,
         "centring_max_z": max_z, "top_branch": top["branch"],
-        "block_a_branch": block_a_branch["branch"], "block_b_branch": block_b_branch["branch"],
+        "preceding_item_behavioural_branch": preceding_item_behavioural_branch["branch"], "serial_pull_neural_branch": serial_pull_neural_branch["branch"],
     }, indent=2, default=float))
 
 

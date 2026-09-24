@@ -55,7 +55,7 @@ effect at 80% power from a WHOLE-SESSION cluster bootstrap standard error:
 resample sessions (the real statistic's own clustering unit) with
 replacement, recompute the pooled statistic on each resampled set, take the
 standard deviation of that bootstrap distribution as the standard error, and
-multiply by MDD_Z_FACTOR = 2.8016015201700604 (norm.ppf(0.975) +
+multiply by MDD_Z_FACTOR (statistics.Z_80_POWER, norm.ppf(0.975) +
 norm.ppf(0.80), the two-sided-alpha-0.05/80%-power factor). This is NEVER a
 trial-count formula and NEVER an intraclass-correlation design effect --
 resampling happens over sessions, one draw = one whole session kept or
@@ -81,7 +81,7 @@ from pathlib import Path
 
 import numpy as np
 from scipy.io import loadmat
-from scipy.stats import pearsonr
+from scipy.stats import norm, pearsonr  # noqa: F401  (pearsonr kept for call sites below)
 
 ROOT = Path(__file__).resolve().parents[1]
 for _sub in ("src", "scripts"):
@@ -93,7 +93,7 @@ from corpus_sessions import data_root  # noqa: E402
 from provenance import _json_safe, git_commit  # noqa: E402
 from state_persistence import slope_across_sessions_test  # noqa: E402
 from statistics import (  # noqa: E402
-    minimum_detectable_paired_difference, partial_correlation_permutation_test, stable_seed,
+    Z_80_POWER, minimum_detectable_paired_difference, partial_correlation_permutation_test, stable_seed,
 )
 
 from run_behavior_amplitude_rate_controls import _reachable_sessions as _panichello_reachable_sessions  # noqa: E402
@@ -119,7 +119,7 @@ ANALYSIS_VERSION = "2026-09-05"
 REPRODUCTION_TOLERANCE = 1e-6
 N_PERM = 10000
 N_BOOT = 2000
-MDD_Z_FACTOR = 2.8016015201700604
+MDD_Z_FACTOR = Z_80_POWER
 MEANINGFUL_EFFECT_THRESHOLD_R_UNITS = 0.14  # results/state_behavior_link.json's own persistence-bound scale
 
 DECISION_RULE_DECLARED_BEFORE_FITTING = (
@@ -207,7 +207,8 @@ def _direction(x) -> str | None:
 # Whole-session cluster bootstrap MDD
 # ============================================================================
 
-def _bootstrap_mdd_from_mean(values: list[float], seed_tag: str, n_boot: int = N_BOOT) -> dict:
+def _bootstrap_mdd_from_mean(values: list[float], seed_tag: str, n_boot: int = N_BOOT,
+                              return_draws: bool = False) -> dict:
     """MDD for a statistic pooled as the MEAN of one scalar per session
     (this project's sign-flip pooling): resample sessions with replacement,
     recompute the mean each draw, sd of that bootstrap distribution times
@@ -222,36 +223,50 @@ def _bootstrap_mdd_from_mean(values: list[float], seed_tag: str, n_boot: int = N
         idx = rng.integers(0, n, size=n)
         draws[i] = arr[idx].mean()
     se = float(np.std(draws, ddof=1))
-    return {"status": "computed", "n_sessions": n, "n_boot": n_boot, "bootstrap_se": se,
-            "z_factor": MDD_Z_FACTOR, "mdd": MDD_Z_FACTOR * se}
+    result = {"status": "computed", "n_sessions": n, "n_boot": n_boot, "bootstrap_se": se,
+              "z_factor": MDD_Z_FACTOR, "mdd": MDD_Z_FACTOR * se}
+    if return_draws:
+        result["draws"] = draws
+    return result
 
 
 def _bootstrap_mdd_from_between_session_correlation(x: list[float], y: list[float], seed_tag: str,
-                                                     n_boot: int = N_BOOT) -> dict:
-    """MDD for the bias-only control's own between-session Pearson r:
-    resample the N (session-mean-x, session-mean-y) pairs with replacement
-    (whole sessions, matching the control's own unit of analysis), recompute
-    r each draw, sd of the bootstrap r distribution times MDD_Z_FACTOR. Draws
-    where the resample happens to contain fewer than 2 distinct sessions (r
-    undefined) are skipped and do not count toward n_boot_used."""
+                                                     n_boot: int = N_BOOT,
+                                                     controls: list[list[float]] | None = None,
+                                                     return_draws: bool = False) -> dict:
+    """MDD for the bias-only control's own between-session Pearson (or, with
+    controls, partial) r: resample the N (session-mean-x, session-mean-y[,
+    session-mean-controls]) tuples with replacement (whole sessions, matching
+    the control's own unit of analysis), recompute r each draw, sd of the
+    bootstrap r distribution times MDD_Z_FACTOR. Draws where the resample
+    happens to contain fewer than 2 distinct sessions (r undefined) are
+    skipped and do not count toward n_boot_used."""
     n = len(x)
     if n < 4:
         return {"status": "not_computable", "n_sessions": n,
                 "reason": "fewer than 4 sessions -- matches the control's own minimum"}
     x_arr, y_arr = np.asarray(x, dtype=float), np.asarray(y, dtype=float)
+    control_arrs = [np.asarray(c, dtype=float) for c in (controls or [])]
     rng = np.random.default_rng(stable_seed(seed_tag))
     draws = []
     for _ in range(n_boot):
         idx = rng.integers(0, n, size=n)
         if len(set(idx.tolist())) < 2 or np.std(x_arr[idx]) == 0.0 or np.std(y_arr[idx]) == 0.0:
             continue
-        draws.append(pearsonr(x_arr[idx], y_arr[idx])[0])
+        fit = partial_correlation_permutation_test(
+            y_arr[idx], x_arr[idx], [c[idx] for c in control_arrs], n_perm=0, rng=rng)
+        if fit.get("status") == "computed":
+            draws.append(fit["r"])
     if len(draws) < n_boot // 2:
         return {"status": "not_computable", "n_sessions": n,
                 "reason": "fewer than half the bootstrap draws yielded a defined correlation"}
-    se = float(np.std(np.asarray(draws), ddof=1))
-    return {"status": "computed", "n_sessions": n, "n_boot": n_boot, "n_boot_used": len(draws),
-            "bootstrap_se": se, "z_factor": MDD_Z_FACTOR, "mdd": MDD_Z_FACTOR * se}
+    draws_arr = np.asarray(draws)
+    se = float(np.std(draws_arr, ddof=1))
+    result = {"status": "computed", "n_sessions": n, "n_boot": n_boot, "n_boot_used": len(draws),
+              "bootstrap_se": se, "z_factor": MDD_Z_FACTOR, "mdd": MDD_Z_FACTOR * se}
+    if return_draws:
+        result["draws"] = draws_arr
+    return result
 
 
 def _power_report(real_significant: bool, real_pooled_values: list[float], bias_result: dict,
@@ -277,6 +292,90 @@ def _void_verdict(real_significant: bool | None, real_direction: str | None,
     voided = bool(real_significant and bias_significant and same_sign)
     return {"real_significant": real_significant, "bias_only_significant": bias_significant,
             "same_sign_as_real": same_sign, "voided": voided}
+
+
+Z_95 = float(norm.ppf(0.975))
+
+
+def _real_minus_control(real_point: float | None, real_values: list[float], control_point: float | None,
+                         control_x: list[float], control_y: list[float], control_controls: list[list[float]],
+                         tag: str) -> dict:
+    """The real (within-session, sign-flip-pooled) and bias-only (between-
+    session) statistics are both Pearson/partial correlation r -- a common
+    scale -- despite being different estimators over different units of
+    analysis. Reports their difference and an interval from combining each
+    side's own independent whole-session cluster bootstrap standard error
+    (normal approximation on the difference of two independent estimates)."""
+    if real_point is None or control_point is None:
+        return {"status": "not_applicable"}
+    real_mdd = _bootstrap_mdd_from_mean(real_values, f"{tag}|real_mdd")
+    control_mdd = _bootstrap_mdd_from_between_session_correlation(
+        control_x, control_y, f"{tag}|control_mdd", controls=control_controls)
+    estimate = float(real_point) - float(control_point)
+    if real_mdd.get("status") != "computed" or control_mdd.get("status") != "computed":
+        return {"status": "not_computable", "estimate": estimate, "real_value": float(real_point),
+                "control_value": float(control_point)}
+    se = float(np.sqrt(real_mdd["bootstrap_se"] ** 2 + control_mdd["bootstrap_se"] ** 2))
+    return {
+        "status": "computed", "estimate": estimate, "real_value": float(real_point),
+        "control_value": float(control_point), "standard_error": se,
+        "interval_95pct": [estimate - Z_95 * se, estimate + Z_95 * se],
+        "note": "real and control are both correlation-scale estimates (r); interval combines "
+                "independent whole-session bootstrap standard errors from each side",
+    }
+
+
+def _within_session_demeaned_reading(rows_arrays: dict[str, dict], y_key: str, x_key: str,
+                                      control_keys: list[str], tag: str) -> dict:
+    """Session-mean-centers y, x and every control within each session, pools
+    every trial across sessions, and correlates once -- the classic within-
+    subject (fixed-effects-demeaned) estimator, distinct from the real
+    statistic's per-session r averaged across sessions. Interval from a
+    whole-session cluster bootstrap (resample sessions with replacement,
+    recompute on the resampled sessions' concatenated demeaned trials)."""
+    session_ids = list(rows_arrays)
+    n_sessions = len(session_ids)
+    y_parts, x_parts = [], []
+    control_parts: list[list[np.ndarray]] = [[] for _ in control_keys]
+    for session_id in session_ids:
+        arrays = rows_arrays[session_id]
+        y = np.asarray(arrays[y_key], dtype=float)
+        x = np.asarray(arrays[x_key], dtype=float)
+        y_parts.append(y - y.mean())
+        x_parts.append(x - x.mean())
+        for i, key in enumerate(control_keys):
+            c = np.asarray(arrays[key], dtype=float)
+            control_parts[i].append(c - c.mean())
+
+    def _pooled(idx):
+        y = np.concatenate([y_parts[i] for i in idx])
+        x = np.concatenate([x_parts[i] for i in idx])
+        controls = [np.concatenate([control_parts[c][i] for i in idx]) for c in range(len(control_keys))]
+        return y, x, controls
+
+    rng = np.random.default_rng(stable_seed(f"{tag}|within_session_demeaned"))
+    y_all, x_all, controls_all = _pooled(range(n_sessions))
+    point = partial_correlation_permutation_test(y_all, x_all, controls_all, n_perm=N_PERM, rng=rng)
+    if point.get("status") != "computed":
+        return {"status": "not_computable", "reason": point.get("reason", point.get("status"))}
+
+    boot_rng = np.random.default_rng(stable_seed(f"{tag}|within_session_demeaned|bootstrap"))
+    draws = []
+    for _ in range(N_BOOT):
+        idx = boot_rng.integers(0, n_sessions, size=n_sessions)
+        y, x, controls = _pooled(idx)
+        if np.std(y) == 0.0 or np.std(x) == 0.0:
+            continue
+        fit = partial_correlation_permutation_test(y, x, controls, n_perm=0, rng=boot_rng)
+        if fit.get("status") == "computed":
+            draws.append(fit["r"])
+    interval = [float(v) for v in np.percentile(draws, [2.5, 97.5])] if len(draws) >= N_BOOT // 2 else None
+    return {
+        "status": "computed", "r": point["r"], "p_value": point["p_value"], "n_sessions": n_sessions,
+        "n_trials": int(len(y_all)), "interval_95pct": interval, "n_boot_used": len(draws),
+        "method": "session-mean-centered trials pooled across sessions and correlated once, interval "
+                  "from a whole-session cluster bootstrap",
+    }
 
 
 # ============================================================================
@@ -421,6 +520,17 @@ def claim_rate_free_headline(root: Path, t0: float) -> dict:
                                  raw_bias.get("significant"), raw_bias.get("direction"))
     joint_voiding = _void_verdict(real_joint_sig, _direction(recomputed_joint.get("mean_value")),
                                    joint_bias.get("significant"), joint_bias.get("direction"))
+    raw_voiding["real_minus_control"] = _real_minus_control(
+        recomputed_raw.get("mean_value"), raw_values, raw_bias.get("r"),
+        bias["means"]["deviation"], bias["means"]["is_corr"], [], "rate_free_headline|raw")
+    raw_voiding["within_session_demeaned"] = _within_session_demeaned_reading(
+        rows_arrays, "is_corr", "deviation", [], "rate_free_headline|raw")
+    joint_voiding["real_minus_control"] = _real_minus_control(
+        recomputed_joint.get("mean_value"), joint_values, joint_bias.get("r"),
+        bias["means"]["deviation"], bias["means"]["is_corr"],
+        [bias["means"]["spike_count"], bias["means"]["trial_index"]], "rate_free_headline|joint_partial")
+    joint_voiding["within_session_demeaned"] = _within_session_demeaned_reading(
+        rows_arrays, "is_corr", "deviation", ["spike_count", "trial_index"], "rate_free_headline|joint_partial")
     claim["voiding"] = {"raw": raw_voiding, "joint_partial_controlling_spike_count_and_trial_index": joint_voiding}
 
     voided = bool(raw_voiding["voided"] or joint_voiding["voided"])
@@ -543,6 +653,11 @@ def claim_leading_component_gain(root: Path, t0: float) -> dict:
 
     voiding = _void_verdict(real_sig, _direction(recomputed.get("mean_value")),
                              bias_raw.get("significant"), bias_raw.get("direction"))
+    voiding["real_minus_control"] = _real_minus_control(
+        recomputed.get("mean_value"), values, bias_raw.get("r"), means_gain, means_outcome, [],
+        "state_behavior_link|leading_component_score_gain")
+    voiding["within_session_demeaned"] = _within_session_demeaned_reading(
+        rows_arrays, "is_corr", "gain", [], "state_behavior_link|leading_component_score_gain")
     claim["voiding"] = voiding
     if voiding["voided"]:
         claim["branch"] = BRANCH_VOIDED

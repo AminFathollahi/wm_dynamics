@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from run_count_subsampling_ladder import (  # noqa: E402
-    classify_block_a_branch,
+    classify_gate_degradation_branch,
     combine_within_load_trial_weighted,
     pool_draws_within_session,
     resolve_unit_target,
@@ -108,7 +108,7 @@ def test_combine_within_load_trial_weighted_no_levels_returns_none():
 
 
 # ---------------------------------------------------------------------------------------------------
-# classify_block_a_branch
+# classify_gate_degradation_branch
 # ---------------------------------------------------------------------------------------------------
 
 def _rung(target, significant, mdd=None, n_sessions=10):
@@ -118,7 +118,7 @@ def _rung(target, significant, mdd=None, n_sessions=10):
 def test_branch_fails_once_cut_to_failing_counts():
     rungs = [_rung(1847.5, False), _rung(989.5, False), _rung(700.0, False),
              _rung(500.0, False), _rung(353.0, True), _rung(256.25, True), _rung(132.5, True)]
-    out = classify_block_a_branch(rungs, highest_failing_target=353.0, failing_reference_effect_abs=0.17)
+    out = classify_gate_degradation_branch(rungs, highest_failing_target=353.0, failing_reference_effect_abs=0.17)
     assert out["branch"] == "the_orthogonality_gate_fails_once_the_passing_corpora_are_cut_to_the_failing_corpora_counts"
 
 
@@ -126,7 +126,7 @@ def test_branch_survives_at_failing_counts_when_powered_null():
     rungs = [_rung(1847.5, False, mdd=0.05), _rung(989.5, False, mdd=0.05), _rung(700.0, False, mdd=0.05),
              _rung(500.0, False, mdd=0.05), _rung(353.0, False, mdd=0.05),
              _rung(256.25, False, mdd=0.05), _rung(132.5, False, mdd=0.05)]
-    out = classify_block_a_branch(rungs, highest_failing_target=353.0, failing_reference_effect_abs=0.17)
+    out = classify_gate_degradation_branch(rungs, highest_failing_target=353.0, failing_reference_effect_abs=0.17)
     assert out["branch"] == "the_orthogonality_gate_survives_at_the_failing_corpora_counts"
 
 
@@ -134,7 +134,7 @@ def test_branch_inconclusive_when_underpowered_at_the_lowest_rung():
     rungs = [_rung(1847.5, False, mdd=0.05), _rung(989.5, False, mdd=0.4), _rung(700.0, False, mdd=0.4),
              _rung(500.0, False, mdd=0.4), _rung(353.0, False, mdd=0.4),
              _rung(256.25, False, mdd=0.4), _rung(132.5, False, mdd=0.4)]
-    out = classify_block_a_branch(rungs, highest_failing_target=353.0, failing_reference_effect_abs=0.17)
+    out = classify_gate_degradation_branch(rungs, highest_failing_target=353.0, failing_reference_effect_abs=0.17)
     assert out["branch"] == "inconclusive_the_subsampled_gate_is_below_its_own_detection_floor"
 
 
@@ -145,7 +145,7 @@ def test_branch_degrades_with_no_identifiable_transition_when_crossing_sits_abov
     # the pre-declared rule's third named outcome is what must fire.
     rungs = [_rung(1847.5, True), _rung(989.5, False), _rung(700.0, False),
              _rung(500.0, False), _rung(353.0, False), _rung(256.25, False), _rung(132.5, False)]
-    out = classify_block_a_branch(rungs, highest_failing_target=989.5, failing_reference_effect_abs=0.17)
+    out = classify_gate_degradation_branch(rungs, highest_failing_target=989.5, failing_reference_effect_abs=0.17)
     assert out["branch"] == "the_gate_degrades_with_no_identifiable_transition_inside_the_sampled_range"
 
 
@@ -155,7 +155,7 @@ def test_branch_rule_gap_when_full_and_matching_are_both_already_significant():
     # gap in the rule, not forced onto the nearest label.
     rungs = [_rung(1847.5, True), _rung(989.5, True), _rung(700.0, False),
              _rung(500.0, False), _rung(353.0, True), _rung(256.25, False), _rung(132.5, False)]
-    out = classify_block_a_branch(rungs, highest_failing_target=353.0, failing_reference_effect_abs=0.17)
+    out = classify_gate_degradation_branch(rungs, highest_failing_target=353.0, failing_reference_effect_abs=0.17)
     assert out["branch"] == "outcome_pattern_not_covered_by_the_pre_declared_rule"
 
 
@@ -279,7 +279,7 @@ def test_ladder_recovers_a_planted_unit_count_dependent_floor():
          "mdd": rung["pooled_gate_dev"].get("minimum_detectable_paired_difference_at_80pct_power", {}).get("mdd")}
         for target, rung in result["by_rung"].items()
     ]
-    branch = classify_block_a_branch(rungs_for_branch, highest_failing_target=90.0, failing_reference_effect_abs=0.1)
+    branch = classify_gate_degradation_branch(rungs_for_branch, highest_failing_target=90.0, failing_reference_effect_abs=0.1)
     assert branch["branch"] == "the_orthogonality_gate_fails_once_the_passing_corpora_are_cut_to_the_failing_corpora_counts"
 
 
@@ -307,5 +307,5 @@ def test_ladder_finds_no_floor_when_there_is_no_count_dependence():
          "mdd": rung["pooled_gate_dev"].get("minimum_detectable_paired_difference_at_80pct_power", {}).get("mdd")}
         for target, rung in result["by_rung"].items()
     ]
-    branch = classify_block_a_branch(rungs_for_branch, highest_failing_target=90.0, failing_reference_effect_abs=0.1)
+    branch = classify_gate_degradation_branch(rungs_for_branch, highest_failing_target=90.0, failing_reference_effect_abs=0.1)
     assert branch["branch"] != "the_orthogonality_gate_fails_once_the_passing_corpora_are_cut_to_the_failing_corpora_counts"

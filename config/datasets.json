@@ -8,7 +8,9 @@
       "local_path": "000469",
       "doi": "10.48324/dandi.000469",
       "view_relationship": "independent, confirmed by all-pairs trial-content fingerprint audit 2026-08-03 (results/patient_identity_audit.json); zero cross-release overlap found",
-      "constructs": ["Sternberg representation"],
+      "constructs": [
+        "Sternberg representation"
+      ],
       "simultaneous_population": true,
       "primary_eligible": true,
       "label_convention": "nwb_structure_hemisphere_suffix",
@@ -18,7 +20,10 @@
       "local_path": "001187",
       "doi": "10.48324/dandi.001187/0.240904.2347",
       "view_relationship": "linked release view with dandi_000673 for 31 verified shared patients / 37 shared recording sessions (corrected 2026-08-03 from a prior 16/19 undercount; see provenance/dataset_overlap_report.json)",
-      "constructs": ["Sternberg representation", "task/load context"],
+      "constructs": [
+        "Sternberg representation",
+        "task/load context"
+      ],
       "simultaneous_population": true,
       "primary_eligible": true,
       "label_convention": "nwb_structure_hemisphere_suffix",
@@ -28,7 +33,11 @@
       "local_path": "000673",
       "doi": "10.48324/dandi.000673/0.250122.0110",
       "view_relationship": "linked release view with dandi_001187 for 31 verified shared patients / 37 shared recording sessions (corrected 2026-08-03 from a prior 16/19 undercount; see provenance/dataset_overlap_report.json)",
-      "constructs": ["Sternberg representation", "task/load context", "PAC replication"],
+      "constructs": [
+        "Sternberg representation",
+        "task/load context",
+        "PAC replication"
+      ],
       "simultaneous_population": true,
       "primary_eligible": false,
       "label_convention": "nwb_structure_hemisphere_suffix",
@@ -38,17 +47,35 @@
       "local_path": "000574",
       "doi": "10.48324/dandi.000574",
       "view_relationship": "independent, confirmed by all-pairs trial-content fingerprint audit 2026-08-03 (results/patient_identity_audit.json); zero cross-release overlap found; multimodal single-unit+scalp-EEG+iEEG view referred to elsewhere in this codebase as 'Boran' (Boran et al. 2020, Sci Data) -- same corpus, not a separate dataset",
-      "constructs": ["Sternberg task context", "multimodal sensitivity"],
+      "constructs": [
+        "Sternberg task context",
+        "multimodal sensitivity"
+      ],
       "simultaneous_population": true,
       "primary_eligible": true,
       "label_convention": "nwb_boran_brainnetome_hybrid",
       "modality": "multimodal"
     },
+    "dandi_000004": {
+      "local_path": "000004",
+      "doi": "10.48324/dandi.000004",
+      "view_relationship": "independent recognition-memory corpus; eligibility for a task-generalization analysis is determined separately from metadata feasibility",
+      "constructs": [
+        "new/old recognition"
+      ],
+      "simultaneous_population": true,
+      "primary_eligible": false,
+      "label_convention": "nwb_hemisphere_prefixed_structure",
+      "modality": "single_unit"
+    },
     "panichello_2024": {
       "doi": "10.5061/dryad.kkwh70sct",
       "local_path": "Panichello_2024",
       "view_relationship": "independent macaque lPFC release",
-      "constructs": ["spatial working-memory content", "intermittent coding"],
+      "constructs": [
+        "spatial working-memory content",
+        "intermittent coding"
+      ],
       "simultaneous_population": true,
       "primary_eligible": false,
       "label_convention": "monkey_cluster_area_inferred",
@@ -59,7 +86,10 @@
       "doi": "10.64898/2026.01.27.702062",
       "local_path": "Watters/data_for_modeling",
       "view_relationship": "independent processed macaque frontal-cortex release",
-      "constructs": ["multi-object working memory", "gain versus slot versus switching"],
+      "constructs": [
+        "multi-object working memory",
+        "gain versus slot versus switching"
+      ],
       "simultaneous_population": true,
       "primary_eligible": false,
       "label_convention": "no_anatomy_available",
@@ -70,7 +100,9 @@
       "doi": "10.25378/janelia.7489253",
       "local_path": "Inagaki/SiliconProbeData/SiliconProbeData",
       "view_relationship": "independent mouse ALM perturbation release",
-      "constructs": ["perturbation recovery method validation"],
+      "constructs": [
+        "perturbation recovery method validation"
+      ],
       "simultaneous_population": true,
       "primary_eligible": false,
       "label_convention": "single_structure_by_design",
@@ -160,8 +192,25 @@
       "doi": "10.6080/K0ZW1HVD",
       "local_path": "PFC-3/extracted/data",
       "view_relationship": "independent macaque prefrontal-cortex pseudo-population release (CRCNS pfc-3; Meyer, Qi, Stanford & Constantinidis 2011; Qi, Meyer, Stanford & Constantinidis 2011)",
-      "constructs": ["visual working memory", "pre/post-training comparison"],
+      "constructs": [
+        "visual working memory",
+        "pre/post-training comparison"
+      ],
       "simultaneous_population": false,
+      "primary_eligible": false,
+      "label_convention": "single_structure_by_design",
+      "declared_structure": "prefrontal_cortex",
+      "modality": "single_unit"
+    },
+    "pfc4": {
+      "doi": "10.6080/K0V40S4D",
+      "local_path": "pfc-4/extracted/data",
+      "view_relationship": "independent macaque prefrontal-cortex single-unit release (CRCNS pfc-4; Romo, Brody, Hernandez & Lemus 1999; Brody, Hernandez, Zainos & Romo 2003); confirmed from the released .mat files to contain exactly 2 animals (rr014, rr015), so it cannot compute an estimand requiring 4 or more independent units and must never be pooled with another corpus to reach that floor",
+      "constructs": [
+        "somatosensory parametric working memory",
+        "vibrotactile frequency discrimination"
+      ],
+      "simultaneous_population": true,
       "primary_eligible": false,
       "label_convention": "single_structure_by_design",
       "declared_structure": "prefrontal_cortex",
@@ -172,7 +221,10 @@
       "doi_status": "not verified this round -- do not quote a DOI for this dataset until Crossref-checked; the staged directory is named for Wolff et al.'s 'Dynamic hidden states' EEG impulse-response experiments but no data-repository DOI was confirmed against the source archive",
       "local_path": "Wolff/data",
       "view_relationship": "independent human scalp-EEG impulse-response release (Wolff et al., 'Dynamic hidden states' EEG impulse-response experiments)",
-      "constructs": ["content-specific latent-state reactivation", "impulse-response identification"],
+      "constructs": [
+        "content-specific latent-state reactivation",
+        "impulse-response identification"
+      ],
       "simultaneous_population": true,
       "primary_eligible": false,
       "label_convention": "no_anatomy_available",
@@ -183,11 +235,58 @@
       "doi_status": "not verified this round -- do not quote a DOI for this dataset until Crossref/repository-checked",
       "local_path": "kai miller/memory_nback/memory_nback",
       "view_relationship": "independent human ECoG n-back release (Kai J. Miller memory_nback)",
-      "constructs": ["n-back task/load context", "cortical generality"],
+      "constructs": [
+        "n-back task/load context",
+        "cortical generality"
+      ],
       "simultaneous_population": true,
       "primary_eligible": false,
       "label_convention": "mni_coordinates_only",
       "modality": "ecog"
+    },
+    "ds005034": {
+      "local_path": "ds005034",
+      "doi": "10.18112/openneuro.ds005034.v1.0.1",
+      "view_relationship": "independent healthy-participant human scalp-EEG theta-tACS working-memory release; 25 participants, each with both a sham and a verum memory-task recording on disk (50 memory recordings, every file complete and full-size), plus a separate resting-state recording per participant per session (50 resting recordings, not used by any analysis). An earlier entry here reported 18 participants with a recording and 7 with sidecar metadata only; that was counted while the download was still in flight and is superseded by a direct file count. No trial-level behavioural outcome ships in this local BIDS release (see behaviour_available below); accuracy exists only on a separate repository not present in this project's data root.",
+      "constructs": [
+        "verbal working-memory manipulation and retention",
+        "theta tACS aftereffect"
+      ],
+      "simultaneous_population": true,
+      "primary_eligible": false,
+      "label_convention": "no_anatomy_available",
+      "modality": "scalp_eeg",
+      "behaviour_available": false,
+      "retention_interval_s": 6.0,
+      "retention_interval_note": "single per-trial onset marker (task/load code) followed 6.5 s later by the next marker, no intervening events; the delay window used here is 0.5-6.5 s post onset, following the pre-existing scripts/run_ds005034_tacs_aftereffect.py convention",
+      "task_factors": {
+        "operation": [
+          "simple_retention",
+          "backward_reordering",
+          "alphabetical_reordering"
+        ],
+        "load_letters": [
+          4,
+          6
+        ],
+        "source": "task-thetatACSWorkingMemory_events.json delay-onset trigger codes"
+      }
+    },
+    "ds006848": {
+      "local_path": "ds006848",
+      "doi": "10.18112/openneuro.ds006848.v1.0.0",
+      "view_relationship": "independent healthy-participant human scalp-EEG verbal working-memory (digit span) release; 30 of 30 registered participants have both an EEG recording and trial-level behaviour on disk",
+      "constructs": [
+        "verbal working-memory serial recall",
+        "digit-sequence presentation-mode manipulation"
+      ],
+      "simultaneous_population": true,
+      "primary_eligible": false,
+      "label_convention": "no_anatomy_available",
+      "modality": "scalp_eeg",
+      "behaviour_available": true,
+      "retention_interval_s": 6.0,
+      "retention_interval_note": "fixed 6.000 s stimulus-free retention interval, verified from the retention-onset to retrieval-onset event gap on every trial (Retention_* to Digits_Retrieval), no intervening events"
     }
   }
 }

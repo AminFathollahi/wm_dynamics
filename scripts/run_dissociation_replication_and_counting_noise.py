@@ -1,7 +1,7 @@
 """run_dissociation_replication_and_counting_noise.py -- two independent
 tests sharing one loading pass and one artifact.
 
-BLOCK A. The project's headline is a within-corpus dissociation measured in
+MULTI-OBJECT DISSOCIATION REPLICATION. The project's headline is a within-corpus dissociation measured in
 macaque lateral prefrontal cortex (Panichello et al. 2024) at its primary
 error floor (n=11 sessions): the dominant population latent's per-trial
 amplitude carries the LARGER raw association with trial outcome and loses
@@ -17,7 +17,7 @@ module tests it, alongside the deviation half, through the identical
 within-load and pooled machinery, at three unit-quality tiers and split by
 animal and by task variant.
 
-BLOCK B. rate_free_state_deviation removes total activity BY CONSTRUCTION
+COUNTING-NOISE CENSUS. rate_free_state_deviation removes total activity BY CONSTRUCTION
 (each trial's unit-count vector is normalised to unit length before
 comparison), so a correlation between the resulting deviation and total
 spike count cannot arise from rate. It CAN arise from sampling noise: a
@@ -52,7 +52,7 @@ all_corpora (src/corpus_sessions.py) are every one imported unchanged. The
 only new estimator this module introduces is the Poisson surrogate
 construction itself, which nothing in the project already implements.
 
-SIGN CONVENTION. Every coefficient in the multi-object corpus (Block A) is a
+SIGN CONVENTION. Every coefficient in the multi-object corpus (the dissociation-replication arm) is a
 correlation against the continuous graded report ERROR. The single-item
 macaque corpus's own headline coefficients (-0.1675415174221389 for
 amplitude, -0.09742768955602038 for the deviation) are against CORRECTNESS
@@ -119,7 +119,7 @@ HUMAN_CORPORA_FOR_THE_CENSUS = ("dandi_000469", "dandi_001187")
 # Decision rules -- declared before any fit runs, verbatim text carried into the artifact
 # ---------------------------------------------------------------------------------------------------
 
-BLOCK_A_DECISION_RULE_DECLARED_BEFORE_FITTING = (
+DISSOCIATION_REPLICATION_DECISION_RULE_DECLARED_BEFORE_FITTING = (
     "Checked at the primary cell (single_and_multi_unit unit-quality tier, pooled group, within-item-count-"
     "level estimator), in this order:\n"
     "  1. If the dominant amplitude's orthogonality gate against total spike count is NOT significant at the "
@@ -141,7 +141,7 @@ BLOCK_A_DECISION_RULE_DECLARED_BEFORE_FITTING = (
     "between them is reported as a result, not resolved."
 )
 
-BLOCK_B_DECISION_RULE_DECLARED_BEFORE_FITTING = (
+COUNTING_NOISE_CENSUS_DECISION_RULE_DECLARED_BEFORE_FITTING = (
     "Per corpus, build a count-matched Poisson surrogate with no trial-to-trial direction structure: the "
     "session's own mean per-unit count vector, L2-normalised to a single shared direction, scaled per trial "
     "so a Poisson draw's EXPECTED total equals that real trial's own observed total spike count. "
@@ -214,7 +214,7 @@ def _flush(output: dict) -> None:
 
 
 # =======================================================================================================
-# BLOCK A -- multi-object macaque corpus, amplitude and deviation, pooled and within-load
+# MULTI-OBJECT DISSOCIATION REPLICATION -- multi-object macaque corpus, amplitude and deviation, pooled and within-load
 # =======================================================================================================
 
 def _observable_arrays(counts: np.ndarray, session: dict) -> tuple[dict | None, dict, np.ndarray]:
@@ -301,7 +301,7 @@ def _session_observable_arm(arrays: dict, key: str, seed_tag: str) -> dict:
     }
 
 
-def _analyse_watters_session_for_block_a(session: dict) -> dict:
+def _analyse_watters_session_for_dissociation_replication(session: dict) -> dict:
     tag = f"dissociation_replication_and_counting_noise|watters|{session['session']}"
     quality = np.asarray(session["unit_quality"])
     good = quality == "good"
@@ -422,8 +422,8 @@ def _mdd_value(entry: dict) -> float | None:
     return mdd.get("mdd") if mdd.get("status") == "computed" else None
 
 
-def _block_a_branch(cell: dict) -> dict:
-    """Implements BLOCK_A_DECISION_RULE_DECLARED_BEFORE_FITTING against one
+def _dissociation_replication_branch(cell: dict) -> dict:
+    """Implements DISSOCIATION_REPLICATION_DECISION_RULE_DECLARED_BEFORE_FITTING against one
     already-void-checked cell's within-item-count-level statistics (the
     pre-declared primary estimator)."""
     amp = cell["amplitude"]["within_item_count_level"]
@@ -468,7 +468,7 @@ def _block_a_branch(cell: dict) -> dict:
 
 
 def _primary_cell_label_disclosure(cell: dict) -> dict:
-    """The primary cell's branch is computed by _block_a_branch above and is
+    """The primary cell's branch is computed by _dissociation_replication_branch above and is
     NOT changed here. This adds a reporting field beside it: the pre-
     declared rule's final 'Otherwise' clause is a genuine catch-all for any
     significance pattern the four named branches do not cover, and its
@@ -552,7 +552,7 @@ def _heterogeneity_disclosure(gate_sig_by_cell: dict, dev_raw_by_cell: dict) -> 
     }
 
 
-BLOCK_B_NOT_IN_DIRECTION_LABEL_DISCLOSURE = (
+COUNTING_NOISE_NOT_IN_DIRECTION_LABEL_DISCLOSURE = (
     "'deviation_gate_value_is_not_in_the_counting_noise_direction' fires whenever the observed gate is "
     "significantly LESS NEGATIVE than the surrogate distribution's own mean (the real pooled value exceeds "
     "the surrogate mean at two-sided p < 0.05) -- it does not require the observed gate itself to be "
@@ -609,22 +609,23 @@ def _count_separation_disclosure(gate_table: list[dict]) -> dict:
     }
 
 
-def run_block_a(watters_seen: int, watters_loaded: list[dict], watters_refused: list[dict],
+def run_dissociation_replication(watters_seen: int, watters_loaded: list[dict], watters_refused: list[dict],
                  t0: float, output: dict) -> dict:
     """``watters_loaded``/``watters_refused``/``watters_seen`` come from ONE pass over iter_watters made
-    once in main() and shared with Block B's multi-object-macaque surrogate row -- loading this corpus's
-    per-trial spike cache is the dominant cost of either block alone, so it is paid once, not twice."""
-    _log("Block A: analysing the multi-object macaque corpus (reusing the watters_state_geometry session set)")
+    once in main() and shared with the counting-noise census's multi-object-macaque surrogate row --
+    loading this corpus's per-trial spike cache is the dominant cost of either arm alone, so it is
+    paid once, not twice."""
+    _log("dissociation replication: analysing the multi-object macaque corpus (reusing the watters_state_geometry session set)")
     rows: list[dict] = []
     for session in watters_loaded:
         key = session["session"]
-        row = _fit(f"watters_session|{key}", lambda s=session: _analyse_watters_session_for_block_a(s))
+        row = _fit(f"watters_session|{key}", lambda s=session: _analyse_watters_session_for_dissociation_replication(s))
         content_rank = _fit(f"content_rank|{key}", lambda s=session: _content_fractional_rank_arm(s))
         row = {**row, "content_fractional_rank": content_rank}
         rows.append(row)
         output.setdefault("_progress", {})["block_a_sessions_done"] = len(rows)
         _flush(output)
-        _log(f"  block A {key} tiers={list(row['by_tier'])} status="
+        _log(f"  dissociation replication {key} tiers={list(row['by_tier'])} status="
              f"{[row['by_tier'][t].get('status') for t in row['by_tier']]} elapsed={time.time() - t0:.0f}s")
 
     output.pop("_progress", None)
@@ -641,7 +642,7 @@ def run_block_a(watters_seen: int, watters_loaded: list[dict], watters_refused: 
         tier_block: dict = {"n_sessions": len(tier_rows)}
         for group, subset in _subsets(tier_rows).items():
             tier_block[group] = _build_cell(subset, tier, group, gate_lookup)
-            tier_block[group]["branch"] = _block_a_branch(tier_block[group])
+            tier_block[group]["branch"] = _dissociation_replication_branch(tier_block[group])
         results[tier] = tier_block
 
     primary_branch = results[PRIMARY_QUALITY_TIER]["pooled"]["branch"]
@@ -678,14 +679,14 @@ def run_block_a(watters_seen: int, watters_loaded: list[dict], watters_refused: 
     reachable_amplitude = sum(
         1 for r in rows if r["by_tier"].get(PRIMARY_QUALITY_TIER, {}).get("status") == "computed")
 
-    block_a = {
+    dissociation_replication_result = {
         "sign_convention": (
             "Every coefficient here is against the continuous graded report ERROR. The single-item macaque "
             "corpus's headline coefficients are against CORRECTNESS: -0.1675415174221389 (amplitude) and "
             "-0.09742768955602038 (deviation), therefore +0.1675415174221389 and +0.09742768955602038 "
             "against report error -- the same direction as a positive coefficient in this block."
         ),
-        "decision_rule_declared_before_fitting": BLOCK_A_DECISION_RULE_DECLARED_BEFORE_FITTING,
+        "decision_rule_declared_before_fitting": DISSOCIATION_REPLICATION_DECISION_RULE_DECLARED_BEFORE_FITTING,
         "reachability": {
             "n_behavioural_session_dates_seen": n_seen, "n_sessions_loaded": n_loaded,
             "n_sessions_refused_by_the_shared_loader": n_refused,
@@ -741,11 +742,11 @@ def run_block_a(watters_seen: int, watters_loaded: list[dict], watters_refused: 
         },
         "n_sessions_seen": n_seen,
     }
-    return block_a
+    return dissociation_replication_result
 
 
 # =======================================================================================================
-# BLOCK B -- count-matched Poisson surrogate, five corpora
+# COUNTING-NOISE CENSUS -- count-matched Poisson surrogate, five corpora
 # =======================================================================================================
 
 def _two_sided_empirical_p(observed: float, null_draws: np.ndarray) -> float:
@@ -755,8 +756,8 @@ def _two_sided_empirical_p(observed: float, null_draws: np.ndarray) -> float:
     return float(min(1.0, 2.0 * min((le + 1) / (n + 1), (ge + 1) / (n + 1))))
 
 
-def _block_b_branch(real_mean: float, p_value: float, surrogate_mean: float, mdd_value: float | None) -> str:
-    """Implements BLOCK_B_DECISION_RULE_DECLARED_BEFORE_FITTING's four branches, given the real corpus's
+def _counting_noise_census_branch(real_mean: float, p_value: float, surrogate_mean: float, mdd_value: float | None) -> str:
+    """Implements COUNTING_NOISE_CENSUS_DECISION_RULE_DECLARED_BEFORE_FITTING's four branches, given the real corpus's
     pooled deviation-vs-spike-count gate value, the two-sided empirical p of that value against the
     surrogate distribution, the surrogate distribution's own mean, and its minimum detectable departure."""
     significant = p_value < 0.05
@@ -815,8 +816,9 @@ def poisson_surrogate_draw_correlations(activity_by_unit: np.ndarray, n_draws: i
 
 def _dominant_mode_gate_one_session(counts: np.ndarray | None, total: np.ndarray, seed_tag: str) -> dict:
     """The dominant latent's own orthogonality gate against total spike count -- the same quantity
-    _block_a_branch's amplitude arm gates on, computed here session by session for corpora Block A never
-    touches, via the identical unchanged trial_amplitude_covariates. None if the caller has no per-bin
+    _dissociation_replication_branch's amplitude arm gates on, computed here session by session for
+    corpora the dissociation-replication arm never touches, via the identical unchanged
+    trial_amplitude_covariates. None if the caller has no per-bin
     tensor for this session (only a pre-reduced (trials, units) activity array)."""
     if counts is None or counts.shape[0] < 16:
         return {"status": "not_computable", "reason": "no per-bin tensor or too few trials"}
@@ -833,7 +835,8 @@ def _corpus_gate_and_surrogate(sessions: list[dict], corpus_key: str, seed_prefi
     bins) or None}. Computes, per session, the real deviation-vs-spike-count gate and the dominant-
     latent-amplitude-vs-spike-count gate (both the full permutation estimator, unchanged) plus the
     deviation's counting-noise surrogate prediction. The multi-object macaque corpus's dominant-mode gate
-    is read from Block A's own already-computed pooled value instead of being recomputed here (the
+    is read from the dissociation-replication arm's own already-computed pooled value instead of being
+    recomputed here (the
     session's "counts" is left None for that corpus) -- shared machinery, not duplicated compute."""
     per_session = []
     for entry in sessions:
@@ -895,7 +898,7 @@ def _corpus_gate_and_surrogate(sessions: list[dict], corpus_key: str, seed_prefi
     surrogate_mean = float(np.mean(surrogate_arr))
     mdd = minimum_detectable_paired_difference(surrogate_pooled_by_draw)
     mdd_value = mdd.get("mdd") if mdd.get("status") == "computed" else None
-    branch = _block_b_branch(real_mean, p_value, surrogate_mean, mdd_value)
+    branch = _counting_noise_census_branch(real_mean, p_value, surrogate_mean, mdd_value)
 
     return {
         "n_sessions_seen": len(sessions), "n_sessions_computed": len(computed), "per_session": per_session,
@@ -917,7 +920,7 @@ def _corpus_gate_and_surrogate(sessions: list[dict], corpus_key: str, seed_prefi
     }
 
 
-def _attach_block_b_label_disclosure(block: dict) -> dict:
+def _attach_counting_noise_label_disclosure(block: dict) -> dict:
     """Extend-only: attaches a per-corpus disclosure field, never moves the
     branch already computed by _corpus_gate_and_surrogate above."""
     if block.get("branch") != "deviation_gate_value_is_not_in_the_counting_noise_direction":
@@ -928,7 +931,7 @@ def _attach_block_b_label_disclosure(block: dict) -> dict:
         "observed_gate_mean_value": block.get("real_gate_mean_value"),
         "surrogate_distribution_mean": block.get("surrogate_distribution", {}).get("mean")
         if isinstance(block.get("surrogate_distribution"), dict) else None,
-        "statement": BLOCK_B_NOT_IN_DIRECTION_LABEL_DISCLOSURE,
+        "statement": COUNTING_NOISE_NOT_IN_DIRECTION_LABEL_DISCLOSURE,
     }}
 
 
@@ -1057,7 +1060,7 @@ def _corpus_deviation_magnitude_diagnostic(sessions: list[dict], corpus_block: d
     }
 
 
-def _load_panichello_for_block_b(root: Path) -> list[dict]:
+def _load_panichello_for_counting_noise_census(root: Path) -> list[dict]:
     directory = _panichello_directory(root)
     if directory is None:
         return []
@@ -1071,7 +1074,7 @@ def _load_panichello_for_block_b(root: Path) -> list[dict]:
     return out
 
 
-def _load_alm_for_block_b(root: Path) -> list[dict]:
+def _load_alm_for_counting_noise_census(root: Path) -> list[dict]:
     directory = alm_data_directory(root)
     out = []
     if not directory.is_dir():
@@ -1084,7 +1087,7 @@ def _load_alm_for_block_b(root: Path) -> list[dict]:
     return out
 
 
-def _load_human_for_block_b(root: Path, dataset: str) -> list[dict]:
+def _load_human_for_counting_noise_census(root: Path, dataset: str) -> list[dict]:
     out = []
     for entry in iter_all_corpora(root):
         if entry["dataset"] != dataset or entry.get("structure") != "pooled":
@@ -1106,72 +1109,73 @@ def _human_seen_denominator(root: Path, dataset: str) -> int:
     raise ValueError(dataset)
 
 
-def run_block_b(root: Path, t0: float, output: dict, watters_seen: int, watters_loaded: list[dict]) -> dict:
-    _log("Block B: loading five corpora for the counting-noise census")
+def run_counting_noise_census(root: Path, t0: float, output: dict, watters_seen: int, watters_loaded: list[dict]) -> dict:
+    _log("counting-noise census: loading five corpora")
     corpora: dict[str, dict] = {}
 
-    panichello_sessions = _load_panichello_for_block_b(root)
+    panichello_sessions = _load_panichello_for_counting_noise_census(root)
     corpora["panichello_2024_macaque_lPFC_single_item"] = _fit(
         "block_b|panichello_2024", lambda: _corpus_gate_and_surrogate(
             panichello_sessions, "panichello_2024", "dissociation_replication_and_counting_noise|panichello"))
-    corpora["panichello_2024_macaque_lPFC_single_item"] = _attach_block_b_label_disclosure(
+    corpora["panichello_2024_macaque_lPFC_single_item"] = _attach_counting_noise_label_disclosure(
         corpora["panichello_2024_macaque_lPFC_single_item"])
     output.setdefault("_progress", {})["block_b_corpora_done"] = 1
     _flush(output)
-    _log(f"  block B panichello done elapsed={time.time() - t0:.0f}s")
+    _log(f"  counting-noise census panichello done elapsed={time.time() - t0:.0f}s")
     corpora["panichello_2024_macaque_lPFC_single_item"]["deviation_magnitude_diagnostic"] = \
         _corpus_deviation_magnitude_diagnostic(
             panichello_sessions, corpora["panichello_2024_macaque_lPFC_single_item"], "panichello_2024",
             "dissociation_replication_and_counting_noise|panichello")
     _flush(output)
-    _log(f"  block B panichello magnitude diagnostic done elapsed={time.time() - t0:.0f}s")
+    _log(f"  counting-noise census panichello magnitude diagnostic done elapsed={time.time() - t0:.0f}s")
 
-    alm_sessions = _load_alm_for_block_b(root)
+    alm_sessions = _load_alm_for_counting_noise_census(root)
     corpora["inagaki_alm5_mouse_ALM"] = _fit(
         "block_b|inagaki_alm5", lambda: _corpus_gate_and_surrogate(
             alm_sessions, "inagaki_alm5", "dissociation_replication_and_counting_noise|alm"))
-    corpora["inagaki_alm5_mouse_ALM"] = _attach_block_b_label_disclosure(corpora["inagaki_alm5_mouse_ALM"])
+    corpora["inagaki_alm5_mouse_ALM"] = _attach_counting_noise_label_disclosure(corpora["inagaki_alm5_mouse_ALM"])
     output["_progress"]["block_b_corpora_done"] = 2
     _flush(output)
-    _log(f"  block B ALM done elapsed={time.time() - t0:.0f}s")
+    _log(f"  counting-noise census ALM done elapsed={time.time() - t0:.0f}s")
     corpora["inagaki_alm5_mouse_ALM"]["deviation_magnitude_diagnostic"] = _corpus_deviation_magnitude_diagnostic(
         alm_sessions, corpora["inagaki_alm5_mouse_ALM"], "inagaki_alm5",
         "dissociation_replication_and_counting_noise|alm")
     _flush(output)
-    _log(f"  block B ALM magnitude diagnostic done elapsed={time.time() - t0:.0f}s")
+    _log(f"  counting-noise census ALM magnitude diagnostic done elapsed={time.time() - t0:.0f}s")
 
-    # watters_loaded is the SAME list Block A already loaded in main()'s single iter_watters pass -- the
+    # watters_loaded is the SAME list the dissociation-replication arm already loaded in main()'s single
+    # iter_watters pass -- the
     # dominant cost of touching this corpus at all is reading its per-trial spike cache, so it is read
     # once and shared, not reloaded a second time here.
     watters_raw = [{"session": s["session"], "activity_by_unit": s["counts"].sum(axis=2)} for s in watters_loaded]
     corpora["watters_2026_macaque_multi_object"] = _fit(
         "block_b|watters_2026", lambda: _corpus_gate_and_surrogate(
             watters_raw, "watters_2026", "dissociation_replication_and_counting_noise|watters"))
-    corpora["watters_2026_macaque_multi_object"] = _attach_block_b_label_disclosure(
+    corpora["watters_2026_macaque_multi_object"] = _attach_counting_noise_label_disclosure(
         corpora["watters_2026_macaque_multi_object"])
     output["_progress"]["block_b_corpora_done"] = 3
     _flush(output)
-    _log(f"  block B watters done elapsed={time.time() - t0:.0f}s")
+    _log(f"  counting-noise census watters done elapsed={time.time() - t0:.0f}s")
     corpora["watters_2026_macaque_multi_object"]["deviation_magnitude_diagnostic"] = \
         _corpus_deviation_magnitude_diagnostic(
             watters_raw, corpora["watters_2026_macaque_multi_object"], "watters_2026",
             "dissociation_replication_and_counting_noise|watters")
     _flush(output)
-    _log(f"  block B watters magnitude diagnostic done elapsed={time.time() - t0:.0f}s")
+    _log(f"  counting-noise census watters magnitude diagnostic done elapsed={time.time() - t0:.0f}s")
 
     for dataset in HUMAN_CORPORA_FOR_THE_CENSUS:
-        sessions = _load_human_for_block_b(root, dataset)
+        sessions = _load_human_for_counting_noise_census(root, dataset)
         corpora[f"{dataset}_human"] = _fit(
             f"block_b|{dataset}", lambda s=sessions, d=dataset: _corpus_gate_and_surrogate(
                 s, d, f"dissociation_replication_and_counting_noise|{d}"))
-        corpora[f"{dataset}_human"] = _attach_block_b_label_disclosure(corpora[f"{dataset}_human"])
+        corpora[f"{dataset}_human"] = _attach_counting_noise_label_disclosure(corpora[f"{dataset}_human"])
         output["_progress"]["block_b_corpora_done"] = output["_progress"]["block_b_corpora_done"] + 1
         _flush(output)
-        _log(f"  block B {dataset} done elapsed={time.time() - t0:.0f}s")
+        _log(f"  counting-noise census {dataset} done elapsed={time.time() - t0:.0f}s")
         corpora[f"{dataset}_human"]["deviation_magnitude_diagnostic"] = _corpus_deviation_magnitude_diagnostic(
             sessions, corpora[f"{dataset}_human"], dataset, f"dissociation_replication_and_counting_noise|{dataset}")
         _flush(output)
-        _log(f"  block B {dataset} magnitude diagnostic done elapsed={time.time() - t0:.0f}s")
+        _log(f"  counting-noise census {dataset} magnitude diagnostic done elapsed={time.time() - t0:.0f}s")
 
     output.pop("_progress", None)
 
@@ -1221,8 +1225,8 @@ def run_block_b(root: Path, t0: float, output: dict, watters_seen: int, watters_
     magnitude_verdicts = [row["deviation_magnitude_diagnostic_verdict"] for row in gate_table
                            if row.get("deviation_magnitude_diagnostic_verdict") is not None]
 
-    block_b = {
-        "decision_rule_declared_before_fitting": BLOCK_B_DECISION_RULE_DECLARED_BEFORE_FITTING,
+    counting_noise_census_result = {
+        "decision_rule_declared_before_fitting": COUNTING_NOISE_CENSUS_DECISION_RULE_DECLARED_BEFORE_FITTING,
         "n_surrogate_draws_per_session": N_SURROGATE_DRAWS,
         "human_corpora_scope": {
             "both_human_corpora_used_here": list(HUMAN_CORPORA_FOR_THE_CENSUS),
@@ -1231,7 +1235,7 @@ def run_block_b(root: Path, t0: float, output: dict, watters_seen: int, watters_
         "corpora": corpora,
         "census_table_five_corpora_no_trend_no_ranking": gate_table,
         "n_of_five_corpora_failing_their_own_deviation_gate_at_p_leq_0_05": n_fail_gate,
-        "not_in_the_counting_noise_direction_label_disclosure": BLOCK_B_NOT_IN_DIRECTION_LABEL_DISCLOSURE,
+        "not_in_the_counting_noise_direction_label_disclosure": COUNTING_NOISE_NOT_IN_DIRECTION_LABEL_DISCLOSURE,
         "count_separation_disclosure": _count_separation_disclosure(gate_table),
         "deviation_magnitude_diagnostic_summary": {
             "per_corpus_verdicts_no_trend_no_ranking": {row["corpus"]: row["deviation_magnitude_diagnostic_verdict"]
@@ -1247,7 +1251,7 @@ def run_block_b(root: Path, t0: float, output: dict, watters_seen: int, watters_
             "n_seen_by_corpus": dataset_seen, "n_computed_by_corpus": n_computed,
         },
     }
-    return block_b
+    return counting_noise_census_result
 
 
 # =======================================================================================================
@@ -1263,9 +1267,9 @@ def main() -> None:
     output: dict = {
         "version": ANALYSIS_VERSION,
         "scope": (
-            "Two blocks sharing machinery and this one artifact. Block A: the dominant-latent amplitude half "
+            "Two blocks sharing machinery and this one artifact. The dissociation replication: the dominant-latent amplitude half "
             "of the rate/deviation dissociation in the multi-object macaque corpus (DANDI 000620), the "
-            "corpus's untested half. Block B: a count-matched Poisson surrogate test of whether the rate-free "
+            "corpus's untested half. The counting-noise census: a count-matched Poisson surrogate test of whether the rate-free "
             "deviation observable's orthogonality-gate failure in mouse ALM is counting noise, run identically "
             "across every corpus in the project with a per-trial per-unit spike tensor."
         ),
@@ -1275,7 +1279,7 @@ def main() -> None:
             "results/dominant_latent_identity_and_behaviour_breadth.json and "
             "results/rate_free_state_geometry_behavior_link.json, at tolerance 1e-6 -- the same gate "
             "results/dissociation_cross_preparation_test.json used, imported and called unchanged. If it does "
-            "not reproduce exactly, Block A stops before computing any multi-object statistic; Block B does "
+            "not reproduce exactly, the dissociation replication stops before computing any multi-object statistic; the counting-noise census does "
             "not depend on this gate and proceeds regardless."
         ),
         "status": "running",
@@ -1288,10 +1292,11 @@ def main() -> None:
     _flush(output)
     _log(f"reproduction gate: {gate_result['status']}")
 
-    # Loaded once, here, and shared by Block A (which needs the full per-trial tensors) and Block B's
-    # multi-object-macaque surrogate row (which only needs each session's per-unit totals) -- this
-    # corpus's per-trial spike cache is the dominant cost of touching it at all, so it is read once.
-    _log("loading the multi-object macaque corpus (one pass, shared by both blocks)")
+    # Loaded once, here, and shared by the dissociation-replication arm (which needs the full per-trial
+    # tensors) and the counting-noise census's multi-object-macaque surrogate row (which only needs
+    # each session's per-unit totals) -- this corpus's per-trial spike cache is the dominant cost of
+    # touching it at all, so it is read once.
+    _log("loading the multi-object macaque corpus (one pass, shared by both arms)")
     watters_seen = 0
     watters_loaded: list[dict] = []
     watters_refused: list[dict] = []
@@ -1311,21 +1316,24 @@ def main() -> None:
         output["block_a"] = {
             "status": "not_run_reproduction_gate_failed",
             "reason": "the reproduction gate did not reproduce the single-item macaque numbers at tolerance "
-                      "1e-6; Block A is stopped per the mandatory pre-declared rule and no multi-object "
+                      "1e-6; the dissociation replication is stopped per the mandatory pre-declared rule and no multi-object "
                       "statistic was computed",
         }
-        _log("STOPPING Block A: reproduction gate did not reproduce; no multi-object statistic computed")
+        _log("STOPPING dissociation replication: reproduction gate did not reproduce; no multi-object statistic computed")
     else:
-        block_a = run_block_a(watters_seen, watters_loaded, watters_refused, t0, output)
-        output["block_a"] = block_a
+        dissociation_replication_result = run_dissociation_replication(
+            watters_seen, watters_loaded, watters_refused, t0, output)
+        output["block_a"] = dissociation_replication_result
         _flush(output)
-        _log(f"Block A branch at primary cell: {block_a['branch_at_primary_cell']['branch']}")
+        _log(f"dissociation replication branch at primary cell: "
+             f"{dissociation_replication_result['branch_at_primary_cell']['branch']}")
 
-    block_b = run_block_b(root, t0, output, watters_seen, watters_loaded)
-    output["block_b"] = block_b
+    counting_noise_census_result = run_counting_noise_census(root, t0, output, watters_seen, watters_loaded)
+    output["block_b"] = counting_noise_census_result
     _flush(output)
-    _log("Block B complete: " + json.dumps(
-        {row["corpus"]: row["branch"] for row in block_b["census_table_five_corpora_no_trend_no_ranking"]}))
+    _log("counting-noise census complete: " + json.dumps(
+        {row["corpus"]: row["branch"]
+         for row in counting_noise_census_result["census_table_five_corpora_no_trend_no_ranking"]}))
 
     output["how_this_artifact_was_assembled"] = {
         "n_model_fits_served_from_an_earlier_invocation": _FITS_SERVED_FROM_CHECKPOINT,
@@ -1337,8 +1345,10 @@ def main() -> None:
     _flush(output)
     print(json.dumps({
         "reproduction_gate": gate_result["status"],
-        "block_a_branch": output.get("block_a", {}).get("branch_at_primary_cell", {}).get("branch"),
-        "block_b": {row["corpus"]: row["branch"] for row in block_b["census_table_five_corpora_no_trend_no_ranking"]},
+        "dissociation_replication_branch": output.get("block_a", {}).get("branch_at_primary_cell", {}).get("branch"),
+        "counting_noise_census_branch_by_corpus": {
+            row["corpus"]: row["branch"]
+            for row in counting_noise_census_result["census_table_five_corpora_no_trend_no_ranking"]},
     }, indent=2, default=float))
 
 

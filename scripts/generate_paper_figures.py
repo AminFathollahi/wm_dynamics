@@ -34,6 +34,7 @@ LOAD_COLORS = [PALETTE["zero_back"], PALETTE["one_back"], PALETTE["two_back"]]
 RUSHI_SUBS = [f"sub-{n}" for n in [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,18,21]]
 DATASET_COLORS = {"Miller": "#4E79A7", "Boran": "#E15759", "Rutishauser": "#59A14F"}
 SUBJ_COLORS = ["#4E79A7", "#E15759", "#59A14F", "#B07AA1"]
+COHORT_PALETTE = ["#4E79A7", "#E15759", "#59A14F", "#B07AA1", "#F28E2B", "#76B7B2", "#EDC948"]
 
 # Full 7-dataset (+ TES1) palette, shared across Fig 1 / 2 / 3 / 5 for visual consistency
 DS7_COLORS = {
@@ -712,9 +713,8 @@ def make_figure4(stats_data):
     ax_e.axhline(1 / np.sqrt(np.mean([stats_data["rayleigh"][s]["N"] for s in SUBJECTS])),
                  color="k", lw=0.7, ls="--", alpha=0.5, label="Uniform expectation")
     for i, (r_val, p_val) in enumerate(zip(R_vals, p_vals)):
-        star = "***" if p_val < 0.001 else ("**" if p_val < 0.01 else
-               ("*" if p_val < 0.05 else "ns"))
-        ax_e.text(i, r_val + 0.012, star, ha="center", va="bottom", fontsize=8)
+        p_label = f"p={p_val:.3f}" if p_val >= 0.001 else "p<0.001"
+        ax_e.text(i, r_val + 0.012, p_label, ha="center", va="bottom", fontsize=5.5, rotation=90)
     ax_e.set_xticks(np.arange(4))
     ax_e.set_xticklabels([SUBJ_LABELS[s] for s in SUBJECTS], fontsize=5.5, rotation=20)
     ax_e.set_ylabel("Rayleigh R (mean resultant)", fontsize=6.5)
@@ -1597,16 +1597,19 @@ def make_figS11_macaque_pfc_microstimulation_leaderboard_and_behavior_bound():
     cohorts_b = ["boran_ieeg", "boran_units", "dandi000469", "dandi001187", "dandi000673"]
     labels_b = ["Boran iEEG", "Boran units", "DANDI 000469", "DANDI 001187", "DANDI 000673"]
     aucs = [beh_ctg[c]["diag_auc_peak"] for c in cohorts_b]
-    sig = [beh_ctg[c]["p_perm"] < 0.05 for c in cohorts_b]
+    p_vals_b = [beh_ctg[c]["p_perm"] for c in cohorts_b]
     x = np.arange(len(cohorts_b))
-    cols_b = ["#59A14F" if s else "#4E79A7" for s in sig]
+    cols_b = COHORT_PALETTE[:len(cohorts_b)]
     ax_b.bar(x, aucs, color=cols_b, width=0.6, zorder=2)
     ax_b.axhline(0.5, color="k", lw=0.7, ls="--", zorder=1)
+    for xi, (auc, p_val) in enumerate(zip(aucs, p_vals_b)):
+        p_label = f"p={p_val:.3f}" if p_val >= 0.001 else "p<0.001"
+        ax_b.text(xi, auc + 0.01, p_label, ha="center", va="bottom", fontsize=4.6, rotation=90)
     ax_b.set_xticks(x)
     ax_b.set_xticklabels(labels_b, fontsize=4.8, rotation=30, ha="right")
     ax_b.set_ylabel("Diag. AUC (outcome decodability)", fontsize=6.0)
     ax_b.set_ylim(0.45, 0.75)
-    ax_b.set_title("B  Outcome decodable in 1/5 cohorts (green);\nRT~drift graded readout, forest inset",
+    ax_b.set_title("B  Outcome decodability by cohort;\nRT~drift graded readout, forest inset",
                    loc="left", fontsize=5.6, fontweight="bold")
     panel_label(ax_b, "B")
 
@@ -2260,9 +2263,9 @@ def make_figS6(stats_data):
     for i, (od, p) in enumerate([(boran_stats[s]["mean_offdiag_auc"],
                                    boran_stats[s]["p_offdiag_vs_chance"])
                                   for s in subj_ids]):
-        star = "***" if p < 0.001 else ("**" if p < 0.01 else ("*" if p < 0.05 else "ns"))
-        ax_d.text(i, od + yerr_hi[i] + 0.004, star, ha="center",
-                  va="bottom", fontsize=6)
+        p_label = f"p={p:.3f}" if p >= 0.001 else "p<0.001"
+        ax_d.text(i, od + yerr_hi[i] + 0.004, p_label, ha="center",
+                  va="bottom", fontsize=4.6, rotation=90)
 
     # ── E: Temporal stability τ — all 9 Boran subjects. y-limits are
     # data-adaptive (the corrected nested-CV τ spans a much wider range than
@@ -2665,17 +2668,17 @@ def make_figS8(stats_data):
                           fontsize=4.5, rotation=40)
     ax_d.set_ylim(0.47, 0.79)
     ax_d.set_ylabel("Mean off-diagonal AUC", fontsize=6)
-    n_sig_fdr = sum(1 for s in subj_ids if rushi_stats[s].get("p_offdiag_vs_chance", 1) < 0.05)
-    ax_d.set_title(f"D  Off-diagonal AUC (N={n_subj})\n{n_sig_fdr}/{n_subj} p<0.05 (label-shuffle, uncorrected)",
+    n_below_p05_uncorrected = sum(1 for s in subj_ids if rushi_stats[s].get("p_offdiag_vs_chance", 1) < 0.05)
+    ax_d.set_title(f"D  Off-diagonal AUC (N={n_subj})\n"
+                   f"{n_below_p05_uncorrected}/{n_subj} below p=0.05 (label-shuffle, uncorrected)",
                    loc="left", fontsize=6, fontweight="bold")
     ax_d.legend(frameon=False, fontsize=5)
     for i, (od, p) in enumerate([(rushi_stats[s]["mean_offdiag_auc"],
                                    rushi_stats[s]["p_offdiag_vs_chance"])
                                   for s in subj_ids]):
-        star = "***" if p < 0.001 else ("*" if p < 0.05 else "")
-        if star:
-            ax_d.text(i, od + yerr_hi[i] + 0.006, star,
-                      ha="center", va="bottom", fontsize=5)
+        p_label = f"p={p:.3f}" if p >= 0.001 else "p<0.001"
+        ax_d.text(i, od + yerr_hi[i] + 0.006, p_label,
+                  ha="center", va="bottom", fontsize=4.2, rotation=90)
 
     # ── E: τ — all 18 subjects, clipped to a fixed display range (a
     # near-chance diagonal makes τ an unstable ratio that can take extreme

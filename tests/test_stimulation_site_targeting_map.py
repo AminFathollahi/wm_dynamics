@@ -8,7 +8,7 @@ carriage-weighted predictor when included is fully removed once its shank is
 excluded, recovering the true distance, (4) the session join between the
 delivered displacement artifact and a corpus's delivered behavioural
 artifact, including its named refusal path when no behavioural row matches,
-and (5) the subject-clustered pooling this module's own Block A performs,
+and (5) the subject-clustered pooling this module's own targeting relationship performs,
 including how a single channel-condition-specific refusal for one session
 propagates into that condition's own subject/session counts without
 affecting the other two conditions."""
@@ -28,6 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from run_human_stimulation_component_response import channel_condition_masks  # noqa: E402
 import run_stimulation_site_targeting_map as targeting  # noqa: E402
 from run_stimulation_site_targeting_map import (  # noqa: E402
+    CORPUS_IS_CAUSAL,
     _causal_key,
     _lobe_for_label,
     _numeric_or_nan,
@@ -37,7 +38,8 @@ from run_stimulation_site_targeting_map import (  # noqa: E402
     load_admitted_sessions,
     load_electrode_table,
     predictor_for_channel_condition,
-    run_block_a,
+    run_non_human_site_evidence_synthesis,
+    run_targeting_relationship,
 )
 
 
@@ -234,11 +236,11 @@ def _session(key, subject, predictor, displacement, condition="full_channel_set"
     )
 
 
-def test_run_block_a_per_condition_refusal_does_not_shrink_the_other_conditions():
+def test_run_targeting_relationship_per_condition_refusal_does_not_shrink_the_other_conditions():
     # Four subjects, one session each. Every session has geometry computed in ALL THREE conditions
     # except subject S4's own excluding_stimulated_shank cell, which this session's own geometry
     # marks not_computable -- exactly what a real too-few-control-trials refusal on one channel
-    # condition looks like once it reaches Block A.
+    # condition looks like once it reaches the targeting relationship.
     sessions, geometry = [], {}
     for subj, predictor, disp in (("S1", 10.0, 0.9), ("S2", 20.0, 0.5), ("S3", 30.0, 0.3), ("S4", 40.0, 0.1)):
         for cond in ("full_channel_set", "excluding_stimulated_pair", "excluding_stimulated_shank"):
@@ -249,7 +251,7 @@ def test_run_block_a_per_condition_refusal_does_not_shrink_the_other_conditions(
             sessions.append(s)
             geometry.update(g)
 
-    out = run_block_a(sessions, geometry)
+    out = run_targeting_relationship(sessions, geometry)
 
     assert out["displacement_relationship"]["n_subjects_by_condition"]["full_channel_set"] == 4
     assert out["displacement_relationship"]["n_subjects_by_condition"]["excluding_stimulated_pair"] == 4
@@ -299,3 +301,25 @@ def test_classify_targeting_relationship_fires_null_only_when_mdd_clears_the_ref
                                        "mdd": {"status": "computed", "mdd": 0.45}},
     }
     assert classify_targeting_relationship(underpowered) == "underpowered_to_ask"
+
+
+# ---------------------------------------------------------------------------------------------------
+# (6) Human site-evidence synthesis reports both human corpora, never pools their causal status
+# ---------------------------------------------------------------------------------------------------
+
+def test_non_human_site_evidence_reports_both_human_corpora_separately():
+    result = run_non_human_site_evidence_synthesis(34, 74, 16, 29)
+    human = result["human_site_evidence"]
+
+    assert human["open_loop_ds005489"]["n_subjects"] == 34
+    assert human["open_loop_ds005489"]["n_sessions"] == 74
+    assert human["open_loop_ds005489"]["causal"] == CORPUS_IS_CAUSAL["open_loop_ds005489"] is True
+
+    assert human["closed_loop_ds005557"]["n_subjects"] == 16
+    assert human["closed_loop_ds005557"]["n_sessions"] == 29
+    assert human["closed_loop_ds005557"]["causal"] == CORPUS_IS_CAUSAL["closed_loop_ds005557"] is False
+
+    assert human["n_subjects_combined"] == 34 + 16
+    assert human["n_sessions_combined"] == 74 + 29
+    assert human["two_independent_groups"] is True
+    assert "causal" in human["combined_count_causal_disclosure"]

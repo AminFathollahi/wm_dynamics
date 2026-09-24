@@ -28,7 +28,7 @@ name rather than silently dropped.
 Scope: the two macaque corpora whose rate-free deviation observable passes
 its own orthogonality gate against total spike count --
 results/dissociation_replication_and_counting_noise.json's five-corpus
-census (Block B there) establishes that this gate passes at macaque lPFC
+census (the counting-noise census there) establishes that this gate passes at macaque lPFC
 (0.0377, p=0.589) and at the multi-object macaque corpus (-0.0016, p=0.955)
 and fails at mouse ALM (-0.2057, p=0.0005) and both human corpora (-0.1704,
 p=0.0285; -0.1912, p=0.0015). The mouse and human corpora are excluded here
@@ -137,12 +137,12 @@ WORSE_BEHAVIOUR_SIGN_MAP = {
     ),
 }
 
-BLOCK_A_TRANSLATION_DECISION_RULE_DECLARED_BEFORE_FITTING = (
+EFFECT_SIZE_TRANSLATION_DECISION_RULE_DECLARED_BEFORE_FITTING = (
     "Per corpus, per session (multi-object corpus: per item-count level within session, combined into one "
     "session value by the trial-count-weighted estimator run_dissociation_replication_and_counting_noise."
     "_session_observable_arm already uses for this corpus's within-load statistics -- pooling this corpus's "
     "behavioural association across item count is already established to reverse its sign, so no quantity "
-    "in this corpus's Block A output is ever pooled across item count):\n"
+    "in this corpus's effect-size translation output is ever pooled across item count):\n"
     "  1. Decile contrast: rank trials by the deviation observable, contrast worse_behaviour in the top "
     "decile against the bottom decile, session value pooled across sessions by the paired sign-flip test "
     "with a 95% CI. Quintile contrast reported beside it as a sensitivity check on the decile choice, not a "
@@ -182,7 +182,7 @@ BLOCK_A_TRANSLATION_DECISION_RULE_DECLARED_BEFORE_FITTING = (
     "within-session one is named the commensurable one, and neither is pooled with the other."
 )
 
-BLOCK_B_DECISION_RULE_DECLARED_BEFORE_FITTING = (
+ANATOMICAL_LOCALISATION_DECISION_RULE_DECLARED_BEFORE_FITTING = (
     "Only where the corpus carries an area label. The multi-object corpus's shared electrode table gives "
     "every recorded channel the literal location 'unknown' (verified against two independent statements "
     "already on disk: src/corpus_sessions.py's own _watters_unit_index docstring and scripts/build_"
@@ -401,10 +401,10 @@ def _trial_count_weighted(entries: list[tuple[int, float | None]]) -> float | No
 
 
 # =======================================================================================================
-# Block A -- one corpus's per-session translation record
+# Effect-size translation -- one corpus's per-session translation record
 # =======================================================================================================
 
-def _session_block_a(session_id: str, arrays: dict, is_binary_outcome: bool) -> dict:
+def _session_effect_size_translation(session_id: str, arrays: dict, is_binary_outcome: bool) -> dict:
     """arrays carries deviation, amplitude, spike_count, worse_behaviour, and (multi-object corpus only)
     item_count. Every quantity is computed per item-count level when item_count is present and combined
     across levels by the trial-count-weighted estimator; never pooled across level any other way."""
@@ -483,7 +483,7 @@ def _session_block_a(session_id: str, arrays: dict, is_binary_outcome: bool) -> 
     return {"session": session_id, "n_levels": len(groups), "per_level": per_level, "combined": combined}
 
 
-def _pool_block_a_combined(session_records: list[dict], key: str, sub: str | None = None) -> dict:
+def _pool_effect_size_translation_combined(session_records: list[dict], key: str, sub: str | None = None) -> dict:
     values = []
     for r in session_records:
         v = r["combined"][key] if sub is None else r["combined"][key][sub]
@@ -545,7 +545,7 @@ def _matched_contrast_reachability(decile_pooled: dict, matched_pooled: dict) ->
     }
 
 
-def _block_a_cv_branch(deviation_pooled: dict, amplitude_pooled: dict) -> str:
+def _effect_size_cv_branch(deviation_pooled: dict, amplitude_pooled: dict) -> str:
     dev_above, amp_above = _above_chance(deviation_pooled), _above_chance(amplitude_pooled)
     if dev_above and not amp_above:
         return ("accuracy_predicting_component_carries_held_out_single_trial_information_and_the_dominant_"
@@ -677,25 +677,25 @@ def _sign(value: float | None) -> int | None:
     return 0
 
 
-def run_block_a(corpus_key: str, session_records: list[dict], within_session: dict, between_session,
+def run_effect_size_translation(corpus_key: str, session_records: list[dict], within_session: dict, between_session,
                  reference: dict) -> dict:
     pooled = {
-        "decile_contrast": _pool_block_a_combined(session_records, "decile_contrast"),
-        "quintile_contrast_sensitivity": _pool_block_a_combined(session_records, "quintile_contrast"),
-        "spike_count_matched_decile_contrast": _pool_block_a_combined(
+        "decile_contrast": _pool_effect_size_translation_combined(session_records, "decile_contrast"),
+        "quintile_contrast_sensitivity": _pool_effect_size_translation_combined(session_records, "quintile_contrast"),
+        "spike_count_matched_decile_contrast": _pool_effect_size_translation_combined(
             session_records, "spike_count_matched_decile_contrast"),
         "cross_validated_discrimination": {
             p: {
-                "centred_on_chance": _pool_block_a_combined(
+                "centred_on_chance": _pool_effect_size_translation_combined(
                     session_records, "cross_validated_discrimination_centred_on_chance", p),
-                "raw": _pool_block_a_combined(session_records, "cross_validated_discrimination_raw", p),
-                "per_fold_not_pooled_across_folds": _pool_block_a_combined(
+                "raw": _pool_effect_size_translation_combined(session_records, "cross_validated_discrimination_raw", p),
+                "per_fold_not_pooled_across_folds": _pool_effect_size_translation_combined(
                     session_records, "cross_validated_discrimination_per_fold_not_pooled_across_folds", p),
             } for p in PREDICTORS
         },
         "cross_validated_discrimination_pooled_vs_per_fold_note": CROSS_VALIDATED_DISCRIMINATION_POOLED_VS_PER_FOLD_NOTE,
     }
-    branch = _block_a_cv_branch(
+    branch = _effect_size_cv_branch(
         pooled["cross_validated_discrimination"]["deviation"]["centred_on_chance"],
         pooled["cross_validated_discrimination"]["amplitude"]["centred_on_chance"],
     )
@@ -751,7 +751,7 @@ def run_block_a(corpus_key: str, session_records: list[dict], within_session: di
 
 
 # =======================================================================================================
-# Single-item macaque corpus -- loading, reproduction, Block A, Block B
+# Single-item macaque corpus -- loading, reproduction, effect-size translation, anatomical localisation
 # =======================================================================================================
 
 def _macaque_full_session(session: dict) -> dict | None:
@@ -818,10 +818,10 @@ def macaque_reproduction(root) -> dict:
     return _fit("macaque_reproduction_gate", lambda: reproduction_gate(root))
 
 
-def macaque_block_a(rows: list[dict]) -> dict:
+def macaque_effect_size_translation(rows: list[dict]) -> dict:
     computed = [r for r in rows if r["status"] == "computed"]
     reachable = [r for r in computed if r["n_error"] >= MIN_ERROR_TRIALS_FOR_REACHABILITY]
-    session_records = [_session_block_a(r["session"], r["arrays"], is_binary_outcome=True) for r in reachable]
+    session_records = [_session_effect_size_translation(r["session"], r["arrays"], is_binary_outcome=True) for r in reachable]
 
     # within-session: the same raw deviation-vs-is_corr correlation _macaque_analyze_session already
     # produced, sign-flipped once to the worse_behaviour convention (worse_behaviour = 1 - is_corr, so its
@@ -856,11 +856,11 @@ def macaque_block_a(rows: list[dict]) -> dict:
             "re-quoted here; see the top-level reproduction block for its exact value."
         ),
     }
-    return run_block_a("macaque_lPFC_single_item", session_records, within_session, between_session, reference)
+    return run_effect_size_translation("macaque_lPFC_single_item", session_records, within_session, between_session, reference)
 
 
 # =======================================================================================================
-# Multi-object macaque corpus -- loading, reproduction, Block A, Block B
+# Multi-object macaque corpus -- loading, reproduction, effect-size translation, anatomical localisation
 # =======================================================================================================
 
 def load_watters_corpus(root) -> tuple[int, list[dict], list[dict]]:
@@ -895,7 +895,7 @@ def _watters_deviation_arm(session: dict) -> dict:
     counting_noise.py, called unchanged, restricted to the primary unit-quality tier only (a unit-quality-
     tier sensitivity sweep is out of scope here) -- gives the gate, the raw association and every
     partial, pooled within item-count level exactly as the delivered artifact computes them, and is reused
-    for the reproduction check, Block A's within-session number and Block B's gate/behaviour pooling all at
+    for the reproduction check, the effect-size translation's within-session number and the anatomical localisation's gate/behaviour pooling all at
     once rather than recomputed three times."""
     counts = session["counts"]
     arrays, _excluded, usable = _observable_arrays(counts, session)
@@ -904,7 +904,7 @@ def _watters_deviation_arm(session: dict) -> dict:
     # This exact tag string -- not a name of this module's own choosing -- is required for a bit-exact
     # reproduction: _session_observable_arm's own permutation p-values depend on the seed derived from this
     # string (the observed r does not), and results/dissociation_replication_and_counting_noise.json's
-    # _analyse_watters_session_for_block_a built its per-session tag from its OWN module name, not this
+    # _analyse_watters_session_for_dissociation_replication built its per-session tag from its OWN module name, not this
     # one's. Reusing that literal tag is what makes the reproduction gate below exact rather than merely
     # close.
     tag = f"dissociation_replication_and_counting_noise|watters|{session['session']}|{PRIMARY_QUALITY_TIER}"
@@ -945,8 +945,8 @@ def watters_reproduction(deviation_arms: list[dict]) -> dict:
     }
 
 
-def watters_block_a(full_sessions: list[dict], deviation_arms: list[dict]) -> dict:
-    session_records = [_session_block_a(f["session"], f["arrays"], is_binary_outcome=False) for f in full_sessions]
+def watters_effect_size_translation(full_sessions: list[dict], deviation_arms: list[dict]) -> dict:
+    session_records = [_session_effect_size_translation(f["session"], f["arrays"], is_binary_outcome=False) for f in full_sessions]
 
     arm_by_session = {r["session"]: r["arm"] for r in deviation_arms if r["status"] == "computed"}
     within_values = [arm_by_session[s].get("within_load_trial_count_weighted", {}).get("raw_vs_report_error")
@@ -980,11 +980,11 @@ def watters_block_a(full_sessions: list[dict], deviation_arms: list[dict]) -> di
                 "the reproduction gate rather than re-quoted here; see the top-level reproduction block for "
                 "its exact value.",
     }
-    return run_block_a("macaque_multi_object", session_records, within_session, between_session_rows, reference)
+    return run_effect_size_translation("macaque_multi_object", session_records, within_session, between_session_rows, reference)
 
 
 # =======================================================================================================
-# Block B -- localisation by area (single-item corpus only) and by animal (both corpora)
+# Anatomical localisation -- by area (single-item corpus only) and by animal (both corpora)
 # =======================================================================================================
 
 def _macaque_group_cell(group_rows: list[dict]) -> dict:
@@ -1076,7 +1076,7 @@ def _localisation_branch(cells: dict[str, dict], label: str) -> dict:
             "underpowered_groups": list(underpowered), "pairwise_tests": pairwise}
 
 
-def macaque_block_b(rows: list[dict]) -> dict:
+def macaque_anatomical_localisation(rows: list[dict]) -> dict:
     by_animal = {"monkey_A": [], "monkey_H": [], "monkey_J": []}
     for r in rows:
         if r.get("animal") in by_animal:
@@ -1136,7 +1136,7 @@ def _watters_group_cell(subset_rows: list[dict], full_by_session: dict[str, dict
     }
 
 
-def watters_block_b(deviation_arms: list[dict], full_sessions: list[dict]) -> dict:
+def watters_anatomical_localisation(deviation_arms: list[dict], full_sessions: list[dict]) -> dict:
     full_by_session = {f["session"]: f for f in full_sessions}
     subsets = _subsets(deviation_arms)
     animal_groups = {k[len("animal_"):]: v for k, v in subsets.items() if k.startswith("animal_")}
@@ -1214,8 +1214,8 @@ def main() -> None:
             "excluded here on that already-measured precondition and are not treated as pending."
         ),
         "sign_convention": WORSE_BEHAVIOUR_SIGN_MAP,
-        "block_a_decision_rule_declared_before_fitting": BLOCK_A_TRANSLATION_DECISION_RULE_DECLARED_BEFORE_FITTING,
-        "block_b_decision_rule_declared_before_fitting": BLOCK_B_DECISION_RULE_DECLARED_BEFORE_FITTING,
+        "block_a_decision_rule_declared_before_fitting": EFFECT_SIZE_TRANSLATION_DECISION_RULE_DECLARED_BEFORE_FITTING,
+        "block_b_decision_rule_declared_before_fitting": ANATOMICAL_LOCALISATION_DECISION_RULE_DECLARED_BEFORE_FITTING,
         "status": "running",
     }
     _flush(output)
@@ -1265,7 +1265,7 @@ def main() -> None:
     _flush(output)
     _log(f"  -> {len(macaque_rows)} sessions, elapsed={time.time() - t0:.0f}s")
 
-    _log("loading multi-object corpus per-trial arrays for Block A")
+    _log("loading multi-object corpus per-trial arrays for the effect-size translation")
     watters_full_sessions = []
     for session in watters_loaded:
         full = _fit(f"watters_full_session|{session['session']}", lambda s=session: _watters_full_session(s))
@@ -1279,24 +1279,24 @@ def main() -> None:
     _flush(output)
     _log(f"  -> {len(watters_full_sessions)} sessions with a usable behavioural arm, elapsed={time.time() - t0:.0f}s")
 
-    _log("Block A: macaque translation")
-    output["block_a"] = {"macaque_lPFC_single_item": macaque_block_a(macaque_rows)}
+    _log("effect size translation: macaque")
+    output["block_a"] = {"macaque_lPFC_single_item": macaque_effect_size_translation(macaque_rows)}
     _flush(output)
     _log(f"  -> branch={output['block_a']['macaque_lPFC_single_item']['branch']}")
 
-    _log("Block A: multi-object macaque translation")
-    output["block_a"]["macaque_multi_object"] = watters_block_a(watters_full_sessions, watters_deviation_arms)
+    _log("effect size translation: multi-object macaque")
+    output["block_a"]["macaque_multi_object"] = watters_effect_size_translation(watters_full_sessions, watters_deviation_arms)
     _flush(output)
     _log(f"  -> branch={output['block_a']['macaque_multi_object']['branch']}")
 
-    _log("Block B: single-item macaque localisation")
-    output["block_b"] = {"macaque_lPFC_single_item": macaque_block_b(macaque_rows)}
+    _log("anatomical localisation: single-item macaque")
+    output["block_b"] = {"macaque_lPFC_single_item": macaque_anatomical_localisation(macaque_rows)}
     _flush(output)
     _log(f"  -> area={output['block_b']['macaque_lPFC_single_item']['area_split']['result']['branch']} "
          f"animal={output['block_b']['macaque_lPFC_single_item']['animal_split']['result']['branch']}")
 
-    _log("Block B: multi-object macaque localisation")
-    output["block_b"]["macaque_multi_object"] = watters_block_b(watters_deviation_arms, watters_full_sessions)
+    _log("anatomical localisation: multi-object macaque")
+    output["block_b"]["macaque_multi_object"] = watters_anatomical_localisation(watters_deviation_arms, watters_full_sessions)
     _flush(output)
     _log(f"  -> animal={output['block_b']['macaque_multi_object']['animal_split']['result']['branch']}")
 

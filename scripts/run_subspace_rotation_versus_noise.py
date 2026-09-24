@@ -1,4 +1,4 @@
-"""results/alignment_below_null_diagnostic.json reports, per (corpus, candidate) cell, the overlap
+"""The alignment-below-null diagnostic reports, per (corpus, candidate) cell, the overlap
 between a candidate subspace fit on a session's early half and the same subspace fit on its late
 half. Those overlaps are low everywhere (roughly 0.07-0.60 across the twelve cells it computed).
 Low across-half overlap is consistent with the candidate subspace rotating within a session, but it
@@ -42,7 +42,7 @@ for part in ("src", "scripts"):
 
 from corpus_sessions import data_root, independent_unit  # noqa: E402
 from geometry import subspace_overlap  # noqa: E402
-from provenance import _json_safe, git_commit  # noqa: E402
+from provenance import _json_safe, git_commit, restore_checkpoint  # noqa: E402
 from run_alignment_below_null_diagnostic import (  # noqa: E402
     OUTPUT_PATH as DELIVERED_DIAGNOSTIC_OUTPUT_PATH,
     REPRODUCTION_TOLERANCE, _pool_unit_scalars, _prepare_trials, _rotation,
@@ -54,7 +54,7 @@ from subspace_identity import block_folds, class_basis, regression_basis  # noqa
 
 OUTPUT_PATH = ROOT / "results" / "subspace_rotation_versus_noise.json"
 CHECKPOINT_DIR = ROOT / "results" / ".checkpoints" / "run_subspace_rotation_versus_noise"
-SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION = "1.1"
 VERSION = "2026-09-18"
 SEED_NAMESPACE = f"subspace_rotation_versus_noise|{VERSION}"
 WITHIN_HALF_BOOTSTRAP_DRAWS = 200
@@ -98,7 +98,7 @@ def _checkpoint(key: str, identity: dict, fit):
     if path.exists():
         try:
             cached = json.loads(path.read_text())
-            record = cached.get("record")
+            record = restore_checkpoint(cached.get("record"))
             if cached.get("identity") == identity and cached.get("complete") is True and isinstance(record, dict):
                 return record
         except (OSError, UnicodeDecodeError, json.JSONDecodeError):
@@ -332,29 +332,22 @@ def _summarize(cells: dict, meaningful_difference: float) -> dict:
     counts = {}
     for row in table:
         counts[row["branch"]] = counts.get(row["branch"], 0) + 1
-    if counts.get("rotates_beyond_noise", 0) and not any(
-        b in counts for b in ("noise_explains_low_overlap", "undetermined_underpowered", "undetermined_unexpected_direction")
-    ):
-        overall = "the subspace rotates within a session beyond what estimation noise explains, in every cell this reaches"
-    elif counts.get("rotates_beyond_noise", 0):
-        overall = (
-            f"{counts.get('rotates_beyond_noise', 0)} of {len(table)} cells show across-half overlap reliably below the "
-            "matched within-half noise reference (rotation beyond noise); the rest do not clear the same bar -- "
-            "this is a cell-specific pattern, not a general one"
-        )
-    elif counts.get("noise_explains_low_overlap", 0) and not counts.get("rotates_beyond_noise", 0) and not counts.get("undetermined_underpowered", 0) and not counts.get("undetermined_unexpected_direction", 0):
-        overall = "estimation noise at a matched sample size explains the low across-half overlap in every cell this reaches"
-    else:
-        overall = (
-            f"of {len(table)} cells, {counts.get('rotates_beyond_noise', 0)} rotate beyond noise, "
-            f"{counts.get('noise_explains_low_overlap', 0)} are at parity with the noise reference, and the "
-            f"remainder ({counts.get('undetermined_underpowered', 0) + counts.get('undetermined_unexpected_direction', 0) + counts.get('undetermined_below_four_independent_unit_floor', 0)}) "
-            "are undetermined -- the data do not support one general answer across all twelve cells"
-        )
+    overall = (
+        f"per-cell contrast of across-half overlap against a within-half bootstrap reference, {len(table)} cells; "
+        "the reference draws two resamples from a single half and shares most trials between them, so it is not "
+        "matched to the across-half comparison on sample independence -- this artifact draws no across-cell rotation "
+        "conclusion; the sample-size-matched rotation test holds the sample-size- and disjointness-matched "
+        "references and their own overall statement"
+    )
     return {
         "cell_table": table,
         "n_cells_tested": len(table),
         "branch_counts": counts,
+        "reference_independence_caveat": (
+            "the within-half bootstrap reference is not matched to the across-half comparison on sample "
+            "independence: its two draws are resampled from the same half's trials and mostly overlap, unlike "
+            "the disjoint references in the sample-size-matched rotation test"
+        ),
         "overall_statement": overall,
     }
 
@@ -398,7 +391,7 @@ def main() -> None:
 
     decision_rules = {
         "cells_under_test": (
-            "every (corpus, candidate) cell results/alignment_below_null_diagnostic.json computed an "
+            "every (corpus, candidate) cell the alignment-below-null diagnostic computed an "
             "early-to-late subspace overlap for -- the same twelve cells, not a subset picked after "
             "seeing which look most or least rotated"
         ),
@@ -475,8 +468,8 @@ def main() -> None:
         ),
         "pooling": (
             "sessions are averaged with equal weight within their own independent unit, then independent "
-            "units are averaged with equal weight, identical to results/rank_free_component_identity.json "
-            "and results/alignment_below_null_diagnostic.json's own pooling"
+            "units are averaged with equal weight, identical to the cross-animal component-identity "
+            "estimate and the alignment-below-null diagnostic's own pooling"
         ),
         "no_ranking": (
             "no corpus, candidate, or estimator is described as outperforming another; only each cell's "
@@ -488,7 +481,7 @@ def main() -> None:
         "schema_version": SCHEMA_VERSION,
         "status": "running",
         "question": (
-            "does the low early-to-late subspace overlap results/alignment_below_null_diagnostic.json "
+            "does the low early-to-late subspace overlap the alignment-below-null diagnostic "
             "reports reflect the candidate subspace rotating within a session, or is it explained by "
             "estimation noise at the sample size each half's fit uses"
         ),
@@ -520,7 +513,7 @@ def main() -> None:
         ]
         output["summary"] = {
             "overall_statement": (
-                "undetermined: reproduction of results/alignment_below_null_diagnostic.json's early-to-late "
+                "undetermined: reproduction of the alignment-below-null diagnostic's early-to-late "
                 f"overlap did not match within tolerance for {failed}; nothing downstream is interpretable "
                 "until that is resolved, so no rotation-versus-noise verdict is reported"
             ),

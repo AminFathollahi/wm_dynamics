@@ -90,19 +90,20 @@ from run_deviation_serial_dependence_and_temporal_locus import (  # noqa: E402
     MACAQUE_DEVIATION_RAW_R as _MACAQUE_DELIVERED_RAW_R, WATTERS_DEVIATION_RAW_R as _WATTERS_DELIVERED_RAW_R,
 )
 from run_dissociation_cross_preparation_test import MIN_TRIALS_WITH_DEFINED_DIRECTION  # noqa: E402
+from sklearn.decomposition import PCA  # noqa: E402
 from run_rate_free_state_geometry_behavior_link import (  # noqa: E402
     MEANINGFUL_EFFECT_THRESHOLD_R_UNITS, rate_free_state_deviation,
 )
 from run_watters_state_geometry import MIN_TRIALS_FOR_BEHAVIOURAL_CORRELATION  # noqa: E402
 from state_persistence import slope_across_sessions_test  # noqa: E402
 from statistics import (  # noqa: E402
-    fdr_bh, minimum_detectable_paired_difference, partial_correlation_permutation_test, permutation_pvalue,
-    stable_seed,
+    bootstrap_ci, fdr_bh, minimum_detectable_paired_difference, partial_correlation_permutation_test,
+    permutation_pvalue, stable_seed,
 )
 
 OUTPUT_PATH = ROOT / "results" / "deviation_axis_structure.json"
 CHECKPOINT_DIR = ROOT / "results" / ".checkpoints" / "run_deviation_axis_structure"
-ANALYSIS_VERSION = "2026-08-24"
+ANALYSIS_VERSION = "2026-09-24"
 
 N_PERM = 10000
 N_ROTATION_DRAWS = 1000
@@ -1113,6 +1114,44 @@ def _cv_pca_rank(U: np.ndarray, max_k: int, seed_tag: str) -> dict:
             "cv_reconstruction_error": errors.tolist(), "best_k": candidate_ks[best_idx]}
 
 
+def _ppca_heldout_rank(U: np.ndarray, max_k: int, seed_tag: str) -> dict:
+    """Held-out average log-likelihood under probabilistic PCA, over the same folds and candidate ks
+    _cv_pca_rank uses. Unlike nested-subspace reconstruction error, this can fall as k grows past the
+    informative rank (an overfit noise variance makes held-out points implausible), so its argmax need
+    not sit at the training-fold rank ceiling."""
+    n = U.shape[0]
+    if max_k < 1 or n < N_CV_FOLDS * MIN_FOLD_TRIALS:
+        return {"status": "not_estimable"}
+    folds = _contiguous_folds(n, N_CV_FOLDS)
+    candidate_ks = list(range(1, max_k + 1))
+    loglik = np.zeros(len(candidate_ks))
+    n_folds_used = 0
+    for f in range(N_CV_FOLDS):
+        train, test = folds != f, folds == f
+        if int(train.sum()) < 4 or not test.any():
+            continue
+        n_folds_used += 1
+        train_rank_ceiling = min(train.sum() - 1, U.shape[1])
+        for i, k in enumerate(candidate_ks):
+            k_eff = min(k, train_rank_ceiling)
+            if k_eff < 1:
+                continue
+            try:
+                score = PCA(n_components=int(k_eff)).fit(U[train]).score(U[test])
+            except (np.linalg.LinAlgError, ValueError):
+                # a noise-free fit (k_eff at the training-fold rank ceiling) makes the
+                # precision matrix singular; that is itself the ceiling reading this
+                # selector is built to expose, so it counts as an infinitely poor fit.
+                score = -np.inf
+            loglik[i] += float(score) if np.isfinite(score) else -np.inf
+    if n_folds_used == 0:
+        return {"status": "not_estimable"}
+    mean_loglik = (loglik / n_folds_used).tolist()
+    best_idx = int(np.argmax(loglik))
+    return {"status": "computed", "n_folds_used": n_folds_used, "candidate_ks": candidate_ks,
+            "heldout_mean_loglik_by_k": mean_loglik, "best_k": candidate_ks[best_idx]}
+
+
 def _occupied_space_decomposition(U: np.ndarray, axis: np.ndarray, k: int, n_draws: int, seed_tag: str) -> dict:
     n, p = U.shape
     k_eff = min(k, min(n, p))
@@ -1132,9 +1171,14 @@ def _occupied_space_decomposition(U: np.ndarray, axis: np.ndarray, k: int, n_dra
     null_off = 1.0 - np.sum(w ** 2, axis=1)
     null_mean = float(np.mean(null_off))
     p_value = float(permutation_pvalue(np.abs(null_off - null_mean) >= abs(off_frac - null_mean)))
+    null_within = 1.0 - null_off
+    null_within_ci95 = [float(v) for v in np.percentile(null_within, [2.5, 97.5])]
     return {
         "status": "computed", "k": k_eff, "within_fraction": within_frac, "off_fraction": off_frac,
         "null_off_fraction_mean": null_mean, "null_off_fraction_sd": float(np.std(null_off)),
+        "null_within_fraction_mean": float(np.mean(null_within)),
+        "null_within_fraction_ci95pct": null_within_ci95,
+        "within_fraction_minus_null_mean": float(within_frac - np.mean(null_within)),
         "two_sided_p_value": p_value, "off_fraction_above_null": bool(p_value <= 0.05 and off_frac > null_mean),
         # kept for pooling across sessions; stripped from the stored per-level furniture
         "null_off_fraction_draws": null_off,
@@ -1238,10 +1282,20 @@ def run_occupied_space_block(bundles: list[dict], corpus_key: str) -> dict:
             if cv.get("status") != "computed":
                 level_results.append({"status": "not_separable_at_the_available_dimensionality", "n_trials": n_trials, "level": level})
                 continue
+            ppca_rank = _ppca_heldout_rank(U, max_k, f"{tag_base}|ppca")
             primary = _occupied_space_decomposition(U, axis, cv["best_k"], N_RANDOM_AXIS_DRAWS, f"{tag_base}|primary")
             full_rank = _occupied_space_decomposition(U, axis, max_k, N_RANDOM_AXIS_DRAWS, f"{tag_base}|full")
-            level_results.append({"status": "computed", "n_trials": n_trials, "level": level, "cv_rank": cv,
-                                   "primary_at_cv_rank": primary, "full_rank_sensitivity": full_rank})
+            at_ppca_rank = (
+                _occupied_space_decomposition(U, axis, ppca_rank["best_k"], N_RANDOM_AXIS_DRAWS,
+                                              f"{tag_base}|ppca_rank")
+                if ppca_rank.get("status") == "computed" else {"status": "not_estimable"})
+            level_results.append({
+                "status": "computed", "n_trials": n_trials, "level": level, "cv_rank": cv,
+                "ppca_heldout_loglik_rank": ppca_rank,
+                "cv_rank_at_reachable_ceiling": bool(cv["best_k"] == max_k),
+                "primary_at_cv_rank": primary, "full_rank_sensitivity": full_rank,
+                "at_ppca_heldout_rank": at_ppca_rank,
+            })
         computed_levels = [r for r in level_results if r.get("status") == "computed"
                             and r["primary_at_cv_rank"].get("status") == "computed"]
         if not computed_levels:
@@ -1256,6 +1310,18 @@ def run_occupied_space_block(bundles: list[dict], corpus_key: str) -> dict:
         session_null_draws = _weighted_combine_draws(
             [(r["n_trials"], r["primary_at_cv_rank"]["null_off_fraction_draws"])
              for r in computed_levels if r["primary_at_cv_rank"].get("null_off_fraction_draws") is not None])
+        ppca_rank_levels = [r for r in computed_levels if r["at_ppca_heldout_rank"].get("status") == "computed"]
+        session_at_ppca_rank = None
+        if ppca_rank_levels:
+            session_at_ppca_rank = {
+                "within_fraction": _trial_count_weighted(
+                    [(r["n_trials"], r["at_ppca_heldout_rank"]["within_fraction"]) for r in ppca_rank_levels]),
+                "null_within_fraction_mean": _trial_count_weighted(
+                    [(r["n_trials"], r["at_ppca_heldout_rank"]["null_within_fraction_mean"]) for r in ppca_rank_levels]),
+                "within_fraction_minus_null_mean": _trial_count_weighted(
+                    [(r["n_trials"], r["at_ppca_heldout_rank"]["within_fraction_minus_null_mean"])
+                     for r in ppca_rank_levels]),
+            }
         per_session.append({
             "session": session, "status": "computed",
             "levels": [{k: ({kk: vv for kk, vv in v.items() if kk != "null_off_fraction_draws"}
@@ -1263,6 +1329,7 @@ def run_occupied_space_block(bundles: list[dict], corpus_key: str) -> dict:
                         for k, v in r.items()} for r in level_results],
             "off_fraction": off_fraction, "null_off_fraction_mean": null_mean,
             "off_fraction_above_null": bool(any_above_null),
+            "at_ppca_heldout_rank": session_at_ppca_rank,
         })
         # the draw arrays ride outside the stored record so the pooled matched-null test can use them
         # without inflating the artifact; stripped again below before writing.
@@ -1278,6 +1345,28 @@ def run_occupied_space_block(bundles: list[dict], corpus_key: str) -> dict:
     comparison = pooled_off_fraction_against_matched_null(computed)
     branch = classify_occupied_space_branch(comparison)
 
+    ppca_rank_sessions = [s["at_ppca_heldout_rank"] for s in computed if s.get("at_ppca_heldout_rank")]
+    within_minus_null_at_ppca_rank = [s["within_fraction_minus_null_mean"] for s in ppca_rank_sessions]
+    if len(within_minus_null_at_ppca_rank) >= 2:
+        point, ci_lo, ci_hi = bootstrap_ci(
+            np.asarray(within_minus_null_at_ppca_rank), lambda d: float(np.mean(d)), n_boot=2000,
+            rng=np.random.default_rng(stable_seed(f"deviation_axis_structure|occupied_space|{corpus_key}|ppca_rank_pool")))
+        occupied_fraction_at_identifiable_rank = {
+            "status": "computed", "n_sessions": len(within_minus_null_at_ppca_rank),
+            "observed_within_fraction_mean": float(np.mean([s["within_fraction"] for s in ppca_rank_sessions])),
+            "null_within_fraction_mean": float(np.mean([s["null_within_fraction_mean"] for s in ppca_rank_sessions])),
+            "within_fraction_minus_null_mean": point,
+            "session_cluster_interval_95pct": [ci_lo, ci_hi],
+        }
+    else:
+        occupied_fraction_at_identifiable_rank = {"status": "not_computable",
+                                                   "n_sessions": len(within_minus_null_at_ppca_rank)}
+
+    all_levels = [lvl for s in per_session for lvl in s.get("levels", []) if lvl.get("status") == "computed"]
+    n_cells_at_ceiling = sum(1 for lvl in all_levels if lvl.get("cv_rank_at_reachable_ceiling"))
+    ppca_ranks = [lvl["ppca_heldout_loglik_rank"]["best_k"] for lvl in all_levels
+                  if lvl.get("ppca_heldout_loglik_rank", {}).get("status") == "computed"]
+
     return {
         "decision_rule_declared_before_fitting": OCCUPIED_SPACE_DECISION_RULE_DECLARED_BEFORE_FITTING,
         "n_sessions_total": len(bundles), "n_sessions_computed": len(computed),
@@ -1285,6 +1374,16 @@ def run_occupied_space_block(bundles: list[dict], corpus_key: str) -> dict:
         "per_session": [{k: v for k, v in s.items() if k != "null_draws"} for s in per_session],
         "pooled_off_fraction": pooled,
         "pooled_observed_vs_matched_null": comparison, "branch": branch,
+        "occupied_fraction_at_identifiable_rank": occupied_fraction_at_identifiable_rank,
+        "n_cells_computed": len(all_levels),
+        "n_cells_stored_cv_rank_at_reachable_ceiling": n_cells_at_ceiling,
+        "ppca_heldout_loglik_rank_distribution": {
+            "n_cells_computed": len(ppca_ranks),
+            "values": sorted(ppca_ranks),
+            "min": min(ppca_ranks) if ppca_ranks else None,
+            "median": float(np.median(ppca_ranks)) if ppca_ranks else None,
+            "max": max(ppca_ranks) if ppca_ranks else None,
+        },
     }
 
 
@@ -1457,7 +1556,7 @@ def human_footprint_block() -> dict:
             "stimulation_summary_read_live_from_the_delivered_artifact": stim_summary,
             "precisely_what_is_missing": (
                 "The ingredients exist and are reusable unchanged: run_human_stimulation_component_response."
-                "compute_block_b_displacement already returns, per session and per channel condition, the "
+                "compute_stimulation_displacement already returns, per session and per channel condition, the "
                 "control-trial activity and the fixed reference direction the stimulated trials are scored "
                 "against, in the session's own bipolar-channel coordinate basis. What is missing is this "
                 "leg's own occupied-space machinery (_cv_pca_rank / _occupied_space_decomposition) applied "

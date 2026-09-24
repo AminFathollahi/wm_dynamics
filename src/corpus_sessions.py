@@ -26,17 +26,14 @@ Epoch anchoring:
     maintenance [-3,0] s relative to the probe, i.e. maintenance onset =
     trial start_time + 3.0 s) -- reused here to derive all four epoch onsets
     from start_time.
-  - DANDI 000004 (Chandravadia new/old recognition) is out of scope for this
-    module for now, though NOT for the reason its task design would suggest:
-    its trial table does carry a genuine maintenance interval
-    (delay1_time to delay2_time, ~2.2 s, after a ~1.0 s stim_on/stim_off
-    encoding period), so a delay epoch is meaningful here. What is actually
-    missing is region-label support: its electrode `location` field uses a
-    "{Hemisphere} {Structure}" convention ("Right Hippocampus") that neither
-    of this project's existing parsers (`nwb_structure_hemisphere_suffix`,
-    `nwb_boran_brainnetome_hybrid`) recognizes, and it is not yet registered
-    in config/datasets.json. Both are a scoped follow-up, not a property of
-    the task.
+  - DANDI 000004 (Chandravadia new/old recognition, ``iter_dandi_000004``):
+    its trial table carries a genuine maintenance interval (delay1_time to
+    delay2_time, ~2.2 s median on the admitted recognition trials, after a
+    ~1.0 s stim_on/stim_off encoding period). Region labels resolve through
+    the existing `nwb_hemisphere_prefixed_structure` parser (its electrode
+    `location` field uses a "{Hemisphere} {Structure}" convention, e.g.
+    "Right Hippocampus"). Hippocampus and amygdala are yielded as separate
+    entries and are never pooled with each other.
 """
 
 from __future__ import annotations
@@ -71,6 +68,7 @@ from spike_pipeline import (  # noqa: E402
     low_rate_unit_mask,
     resolve_unit_regions,
 )
+from preprocessing import high_gamma_power  # noqa: E402
 from run_human_drift_spine_001187_000673 import canonical_sessions, _trial_group  # noqa: E402
 from run_watters_source_replication import add_behavior_columns  # noqa: E402
 from project_config import data_root as configured_data_root, load_dataset_registry  # noqa: E402
@@ -78,7 +76,10 @@ from project_config import data_root as configured_data_root, load_dataset_regis
 MIN_TRIALS = 20
 MIN_UNITS_POOLED = 15
 EPOCH_WINDOWS_S = {"baseline": 0.5, "encoding": 0.5, "delay": 2.3, "probe": 0.5}
+DANDI_000574_PROBE_OFFSET_S = 6.0
 BORAN_EPOCH_WINDOWS_S = {"baseline": 1.0, "encoding": 2.0, "delay": 3.0, "probe": 0.5}
+DANDI_000004_EPOCH_WINDOWS_S = {"delay": 1.0}
+DANDI_000004_RESPONSE_RANGE = np.arange(31, 37)
 
 ALM_WINDOW_S = 2.0
 ALM_MIN_UNITS = 15
@@ -185,7 +186,7 @@ def iter_dandi_000574(root: Path):
             if keep.sum() < MIN_TRIALS:
                 continue
             start = start_time[keep]
-            epoch_onsets = {"baseline": start + 0.0, "encoding": start + 1.0, "delay": start + 3.0, "probe": start + 6.0}
+            epoch_onsets = {"baseline": start + 0.0, "encoding": start + 1.0, "delay": start + 3.0, "probe": start + DANDI_000574_PROBE_OFFSET_S}
             for region in BORAN_REGIONS_WITH_POOLED:
                 spike_lists = region_filtered_units(spike_lists_all, unit_regions, region, epoch_onsets["delay"], BORAN_EPOCH_WINDOWS_S["delay"])
                 if spike_lists is None:
@@ -198,6 +199,56 @@ def iter_dandi_000574(root: Path):
                                                    "NWB release (see run_human_drift_spine_000574.py's own "
                                                    "item_identity_available=False finding); no per-trial item "
                                                    "identity label exists for this corpus.",
+                }
+
+
+def iter_dandi_000004(root: Path):
+    from run_dandi_000004_recognition_generalization import recognition_correct
+
+    directory = root / "000004"
+    required_columns = (
+        "stim_phase", "new_old_labels_recog", "response_value", "response_time",
+        "delay1_time", "delay2_time", "stimCategory",
+    )
+    for subject_dir in sorted(directory.glob("sub-*")):
+        for path in sorted(subject_dir.glob("*.nwb")):
+            with h5py.File(path, "r") as handle:
+                if "units" not in handle or "intervals/trials" not in handle:
+                    continue
+                trials = handle["intervals/trials"]
+                if not all(column in trials for column in required_columns):
+                    continue
+                spike_lists_all = load_spike_times(handle)
+                unit_regions = resolve_unit_regions(handle, "nwb_hemisphere_prefixed_structure")["region"]
+                phase = np.array([v.decode() if isinstance(v, bytes) else str(v) for v in trials["stim_phase"][:]])
+                labels = np.array([v.decode() if isinstance(v, bytes) else str(v) for v in trials["new_old_labels_recog"][:]])
+                responses = trials["response_value"][:].astype(float)
+                response_time = trials["response_time"][:].astype(float)
+                delay1 = trials["delay1_time"][:].astype(float)
+                delay2 = trials["delay2_time"][:].astype(float)
+                stim_category = trials["stimCategory"][:].astype(float)
+            candidate = (
+                (phase == "recog") & np.isin(labels, ("0", "1")) & np.isin(responses, DANDI_000004_RESPONSE_RANGE)
+                & np.isfinite(delay1) & np.isfinite(delay2) & np.isfinite(response_time)
+            )
+            if candidate.sum() < MIN_TRIALS:
+                continue
+            accuracy = recognition_correct(labels[candidate], responses[candidate])
+            epoch_onsets = {"delay": delay1[candidate]}
+            memorandum_content = stim_category[candidate]
+            response_time_admitted = response_time[candidate]
+            for region in ("hippocampus", "amygdala"):
+                spike_lists = region_filtered_units(
+                    spike_lists_all, unit_regions, region, epoch_onsets["delay"], DANDI_000004_EPOCH_WINDOWS_S["delay"]
+                )
+                if spike_lists is None:
+                    continue
+                yield {
+                    "dataset": "dandi_000004", "patient": subject_dir.name, "session": path.stem, "structure": region,
+                    "spike_lists": spike_lists, "epoch_onsets": epoch_onsets, "epoch_windows": DANDI_000004_EPOCH_WINDOWS_S,
+                    "memorandum_content": memorandum_content, "memorandum_content_field": "stimCategory",
+                    "accuracy": accuracy, "accuracy_field": "response_value",
+                    "response_time": response_time_admitted,
                 }
 
 
@@ -511,7 +562,237 @@ def iter_watters(root: Path, bin_ms: float = 100.0, quality_tiers: tuple[str, ..
         yield {**session, "behavioural_task_variant": variant}
 
 
+SCALP_EEG_DELAY_BINS = 6
+SCALP_EEG_BROADBAND_HZ = (1.0, 40.0)
+
+
+def _scalp_delay_bin_power(data_tc: np.ndarray, srate: float, onset_samples: np.ndarray,
+                            window_s: float, n_bins: int) -> np.ndarray:
+    """(trials, channels, bins) broadband Hilbert-envelope power, uniformly binned over a fixed
+    post-onset window -- the scalp-EEG analogue of the binned spike-count tensors iter_alm and
+    iter_watters hand back, built from preprocessing.high_gamma_power (bandpass then Hilbert
+    envelope) with its band widened to 1-40 Hz and its smoothing disabled. Filtered one short,
+    padded per-trial buffer at a time (not the whole multi-thousand-second continuous recording at
+    once, as an earlier version of this function did) -- the same per-trial-buffer discipline
+    scripts/run_ds005034_tacs_aftereffect.py already uses, and the reason this function needed
+    only a few MB per trial rather than the several GB a whole-session bandpass+Hilbert holds."""
+    bin_samples = int(round(window_s * srate / n_bins))
+    window_samples = bin_samples * n_bins
+    pad = int(round(0.5 * srate))
+    n_channels = data_tc.shape[1]
+    out = np.full((len(onset_samples), n_channels, n_bins), np.nan)
+    for trial, start in enumerate(onset_samples):
+        lo, hi = start - pad, start + window_samples + pad
+        if lo < 0 or hi > data_tc.shape[0]:
+            continue
+        power = high_gamma_power(data_tc[lo:hi], srate, lo=SCALP_EEG_BROADBAND_HZ[0],
+                                  hi=SCALP_EEG_BROADBAND_HZ[1], smooth_ms=0.0)
+        trimmed = power[pad:pad + window_samples]
+        out[trial] = trimmed.reshape(n_bins, bin_samples, n_channels).mean(axis=1).T
+    return out
+
+
+def iter_ds005034(root: Path):
+    """Yields per-session dicts for the healthy-participant scalp-EEG theta-tACS working-memory
+    release (config/datasets.json 'ds005034'): one entry per participant/session with an actual
+    memory-task EEG recording on disk. Delay window and onset offset (0.5-6.5 s post task/load
+    marker) reuse scripts/run_ds005034_tacs_aftereffect.py's own convention, and its EVENT_MAP /
+    load_events are imported unchanged rather than re-implemented. No per-trial item identity or
+    behavioural outcome exists in this corpus's public release (see config/datasets.json)."""
+    from run_ds005034_tacs_aftereffect import load_events
+
+    directory = root / "ds005034"
+    for subject_dir in sorted(directory.glob("sub-*")):
+        for session in ("sham", "verum"):
+            eeg_dir = subject_dir / f"ses-{session}" / "eeg"
+            set_path = eeg_dir / f"{subject_dir.name}_ses-{session}_task-memory_eeg.set"
+            if not set_path.is_file():
+                continue
+            events_path = eeg_dir / f"{subject_dir.name}_ses-{session}_task-memory_events.tsv"
+            channels_path = eeg_dir / f"{subject_dir.name}_ses-{session}_task-memory_channels.tsv"
+            events = load_events(events_path)
+            if len(events) < MIN_TRIALS:
+                continue
+            channel_names = pd.read_csv(channels_path, sep="\t")["name"].tolist()
+            payload = loadmat(set_path, variable_names=("data", "srate"), squeeze_me=True)
+            data_tc = np.asarray(payload["data"], dtype=np.float64).T
+            srate = float(payload["srate"])
+            onset_samples = np.array([int(round((event["onset"] + 0.5) * srate)) for event in events])
+            counts = _scalp_delay_bin_power(data_tc, srate, onset_samples, window_s=6.0, n_bins=SCALP_EEG_DELAY_BINS)
+            keep = np.isfinite(counts).all(axis=(1, 2))
+            if keep.sum() < MIN_TRIALS:
+                continue
+            yield {
+                "dataset": "ds005034", "patient": subject_dir.name,
+                "session": f"{subject_dir.name}_ses-{session}", "structure": "scalp",
+                "channel_names": channel_names, "counts": counts[keep],
+                "task_condition": np.array([event["task"] for event in events])[keep],
+                "load": np.array([event["load"] for event in events], dtype=float)[keep],
+                "stimulation_session": session, "memorandum_content": None, "accuracy": None,
+                "item_id_unavailable_reason": "no per-trial item identity is recorded in this "
+                                               "corpus's public BIDS release",
+                "accuracy_unavailable_reason": "no trial-level behavioural outcome is recorded in "
+                                                "this corpus's public BIDS release; it exists only "
+                                                "on a separate OSF repository (config/datasets.json)",
+            }
+
+
+def iter_ds006848(root: Path):
+    """Yields per-session dicts for the healthy-participant scalp-EEG verbal working-memory
+    (digit-span) release (config/datasets.json 'ds006848'): one entry per participant, all 30 of
+    which carry both an EEG recording and trial-level behaviour. The 6.0 s retention window is
+    exact on every trial (Retention_* to Digits_Retrieval, verified against the raw event table,
+    no intervening events). memorandum_content is the first digit of the presented sequence."""
+    import mne
+
+    directory = root / "ds006848"
+    retention_codes = {28: "Simultaneous", 40: "Fast", 60: "Fast+delay", 100: "Slow"}
+    for subject_dir in sorted(directory.glob("sub-*")):
+        vhdr_path = subject_dir / "eeg" / f"{subject_dir.name}_task-verbalwm_eeg.vhdr"
+        beh_path = subject_dir / "beh" / f"{subject_dir.name}_task-verbalwm_beh.tsv"
+        events_path = subject_dir / "eeg" / f"{subject_dir.name}_task-verbalwm_events.tsv"
+        channels_path = subject_dir / "eeg" / f"{subject_dir.name}_task-verbalwm_channels.tsv"
+        if not (vhdr_path.is_file() and beh_path.is_file() and events_path.is_file()):
+            continue
+        eeg_channel_names = pd.read_csv(channels_path, sep="\t")
+        eeg_channel_names = eeg_channel_names.loc[eeg_channel_names["type"] == "EEG", "name"].tolist()
+        raw = mne.io.read_raw_brainvision(str(vhdr_path), preload=True, verbose="ERROR")
+        raw.pick(picks=eeg_channel_names)
+        srate = float(raw.info["sfreq"])
+        data_tc = raw.get_data().T * 1e6
+        events = pd.read_csv(events_path, sep="\t")
+        beh = pd.read_csv(beh_path, sep="\t")
+        onset_samples, conditions, memorandum, ncorrect, partial, trigger_correct = [], [], [], [], [], []
+        next_row = {name: 0 for name in retention_codes.values()}
+        for _, event in events[events["value"].isin(retention_codes)].iterrows():
+            condition = retention_codes[int(event["value"])]
+            rows = beh[beh["condition"] == condition]
+            row_index = next_row[condition]
+            if row_index >= len(rows):
+                continue
+            next_row[condition] += 1
+            row = rows.iloc[row_index]
+            onset_samples.append(int(round(float(event["onset"]) * srate)))
+            conditions.append(condition)
+            memorandum.append(int(str(row["sequence"])[0]))
+            ncorrect.append(int(row["NCorrect"]))
+            partial.append(int(row["partialScore"]))
+            trigger_correct.append(str(row["triggerCorrect"]))
+        onset_samples = np.asarray(onset_samples, dtype=int)
+        if len(onset_samples) < MIN_TRIALS:
+            continue
+        counts = _scalp_delay_bin_power(data_tc, srate, onset_samples, window_s=6.0, n_bins=SCALP_EEG_DELAY_BINS)
+        keep = np.isfinite(counts).all(axis=(1, 2))
+        if keep.sum() < MIN_TRIALS:
+            continue
+        yield {
+            "dataset": "ds006848", "patient": subject_dir.name, "session": f"{subject_dir.name}_verbalwm",
+            "structure": "scalp", "channel_names": eeg_channel_names, "counts": counts[keep],
+            "task_condition": np.asarray(conditions)[keep],
+            "memorandum_content": np.asarray(memorandum, dtype=float)[keep],
+            "accuracy_ncorrect": np.asarray(ncorrect, dtype=float)[keep],
+            "accuracy_partial_score": np.asarray(partial, dtype=float)[keep],
+            "accuracy_trigger_correct": np.asarray(trigger_correct)[keep],
+        }
+
+
 def iter_all_corpora(root: Path):
     yield from iter_dandi_000469(root)
     yield from iter_dandi_001187(root)
     yield from iter_dandi_000574(root)
+
+
+PFC4_DELAY_WINDOW_S = 3.0
+PFC4_MIN_UNITS = 2
+PFC4_MIN_UNIT_RATE_HZ = 0.1
+
+
+def pfc4_data_directory(root: Path) -> Path:
+    """Directory of the CRCNS pfc-4 (Romo somatosensory delay task) release,
+    one animal per top-level subfolder, matching the ALM/Watters resolution
+    pattern for a non-NWB release."""
+    config = load_dataset_registry()
+    local_path = config["datasets"]["pfc4"]["local_path"]
+    return root / local_path
+
+
+def load_pfc4_raw_session(path: Path, bin_ms: float = 100.0, window_s: float = PFC4_DELAY_WINDOW_S) -> dict | None:
+    """Raw delay-epoch spike counts for one pfc-4 session, aligned to the end
+    of the F1 stimulus (`SF1`) through the start of F2 (`SO2`) -- the
+    stimulus-free retention interval of this task. Each trial's up-to-7 spike
+    cells are already trial-relative (no session-wide clock), unlike the
+    NWB-backed iterators above, so counts are built per trial like the ALM
+    loader rather than via `build_psth`."""
+    result = loadmat(path, squeeze_me=True, struct_as_record=False)["result"]
+    header = list(result[0])
+    hit_col, f1_col, f2_col = header.index("hit"), header.index("f1"), header.index("f2")
+    spikes_col, sf1_col, so2_col = header.index("spikes"), header.index("SF1"), header.index("SO2")
+    starts = np.arange(0.0, window_s, bin_ms / 1000.0)
+    trials = []
+    for r in range(1, result.shape[0]):
+        row = result[r]
+        sf1, so2 = np.atleast_1d(row[sf1_col]), np.atleast_1d(row[so2_col])
+        if sf1.size != 1 or so2.size != 1:
+            continue
+        delay_start = float(sf1[0]) / 1000.0
+        delay_end = float(so2[0]) / 1000.0
+        if delay_end - delay_start < window_s:
+            continue
+        trials.append((row, delay_start))
+    if len(trials) < MIN_TRIALS:
+        return None
+    counts = np.zeros((len(trials), 7, len(starts)), dtype=float)
+    for t_index, (row, delay_start) in enumerate(trials):
+        spikes = row[spikes_col]
+        for unit in range(7):
+            relative = np.atleast_1d(spikes[unit]).astype(float) / 1000.0 - delay_start
+            counts[t_index, unit], _ = np.histogram(relative, bins=np.append(starts, window_s))
+    rates = counts.sum(axis=(0, 2)) / (len(trials) * window_s)
+    unit_mask = rates >= PFC4_MIN_UNIT_RATE_HZ
+    if np.sum(unit_mask) < PFC4_MIN_UNITS:
+        return None
+    return {
+        "n_units_after_rate_qc": int(np.sum(unit_mask)),
+        "counts": counts[:, unit_mask],
+        "correct": np.array([int(np.atleast_1d(row[hit_col])[0]) for row, _ in trials], dtype=bool),
+        "f1_hz": np.array([float(np.atleast_1d(row[f1_col])[0]) for row, _ in trials]),
+        "f2_hz": np.array([float(np.atleast_1d(row[f2_col])[0]) for row, _ in trials]),
+    }
+
+
+def iter_pfc4(root: Path, bin_ms: float = 100.0, window_s: float = PFC4_DELAY_WINDOW_S):
+    """Every pfc-4 session, one recorded animal per top-level subfolder
+    (rr014, rr015); rr015 additionally splits into left/right PFC
+    subfolders, reported as `structure`."""
+    directory = pfc4_data_directory(root)
+    if not directory.is_dir():
+        return
+    for animal_dir in sorted(p for p in directory.iterdir() if p.is_dir()):
+        for path in sorted(animal_dir.rglob("*.mat")):
+            session = load_pfc4_raw_session(path, bin_ms=bin_ms, window_s=window_s)
+            if session is None:
+                continue
+            hemisphere = path.parent.name if path.parent.name in ("left", "right") else "pooled"
+            yield {
+                "dataset": "pfc4", "patient": animal_dir.name,
+                "session": f"{animal_dir.name}_{path.stem}", "structure": hemisphere,
+                "epoch": "delay", "counts": session["counts"], "bin_ms": bin_ms,
+                "n_units": session["n_units_after_rate_qc"],
+                "correct": session["correct"],
+                "f1_hz": session["f1_hz"], "f2_hz": session["f2_hz"],
+                "item_id_field": "f1_hz (first vibrotactile comparison frequency, the only pre-delay stimulus content)",
+            }
+
+
+def independent_unit(corpus: str, session: str) -> str:
+    """The animal or participant a session belongs to, for pooling sessions within one
+    independent unit before pooling across units. Local import of DATE_BLOCK_TO_ANIMAL avoids a
+    module-level import cycle (that module imports corpus_sessions.data_root)."""
+    if corpus == "panichello_2024_macaque_lPFC":
+        from run_dominant_latent_identity_and_behaviour_breadth import DATE_BLOCK_TO_ANIMAL
+        return DATE_BLOCK_TO_ANIMAL.get(session[:2], "unresolved_panichello_animal")
+    if corpus == "inagaki_alm5_mouse_ALM":
+        return session.split("_", 1)[0]
+    if corpus.startswith("dandi_"):
+        return session.split("__", 1)[0]
+    return session.split("_", 1)[0]

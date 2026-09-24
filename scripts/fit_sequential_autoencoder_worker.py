@@ -1,22 +1,3 @@
-"""Standalone worker that fits a genuine `lfads_torch` sequential autoencoder on one session's
-spike counts and writes its latent factors to disk.
-
-Runs inside the isolated `lfads_torch_py310` environment, never inside this project's own analysis
-environment: the two pin incompatible versions of the tensor library. Imports nothing from this
-repository's `src/` package, since that environment cannot satisfy those imports. Driven CPU-only by
-the caller (CUDA_VISIBLE_DEVICES=""), because this machine's GPU allocates without error under this
-package's pinned build and then hangs forever on the first kernel.
-
-argv: <input_npz_path> <output_npz_path>
-
-The input npz holds `train_X`, `test_X` -- raw, un-transformed spike counts of shape
-(n_trials, n_bins, n_features) -- plus scalar `k` (the desired latent/factor width) and `seed`.
-
-The output npz holds `latent_train`, `latent_test` (n_trials, n_bins, k_used) and `k_used` on
-success, or a single string `reason` on failure. A failure here is always reported through that
-`reason` field, never through a raised exception or a nonzero-but-uncaught crash trace, so the
-caller can fold it into an ordinary failed_to_train result.
-"""
 import os
 
 for _var in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
@@ -29,6 +10,8 @@ import numpy as np
 
 MAX_EPOCHS = 800
 EARLY_STOP_PATIENCE = 50
+KL_INCREASE_EPOCHS = 80
+KL_IC_SCALE = 1e-3
 VALIDATION_FRACTION = 0.2
 MIN_VALIDATION_TRIALS = 2
 MIN_FIT_TRIALS = 3
@@ -36,6 +19,16 @@ MIN_FIT_TRIALS = 3
 
 def _fail(out_path: str, reason: str) -> None:
     np.savez(out_path, reason=str(reason))
+
+
+def _split_indices(n_trials: int, seed: int) -> tuple[np.ndarray, np.ndarray]:
+    n_val = max(MIN_VALIDATION_TRIALS, int(round(n_trials * VALIDATION_FRACTION)))
+    order = np.random.default_rng(seed).permutation(n_trials)
+    return order[n_val:], order[:n_val]
+
+
+def _kl_weight(epoch: int) -> float:
+    return KL_IC_SCALE * min((epoch + 1) / (KL_INCREASE_EPOCHS + 1), 1.0)
 
 
 def main() -> None:
@@ -51,10 +44,10 @@ def main() -> None:
         from torch import nn
         from lfads_torch.model import LFADS
         from lfads_torch.modules import augmentations
-        from lfads_torch.modules.priors import AutoregressiveMultivariateNormal, MultivariateNormal
+        from lfads_torch.modules.priors import MultivariateNormal, Null
         from lfads_torch.modules.recons import Poisson
         from lfads_torch.tuples import SessionBatch
-    except Exception as exc:  # the point of the worker is to report this, not to raise it
+    except Exception as exc:
         _fail(out_path, f"import failed -- {type(exc).__name__}: {exc}")
         return
 
@@ -62,9 +55,7 @@ def main() -> None:
     if n_train < MIN_VALIDATION_TRIALS + MIN_FIT_TRIALS:
         _fail(out_path, f"n_train_trials={n_train} too small for an internal validation split")
         return
-    n_val = max(MIN_VALIDATION_TRIALS, int(round(n_train * VALIDATION_FRACTION)))
-    val_idx = np.arange(n_val)
-    fit_idx = np.arange(n_val, n_train)
+    fit_idx, val_idx = _split_indices(n_train, seed)
     if len(fit_idx) < MIN_FIT_TRIALS:
         _fail(out_path, f"n_fit_trials={len(fit_idx)} < {MIN_FIT_TRIALS} after carving out the validation split")
         return
@@ -83,14 +74,15 @@ def main() -> None:
             readin=nn.ModuleList([nn.Identity()]),
             readout=nn.ModuleList([nn.Linear(fac_dim, n_units)]),
             lr_scheduler=False, variational=True,
-            co_prior=AutoregressiveMultivariateNormal(tau=10.0, nvar=0.1, shape=1),
+            co_prior=Null(),
             ic_prior=MultivariateNormal(mean=0.0, variance=0.1, shape=fac_dim),
             ic_post_var_min=1e-4, cell_clip=5.0, loss_scale=1.0, recon_reduce_mean=True,
             lr_init=4e-3, lr_stop=1e-5, lr_decay=0.95, lr_patience=6,
             lr_adam_beta1=0.9, lr_adam_beta2=0.999, lr_adam_epsilon=1e-8,
             weight_decay=0.0, l2_start_epoch=0, l2_increase_epoch=0,
             l2_ic_enc_scale=0.0, l2_ci_enc_scale=0.0, l2_gen_scale=0.0, l2_con_scale=0.0,
-            kl_start_epoch=0, kl_increase_epoch=0, kl_ic_scale=0.0, kl_co_scale=0.0,
+            kl_start_epoch=0, kl_increase_epoch=KL_INCREASE_EPOCHS,
+            kl_ic_scale=KL_IC_SCALE, kl_co_scale=0.0,
             train_aug_stack=augmentations.AugmentationStack([], []),
             infer_aug_stack=augmentations.AugmentationStack([], []),
         ).to(device)
@@ -100,9 +92,10 @@ def main() -> None:
         empty = torch.zeros(data_t.shape[0], data_t.shape[1], 0, device=device)
         return {0: SessionBatch(data_t, data_t, empty, empty, empty)}
 
-    def poisson_nll(rate: "torch.Tensor", counts: "torch.Tensor") -> "torch.Tensor":
-        rate = torch.clamp(rate, min=1e-6)
-        return torch.nn.functional.poisson_nll_loss(rate, counts, log_input=False, full=True, reduction="mean")
+    def reconstruction_loss(model, batch, sample_posteriors):
+        output = model(batch, sample_posteriors=sample_posteriors, output_means=False)
+        loss = model.recon[0].compute_loss(batch[0].recon_data, output[0].output_params)
+        return loss.mean(), output
 
     fit_batch = as_batch(train_X[fit_idx])
     val_batch = as_batch(train_X[val_idx])
@@ -115,19 +108,23 @@ def main() -> None:
     epochs_without_improvement = 0
 
     try:
-        for _epoch in range(MAX_EPOCHS):
+        for epoch in range(MAX_EPOCHS):
             model.train()
             optimiser.zero_grad()
-            output = model(fit_batch)
-            loss = poisson_nll(output[0].output_params, fit_batch[0].encod_data)
+            recon, output = reconstruction_loss(model, fit_batch, True)
+            ic_kl = model.ic_prior(output[0].ic_mean, output[0].ic_std)
+            loss = recon + _kl_weight(epoch) * ic_kl
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
             optimiser.step()
 
             model.eval()
             with torch.no_grad():
-                val_output = model(val_batch)
-                val_loss = float(poisson_nll(val_output[0].output_params, val_batch[0].encod_data).item())
+                val_recon, val_output = reconstruction_loss(model, val_batch, False)
+                val_kl = model.ic_prior(val_output[0].ic_mean, val_output[0].ic_std)
+                val_loss = float((val_recon + KL_IC_SCALE * val_kl).item())
+            if epoch < KL_INCREASE_EPOCHS:
+                continue
             if val_loss < best_val - 1e-4:
                 best_val = val_loss
                 best_state = {name: tensor.detach().clone() for name, tensor in model.state_dict().items()}

@@ -19,28 +19,30 @@ cathode_label, amplitude, pulse_freq, n_pulses, pulse_width, ...):
 
 Three questions, each answered by measurement, not assumption:
 
-  Block A -- can the delivered pulse train be localised to a single item's
-  presentation at all, or does it necessarily span more than one? Decided
-  per corpus from the actual overlap of stimulation-train intervals against
-  item on-screen presentation windows, read from the event tables.
+  Item attributability -- can the delivered pulse train be localised to a
+  single item's presentation at all, or does it necessarily span more than
+  one? Decided per corpus from the actual overlap of stimulation-train
+  intervals against item on-screen presentation windows, read from the
+  event tables.
 
-  Block B -- does the stimulated-minus-control difference in recall depend
-  on where in the list the item was, i.e. an interaction between treatment
-  and serial position (with both main effects reported beside it)? Computed
-  within subject, then across subjects with subject as the clustering unit.
-  Restricted to the open-loop corpus: closed-loop item-level stimulation is
-  triggered by the classifier's own reading of the state whose downstream
-  behavioural consequence would be under test here (propensity-selected on
-  the outcome-relevant signal, not randomized), the same restriction this
-  project has already placed on that corpus's item-level comparisons
-  elsewhere -- so an item-level position interaction computed on it would
-  not be a causal claim, and is not attempted here as one.
+  Position interaction -- does the stimulated-minus-control difference in
+  recall depend on where in the list the item was, i.e. an interaction
+  between treatment and serial position (with both main effects reported
+  beside it)? Computed within subject, then across subjects with subject as
+  the clustering unit. Restricted to the open-loop corpus: closed-loop
+  item-level stimulation is triggered by the classifier's own reading of
+  the state whose downstream behavioural consequence would be under test
+  here (propensity-selected on the outcome-relevant signal, not
+  randomized), the same restriction this project has already placed on
+  that corpus's item-level comparisons elsewhere -- so an item-level
+  position interaction computed on it would not be a causal claim, and is
+  not attempted here as one.
 
-  Block C -- the parameter census: subjects, sessions, electrode pairs and
-  stimulated trials at each delivered amplitude in both corpora, and which
-  stimulation parameters are constant (and therefore unaskable) in each.
+  Parameter census -- subjects, sessions, electrode pairs and stimulated
+  trials at each delivered amplitude in both corpora, and which stimulation
+  parameters are constant (and therefore unaskable) in each.
 
-  Block D -- what a non-human delay-period stimulation corpus can add to
+  Synthesis -- what a non-human delay-period stimulation corpus can add to
   what these two arms establish, and what is named as a genuine gap rather
   than papered over.
 
@@ -100,7 +102,7 @@ N_BOOT = 5000
 # `derive_stim_from_stim_on=True`) rather than inventing a new value here.
 CLOSEDLOOP_OWNER_MATCH_WINDOW_S = 2.0
 
-# Block A decision: an "item presentation" is the interval a WORD is on
+# Item attributability decision: an "item presentation" is the interval a WORD is on
 # screen, [onset, onset + duration]. A pulse train "spans several items" if,
 # pooled over every train in the corpus that overlaps at least one item at
 # all, the mean number of item presentations one train overlaps exceeds 1 --
@@ -108,7 +110,7 @@ CLOSEDLOOP_OWNER_MATCH_WINDOW_S = 2.0
 # before the corpus was scanned.
 ITEMS_PER_TRAIN_SPAN_THRESHOLD = 1.0
 
-# Block B: minimum stimulated and minimum control item trials a subject must
+# Position interaction: minimum stimulated and minimum control item trials a subject must
 # contribute for their own position-interaction regression to be attempted.
 MIN_TRIALS_PER_ARM_PER_SUBJECT = 10
 
@@ -231,9 +233,9 @@ def match_train_owner(train_start: float, word_onsets: list[float], window_s: fl
     return min(candidates)[1]
 
 
-# ── Block A: attributability of a train to a single item's presentation ─────
+# ── Item attributability: can a train be localised to a single item's presentation ─────
 
-def block_a_session(words_sorted: list[dict], trains: list[dict]) -> dict:
+def _item_attributability_session(words_sorted: list[dict], trains: list[dict]) -> dict:
     """Per session: for every train, how many item on-screen presentations
     ([onset, onset+duration]) it overlaps; and, per item that owns a train,
     whether that train also overlaps the immediately preceding or following
@@ -246,7 +248,7 @@ def block_a_session(words_sorted: list[dict], trains: list[dict]) -> dict:
     return {"items_per_train": items_per_train}
 
 
-def block_a_neighbor_coverage(by_list: dict[str, list[dict]], trains: list[dict],
+def _item_attributability_neighbor_coverage(by_list: dict[str, list[dict]], trains: list[dict],
                               is_stim_flag) -> dict:
     """is_stim_flag(word) -> bool. For each item flagged stimulated, finds
     the train overlapping its own on-screen window and checks whether that
@@ -283,10 +285,10 @@ def process_openloop_session(rows: list[dict]) -> dict:
     words_sorted = sorted(words, key=lambda w: w["_onset"])
     trains = build_trains_openloop(rows)
 
-    a = block_a_session(words_sorted, trains)
-    nb = block_a_neighbor_coverage(by_list, trains, lambda w: w["stimulation"] == "1")
+    a = _item_attributability_session(words_sorted, trains)
+    nb = _item_attributability_neighbor_coverage(by_list, trains, lambda w: w["stimulation"] == "1")
 
-    # Block B: per-item causal rows (open-loop stim flag is a direct,
+    # Position interaction: per-item causal rows (open-loop stim flag is a direct,
     # experimenter-randomized field -- no derivation needed).
     items = []
     for ws in by_list.values():
@@ -336,7 +338,7 @@ def process_closedloop_session(rows: list[dict]) -> dict:
         return {"status": "excluded", "reason": "STIM_ON/STIM_OFF row count mismatch -- "
                 "no trains can be paired without guessing", "n_words": len(words)}
 
-    a = block_a_session(words_sorted, trains)
+    a = _item_attributability_session(words_sorted, trains)
 
     # Derive owning word for every train (nearest preceding word within
     # CLOSEDLOOP_OWNER_MATCH_WINDOW_S of the train's own onset) -- this
@@ -354,7 +356,7 @@ def process_closedloop_session(rows: list[dict]) -> dict:
     def is_stim_derived_fast(w: dict) -> bool:
         return pos_of_word.get(id(w)) in owned_word_indices
 
-    nb = block_a_neighbor_coverage(by_list, trains, is_stim_derived_fast)
+    nb = _item_attributability_neighbor_coverage(by_list, trains, is_stim_derived_fast)
 
     spacing = within_list_spacing(by_list)
     train_durations = [t["end"] - t["start"] for t in trains]
@@ -367,7 +369,7 @@ def process_closedloop_session(rows: list[dict]) -> dict:
 
     # Unrestricted by word-matching -- includes pre-task titration/calibration pulses
     # that never land near any WORD item (e.g. a device test pulse at recording onset).
-    # Kept separately so Block C can show, and flag, the difference between genuine
+    # Kept separately so the parameter census can show, and flag, the difference between genuine
     # item-linked dose and raw STIM_ON-row dose, rather than silently using whichever
     # one a naive scan of the event table would find first.
     amplitudes_all = [t["amplitude"] for t in trains if np.isfinite(t["amplitude"])]
@@ -407,7 +409,7 @@ def load_checkpoint(session_id: str) -> dict | None:
     record = data["record"]
     # Schema check, not just parse-validity: a checkpoint written before
     # amplitudes_all_trains/electrode_pairs_all_trains existed is missing fields
-    # Block C now needs, and is treated as absent so it gets recomputed rather
+    # the parameter census now needs, and is treated as absent so it gets recomputed rather
     # than silently served stale (never deleted -- the old file is simply
     # overwritten in place by the same atomic save path once recomputed).
     if record.get("status") == "excluded":
@@ -431,7 +433,7 @@ def save_checkpoint(session_id: str, record: dict) -> None:
             os.remove(tmp_name)
 
 
-# ── Block B: position-in-sequence interaction ────────────────────────────────
+# ── Position interaction: stimulation x serial-position effect on recall ─────
 
 def fit_subject_interaction(items: list[dict]) -> dict | None:
     """OLS on recalled ~ 1 + stim + pos_c + stim:pos_c (closed-form lstsq).
@@ -468,7 +470,7 @@ def subject_array_test(values: list[float], seed_key: str) -> dict:
             "ci_lower": test["ci_lower"], "ci_upper": test["ci_upper"], "mdd": mdd}
 
 
-def block_b_variant(subject_items: dict[str, list[dict]], variant_name: str,
+def position_interaction_variant(subject_items: dict[str, list[dict]], variant_name: str,
                     positive_label: str, null_label: str) -> dict:
     fits, dropped = {}, {}
     for subj, items in subject_items.items():
@@ -548,7 +550,7 @@ def run_corpus(corpus_dir: str, processor, corpus_label: str) -> dict:
     }
 
 
-def pool_block_a(records: dict, corpus_label: str) -> dict:
+def pool_item_attributability(records: dict, corpus_label: str) -> dict:
     per_session = {}
     all_items_per_train, all_spacing, all_train_durations = [], [], []
     n_prev = n_next = n_any = n_total = n_unmatched = 0
@@ -609,7 +611,7 @@ def pool_block_a(records: dict, corpus_label: str) -> dict:
     }
 
 
-def pool_block_c(records: dict, corpus_label: str) -> dict:
+def pool_parameter_census(records: dict, corpus_label: str) -> dict:
     amp_counts = defaultdict(int)
     pair_amps = defaultdict(set)
     pair_trials = defaultdict(int)
@@ -715,12 +717,12 @@ def main():
     openloop = run_corpus(OPENLOOP_CORPUS, process_openloop_session, "openloop")
     closedloop = run_corpus(CLOSEDLOOP_CORPUS, process_closedloop_session, "closedloop")
 
-    block_a = {
-        "ds005489_open_loop": pool_block_a(openloop["records"], "openloop"),
-        "ds005557_classifier_triggered": pool_block_a(closedloop["records"], "closedloop"),
+    item_attributability = {
+        "ds005489_open_loop": pool_item_attributability(openloop["records"], "openloop"),
+        "ds005557_classifier_triggered": pool_item_attributability(closedloop["records"], "closedloop"),
     }
 
-    # Block B -- open-loop only, causal (see module docstring for the scope decision).
+    # Position interaction -- open-loop only, causal (see module docstring for the scope decision).
     subject_items_all, subject_items_clean = defaultdict(list), defaultdict(list)
     for r in openloop["records"].values():
         subj = r["subject"]
@@ -729,7 +731,7 @@ def main():
             if it["stim"] == 0 or it["prev_covered"] is False:
                 subject_items_clean[subj].append(it)
 
-    block_b = {
+    position_interaction = {
         "scope_note": (
             "computed on ds005489 (open-loop) only: item-level stimulation there is "
             "experimenter-scheduled and randomized at the list level, so a treatment "
@@ -739,27 +741,27 @@ def main():
             "so an item-level position interaction there would not be a causal estimate and "
             "is not computed here."
         ),
-        "primary_all_stimulated_items": block_b_variant(
+        "primary_all_stimulated_items": position_interaction_variant(
             dict(subject_items_all), "primary",
             "the_effect_of_stimulation_depends_on_position_in_the_sequence",
             "no_dependence_on_sequence_position_above_the_reported_bound"),
-        "clean_subset_train_did_not_cover_preceding_item": block_b_variant(
+        "clean_subset_train_did_not_cover_preceding_item": position_interaction_variant(
             dict(subject_items_clean), "clean_subset",
             "the_effect_of_stimulation_depends_on_position_in_the_sequence",
             "no_dependence_on_sequence_position_above_the_reported_bound"),
     }
 
-    block_c = {
-        "ds005489_open_loop": pool_block_c(openloop["records"], "openloop"),
-        "ds005557_classifier_triggered": pool_block_c(closedloop["records"], "closedloop"),
+    parameter_census = {
+        "ds005489_open_loop": pool_parameter_census(openloop["records"], "openloop"),
+        "ds005557_classifier_triggered": pool_parameter_census(closedloop["records"], "closedloop"),
     }
 
-    a_open = block_a["ds005489_open_loop"]
-    a_closed = block_a["ds005557_classifier_triggered"]
-    c_open = block_c["ds005489_open_loop"]
-    c_closed = block_c["ds005557_classifier_triggered"]
+    a_open = item_attributability["ds005489_open_loop"]
+    a_closed = item_attributability["ds005557_classifier_triggered"]
+    c_open = parameter_census["ds005489_open_loop"]
+    c_closed = parameter_census["ds005557_classifier_triggered"]
 
-    block_d = {
+    synthesis = {
         "what_this_corpus_pair_answers": (
             "In the open-loop arm (ds005489), the delivered pulse train "
             f"(median {a_open['pooled']['train_duration_s_median']:.2f} s) is longer than the "
@@ -843,10 +845,10 @@ def main():
     out = {
         "status": "complete",
         "scope": scope,
-        "block_a_attributability_to_a_single_item": block_a,
-        "block_b_position_in_sequence_interaction": block_b,
-        "block_c_parameter_census": block_c,
-        "block_d_synthesis": block_d,
+        "block_a_attributability_to_a_single_item": item_attributability,
+        "block_b_position_in_sequence_interaction": position_interaction,
+        "block_c_parameter_census": parameter_census,
+        "block_d_synthesis": synthesis,
     }
 
     scope["wall_clock_seconds"] = time.time() - t0
@@ -854,10 +856,10 @@ def main():
     OUT_PATH.write_text(canonical_json(out))
 
     print(f"Wrote {OUT_PATH} in {scope['wall_clock_seconds']:.1f} s")
-    print(f"Block A open-loop branch: {block_a['ds005489_open_loop']['branch']}")
-    print(f"Block A closed-loop branch: {block_a['ds005557_classifier_triggered']['branch']}")
-    print(f"Block B primary branch: {block_b['primary_all_stimulated_items']['branch']}")
-    print(f"Block B clean-subset branch: {block_b['clean_subset_train_did_not_cover_preceding_item']['branch']}")
+    print(f"Item attributability open-loop branch: {item_attributability['ds005489_open_loop']['branch']}")
+    print(f"Item attributability closed-loop branch: {item_attributability['ds005557_classifier_triggered']['branch']}")
+    print(f"Position interaction primary branch: {position_interaction['primary_all_stimulated_items']['branch']}")
+    print(f"Position interaction clean-subset branch: {position_interaction['clean_subset_train_did_not_cover_preceding_item']['branch']}")
 
 
 if __name__ == "__main__":

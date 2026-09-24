@@ -9,11 +9,26 @@ from provenance import (
     ArtifactMetadata,
     canonical_json,
     checkpoint_safe,
+    git_commit,
     restore_checkpoint,
     sha256_file,
     validate_ledger,
     write_immutable_artifact,
 )
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_git_commit_without_script_path_returns_a_plain_sha_string():
+    sha = git_commit(ROOT)
+    assert sha is None or (isinstance(sha, str) and len(sha) == 40)
+
+
+def test_git_commit_with_script_path_returns_dirty_flag_and_producer_hash():
+    info = git_commit(ROOT, __file__)
+    assert set(info) == {"sha", "working_tree_dirty", "producing_script_sha256"}
+    assert info["producing_script_sha256"] == sha256_file(__file__)
+    assert info["working_tree_dirty"] in (True, False, None)
 
 
 def test_canonical_json_encodes_nonfinite_failed_estimates_as_null():

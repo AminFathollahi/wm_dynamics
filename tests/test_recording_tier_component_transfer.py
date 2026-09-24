@@ -21,15 +21,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from run_recording_tier_component_transfer import (  # noqa: E402
-    MEANINGFUL_EFFECT_THRESHOLD_R_UNITS, MIN_PATIENTS_FOR_TEST, _bias_only_values, _classify_block_c,
-    _patient_clustered_test, block_a_tier, block_b_tier, block_c_pair_patient_level, block_c_pair_trial_wise,
+    MEANINGFUL_EFFECT_THRESHOLD_R_UNITS, MIN_PATIENTS_FOR_TEST, _bias_only_values, _classify_cross_tier_transfer,
+    _patient_clustered_test, existence_tier, behaviour_link_tier, cross_tier_transfer_pair_patient_level, cross_tier_transfer_pair_trial_wise,
     classify_depth_channels, highest_available_band, needs_mains_notch, rate_free_state_deviation,
     rotation_null_variance_test, trial_tables_agree,
 )
 
 
 # ---------------------------------------------------------------------------------------------------
-# Trial-alignment assertion (the bridge Block C depends on)
+# Trial-alignment assertion (the bridge the cross-tier-transfer test depends on)
 # ---------------------------------------------------------------------------------------------------
 
 def _table(n=10, seed=0):
@@ -83,7 +83,7 @@ def test_trial_tables_agree_catches_an_accuracy_mismatch():
 
 
 # ---------------------------------------------------------------------------------------------------
-# Magnitude-matched rotation null (Block A's existence test)
+# Magnitude-matched rotation null (the existence test)
 # ---------------------------------------------------------------------------------------------------
 
 def test_rotation_null_flags_real_direction_structure_as_distinguishable():
@@ -157,7 +157,7 @@ def _synthetic_patient_sessions(n_patients, n_sessions_per_patient, trials_per_s
     """Builds per_tier_sessions-shaped records with a controllable mixture of a genuine trial-level
     accuracy signal and a within-patient, ACROSS-SESSION offset in the component value (one session of a
     patient running systematically higher than another, with a correlated session-level accuracy shift) --
-    the confound block_b_tier's trial-pooled-per-patient design is actually exposed to, since it pools a
+    the confound behaviour_link_tier's trial-pooled-per-patient design is actually exposed to, since it pools a
     patient's OWN sessions together before computing one correlation per patient. A confound that varies
     only BETWEEN patients (not within one patient's own sessions) is already absorbed by the sign-flip
     test's own per-patient clustering and is not what the bias-only control exists to catch here."""
@@ -191,7 +191,7 @@ def test_bias_only_control_fires_the_void_branch_for_a_within_patient_session_of
     sessions = _synthetic_patient_sessions(n_patients=8, n_sessions_per_patient=3,
                                             trials_per_session_per_cell=20, primary_signal=0.0,
                                             session_block_offset_scale=3.0, seed=10)
-    result = block_b_tier(sessions, MEANINGFUL_EFFECT_THRESHOLD_R_UNITS)
+    result = behaviour_link_tier(sessions, MEANINGFUL_EFFECT_THRESHOLD_R_UNITS)
     assert result["branch"] == "behaviour_link_not_separable_from_a_session_level_offset"
 
 
@@ -203,16 +203,16 @@ def test_bias_only_control_does_not_void_a_genuine_trial_level_effect():
     sessions = _synthetic_patient_sessions(n_patients=8, n_sessions_per_patient=2,
                                             trials_per_session_per_cell=25, primary_signal=4.0,
                                             session_block_offset_scale=0.0, seed=11)
-    result = block_b_tier(sessions, MEANINGFUL_EFFECT_THRESHOLD_R_UNITS)
+    result = behaviour_link_tier(sessions, MEANINGFUL_EFFECT_THRESHOLD_R_UNITS)
     assert result["branch"] != "behaviour_link_not_separable_from_a_session_level_offset"
     assert result["primary_within_set_size_test"]["significant"] is True
 
 
-def test_block_b_reports_the_trial_and_error_counts_the_estimator_needs_disclosed():
+def test_behaviour_link_reports_the_trial_and_error_counts_the_estimator_needs_disclosed():
     sessions = _synthetic_patient_sessions(n_patients=6, n_sessions_per_patient=1,
                                             trials_per_session_per_cell=15, primary_signal=0.0,
                                             session_block_offset_scale=0.0, seed=12)
-    result = block_b_tier(sessions, MEANINGFUL_EFFECT_THRESHOLD_R_UNITS)
+    result = behaviour_link_tier(sessions, MEANINGFUL_EFFECT_THRESHOLD_R_UNITS)
     assert result["n_trials_entering_estimate"] == 6 * 15 * 3
     assert result["n_patients_total"] == 6
     assert len(result["per_session_error_distribution"]) == 6
@@ -240,14 +240,14 @@ def test_patient_clustered_test_runs_at_the_floor():
     assert result["n_patients"] == MIN_PATIENTS_FOR_TEST
 
 
-def test_block_a_tier_underpowered_below_the_patient_floor():
+def test_existence_tier_underpowered_below_the_patient_floor():
     sessions = [{"patient": f"sub-{i:02d}", "gate": {"status": "computed", "signed_effect": 0.1},
                  "deviation": np.array([0.1, 0.2, 0.3])} for i in range(2)]
-    result = block_a_tier(sessions, reference_effect=None)
+    result = existence_tier(sessions, reference_effect=None)
     assert result["branch"] == "underpowered_to_ask_at_this_tier"
 
 
-def test_block_c_trial_wise_refuses_below_the_patient_floor():
+def test_cross_tier_transfer_trial_wise_refuses_below_the_patient_floor():
     session_records = [
         {"patient": "sub-01", "session_key": "s1",
          "tiers": {"single_unit": np.array([0.1, 0.2, 0.15, 0.3, 0.25, 0.18, 0.22, 0.19, 0.21, 0.17,
@@ -255,35 +255,35 @@ def test_block_c_trial_wise_refuses_below_the_patient_floor():
                    "depth_mtl": np.array([0.11, 0.19, 0.16, 0.29, 0.24, 0.2, 0.23, 0.18, 0.2, 0.16,
                                           0.15, 0.25])}},
     ]
-    result = block_c_pair_trial_wise(session_records, "single_unit", "depth_mtl", reference_effect=None)
+    result = cross_tier_transfer_pair_trial_wise(session_records, "single_unit", "depth_mtl", reference_effect=None)
     assert result["regime"] == "trial_wise"
     assert result["branch"] == "cross_tier_agreement_not_testable_at_matched_trials"
     assert result["n_patients_contributing"] < MIN_PATIENTS_FOR_TEST
 
 
-def test_block_c_patient_level_below_floor_is_not_testable():
-    result = block_c_pair_patient_level({"sub-01": 0.1, "sub-02": 0.2}, {"sub-01": 0.05, "sub-02": 0.09},
+def test_cross_tier_transfer_patient_level_below_floor_is_not_testable():
+    result = cross_tier_transfer_pair_patient_level({"sub-01": 0.1, "sub-02": 0.2}, {"sub-01": 0.05, "sub-02": 0.09},
                                          reference_effect=None)
     assert result["regime"] == "patient_level_only"
     assert result["branch"] == "cross_tier_agreement_not_testable_at_matched_trials"
 
 
-def test_block_c_patient_level_detects_real_agreement():
+def test_cross_tier_transfer_patient_level_detects_real_agreement():
     rng = np.random.default_rng(6)
     n = 9
     a = {f"sub-{i:02d}": float(i) + rng.normal() * 0.05 for i in range(n)}
     b = {f"sub-{i:02d}": float(i) * 2.0 + rng.normal() * 0.05 for i in range(n)}  # monotone in a
-    result = block_c_pair_patient_level(a, b, reference_effect=None)
+    result = cross_tier_transfer_pair_patient_level(a, b, reference_effect=None)
     assert result["regime"] == "patient_level_only"
     assert result["branch"] == "the_two_tiers_track_the_same_per_trial_quantity"
 
 
-def test_classify_block_c_uses_reference_effect_to_distinguish_null_from_not_testable():
+def test_classify_cross_tier_transfer_uses_reference_effect_to_distinguish_null_from_not_testable():
     powered_null = {"status": "tested", "significant": False, "mdd": 0.05, "n_patients": 9}
     underpowered_null = {"status": "tested", "significant": False, "mdd": 0.5, "n_patients": 9}
-    assert _classify_block_c(powered_null, reference_effect=0.14) == "no_cross_tier_agreement_above_the_reported_bound"
-    assert _classify_block_c(underpowered_null, reference_effect=0.14) == "cross_tier_agreement_not_testable_at_matched_trials"
-    assert _classify_block_c(underpowered_null, reference_effect=None) == "cross_tier_agreement_not_testable_at_matched_trials"
+    assert _classify_cross_tier_transfer(powered_null, reference_effect=0.14) == "no_cross_tier_agreement_above_the_reported_bound"
+    assert _classify_cross_tier_transfer(underpowered_null, reference_effect=0.14) == "cross_tier_agreement_not_testable_at_matched_trials"
+    assert _classify_cross_tier_transfer(underpowered_null, reference_effect=None) == "cross_tier_agreement_not_testable_at_matched_trials"
 
 
 # ---------------------------------------------------------------------------------------------------
@@ -365,9 +365,9 @@ def _load_artifact() -> dict:
 
 def _iter_branches(doc: dict):
     """Yields (label, branch, detectable_effect, reference_effect, significance_flag_or_None) for every
-    tested cell across Blocks A, B and C -- the one place both the power check and the significance check
-    below draw from, so the two regimes Block C mixes (trial-wise mdd vs. patient-level ci_half_width)
-    are only reconciled once."""
+    tested cell across the existence, behaviour-link and cross-tier-transfer tests -- the one place both
+    the power check and the significance check below draw from, so the two regimes the cross-tier-transfer
+    test mixes (trial-wise mdd vs. patient-level ci_half_width) are only reconciled once."""
     for tier, rec in doc["block_a"].items():
         p = rec.get("pooled_patient_test", {})
         yield f"block_a/{tier}", rec["branch"], p.get("mdd"), rec.get("reference_effect_used"), p.get("significant")
@@ -425,7 +425,7 @@ def test_pooled_sign_flip_tests_are_internally_consistent():
 def test_every_fired_null_branch_is_powered_below_its_reference_effect():
     # This is the artifact-level regression for the power check this leg's verification pass ran by hand:
     # a branch asserting "no link/agreement above the reported bound" is only licensed when that cell's
-    # own minimum detectable difference (or, in Block C's patient-level regime, its CI half-width) is
+    # own minimum detectable difference (or, in the cross-tier-transfer test's patient-level regime, its CI half-width) is
     # strictly below the reference effect it was judged against -- otherwise the honest branch is the
     # underpowered one, not a null result.
     doc = _load_artifact()

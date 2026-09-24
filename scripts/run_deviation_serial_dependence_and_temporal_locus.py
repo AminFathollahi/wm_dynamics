@@ -112,7 +112,7 @@ SIGN_TO_WORSE_BEHAVIOUR = {
     "watters_2026_macaque_multi_object": 1.0,           # native outcome is report error already
 }
 
-# Block A -- declared before any fit runs.
+# Serial dependence test -- declared before any fit runs.
 DETREND_WINDOWS_TRIALS = (51, 101)  # centred moving-average width in trials; both odd, both >> the 15-trial lag range
 N_SHUFFLES_PER_SESSION = 1000
 LAG_RANGE = tuple(range(1, 16))
@@ -124,11 +124,11 @@ SHARP_TEST_MIN_QUALIFYING_TRIALS = 8
 CONTENT_LABEL_K_CLASSES = 8  # matches the discretisation results/dissociation_replication_and_counting_noise.json's
                              # content_fractional_rank_third_point already uses for this corpus
 
-# Block B -- declared before any fit runs.
+# Temporal locus test -- declared before any fit runs.
 SUB_WINDOW_SPLITS = {"halves": 2, "thirds": 3}
 PRIMARY_SPLIT = "halves"
 
-BLOCK_A_DECISION_RULE_DECLARED_BEFORE_FITTING = (
+SERIAL_DEPENDENCE_DECISION_RULE_DECLARED_BEFORE_FITTING = (
     "Per corpus, at the declared primary detrending window (the first of DETREND_WINDOWS_TRIALS): (1) the "
     "pooled detrended adjacency statistic (lag-1 mean cosine minus the mean of lags 10-15, both after removing "
     "a centred moving-average session-time trend) is compared against a within-session trial-order shuffle null "
@@ -154,7 +154,7 @@ BLOCK_A_DECISION_RULE_DECLARED_BEFORE_FITTING = (
     "window's verdict, both are reported and the disagreement is stated, not resolved by picking one."
 )
 
-BLOCK_B_DECISION_RULE_DECLARED_BEFORE_FITTING = (
+TEMPORAL_LOCUS_DECISION_RULE_DECLARED_BEFORE_FITTING = (
     "The delay epoch is split into halves (primary) and thirds (sensitivity). In each sub-window, the "
     "per-unit total counts, the deviation, its own orthogonality gate against total spike count within that "
     "sub-window, and its raw association with behaviour are recomputed from scratch. A sub-window whose own "
@@ -275,7 +275,7 @@ def _reproduce_watters_deviation_gate(watters_loaded: list[dict]) -> dict:
     deviation cell (single_and_multi_unit tier, pooled group) using the identical imported functions that
     artifact used, restricted to the 'deviation' observable at that one tier -- the amplitude observable
     and the other two tiers are not needed here and are not recomputed, but the underlying per-session
-    arrays this saves are the exact ones Block A and Block B reuse below, so nothing is loaded twice."""
+    arrays this saves are the exact ones the serial dependence test and the temporal locus test reuse below, so nothing is loaded twice."""
     rows = []
     arrays_by_session: dict[str, dict] = {}
     for session in watters_loaded:
@@ -471,7 +471,7 @@ def _adjacency_shuffle_null(vectors: np.ndarray, window: int, n_shuffles: int, s
     return draws
 
 
-def _session_block_a_geometry(bundle: dict, seed_prefix: str) -> dict:
+def _session_serial_dependence_geometry(bundle: dict, seed_prefix: str) -> dict:
     vectors = unit_direction_vectors(bundle["activity_by_unit"])
     n = vectors.shape[0]
     if n < MIN_TRIALS_FOR_LAG_PROFILE:
@@ -618,8 +618,8 @@ def _content_specific_serial_pull(bundle: dict) -> dict:
     return {"status": "computed", "n_qualifying_trials": len(diffs), "mean_pull_difference": float(np.mean(diffs))}
 
 
-def _block_a_branch(adjacency_significant: bool | None, behaviour_survives: bool | None) -> str:
-    """Implements BLOCK_A_DECISION_RULE_DECLARED_BEFORE_FITTING's four named cells; every combination of
+def _serial_dependence_branch(adjacency_significant: bool | None, behaviour_survives: bool | None) -> str:
+    """Implements SERIAL_DEPENDENCE_DECISION_RULE_DECLARED_BEFORE_FITTING's four named cells; every combination of
     the two booleans is named, so there is no off-list outcome for this classifier by construction."""
     if adjacency_significant is None or behaviour_survives is None:
         return "not_computable"
@@ -632,7 +632,7 @@ def _block_a_branch(adjacency_significant: bool | None, behaviour_survives: bool
     return "interference_from_the_preceding_trial_is_present_and_separable_from_the_accuracy_predicting_component"
 
 
-def run_block_a(bundles: list[dict], sign: float, corpus_key: str, seed_prefix: str) -> dict:
+def run_serial_dependence(bundles: list[dict], sign: float, corpus_key: str, seed_prefix: str) -> dict:
     geometry = []
     decisive: dict[int, list[dict]] = {w: [] for w in DETREND_WINDOWS_TRIALS}
     content_pull_values = []
@@ -640,7 +640,7 @@ def run_block_a(bundles: list[dict], sign: float, corpus_key: str, seed_prefix: 
     for bundle in bundles:
         tag = f"{seed_prefix}|{bundle['session']}"
         g = _fit(f"geometry|{corpus_key}|{bundle['session']}",
-                  lambda b=bundle, t=tag: _session_block_a_geometry(b, t))
+                  lambda b=bundle, t=tag: _session_serial_dependence_geometry(b, t))
         geometry.append(g)
         for window in DETREND_WINDOWS_TRIALS:
             dp = _fit(f"decisive_partial|{corpus_key}|{bundle['session']}|w{window}",
@@ -674,7 +674,7 @@ def run_block_a(bundles: list[dict], sign: float, corpus_key: str, seed_prefix: 
         behaviour_survives = None
         if joint.get("status") == "tested" and raw.get("status") == "tested":
             behaviour_survives = bool(joint["significant"] and (joint["mean_value"] > 0) == (raw["mean_value"] > 0))
-        branch_by_window[str(window)] = _block_a_branch(adj_sig, behaviour_survives)
+        branch_by_window[str(window)] = _serial_dependence_branch(adj_sig, behaviour_survives)
 
     primary_branch = branch_by_window[str(primary_window)]
     windows_agree = len(set(branch_by_window.values())) == 1
@@ -685,7 +685,7 @@ def run_block_a(bundles: list[dict], sign: float, corpus_key: str, seed_prefix: 
 
     return {
         "sign_convention": {"corpus": corpus_key, "multiplier_applied_to_behaviour_correlations": sign},
-        "decision_rule_declared_before_fitting": BLOCK_A_DECISION_RULE_DECLARED_BEFORE_FITTING,
+        "decision_rule_declared_before_fitting": SERIAL_DEPENDENCE_DECISION_RULE_DECLARED_BEFORE_FITTING,
         "content_specific_serial_pull_operationalisation": CONTENT_SPECIFIC_SERIAL_PULL_OPERATIONALISATION,
         "detrend_windows_trials": list(DETREND_WINDOWS_TRIALS), "primary_window": primary_window,
         "n_sessions_reaching_lag_profile_floor": sum(1 for g in geometry if g.get("status") == "computed"),
@@ -786,7 +786,7 @@ def _split_result(bundles: list[dict], n_windows: int, sign: float, corpus_key: 
     }
 
 
-def _block_b_branch(split: dict, full_epoch_behaviour_link_present: bool) -> dict:
+def _temporal_locus_branch(split: dict, full_epoch_behaviour_link_present: bool) -> dict:
     surviving = [w for w in split["windows"] if not w["void"]]
     if not surviving:
         return {"branch": "temporal_locus_unreachable_at_this_count_per_window", "sub_label": None}
@@ -810,14 +810,14 @@ def _block_b_branch(split: dict, full_epoch_behaviour_link_present: bool) -> dic
             "sub_label": "behaviour_link_present_in_some_but_not_all_surviving_sub_windows"}
 
 
-def run_block_b(bundles: list[dict], sign: float, corpus_key: str, full_epoch_behaviour_link_present: bool) -> dict:
+def run_temporal_locus(bundles: list[dict], sign: float, corpus_key: str, full_epoch_behaviour_link_present: bool) -> dict:
     splits = {name: _split_result(bundles, n, sign, corpus_key, name) for name, n in SUB_WINDOW_SPLITS.items()}
     primary = splits[PRIMARY_SPLIT]
-    branch = _block_b_branch(primary, full_epoch_behaviour_link_present)
-    thirds_branch = _block_b_branch(splits["thirds"], full_epoch_behaviour_link_present)
+    branch = _temporal_locus_branch(primary, full_epoch_behaviour_link_present)
+    thirds_branch = _temporal_locus_branch(splits["thirds"], full_epoch_behaviour_link_present)
     return {
         "sign_convention": {"corpus": corpus_key, "multiplier_applied_to_behaviour_correlations": sign},
-        "decision_rule_declared_before_fitting": BLOCK_B_DECISION_RULE_DECLARED_BEFORE_FITTING,
+        "decision_rule_declared_before_fitting": TEMPORAL_LOCUS_DECISION_RULE_DECLARED_BEFORE_FITTING,
         "primary_split": PRIMARY_SPLIT, "full_epoch_behaviour_link_present": full_epoch_behaviour_link_present,
         "splits": splits, "branch": branch,
         "thirds_sensitivity_branch": thirds_branch,
@@ -946,20 +946,20 @@ def main() -> None:
     output["block_a"] = {}
     for corpus_key, (bundles, _full_epoch_present) in corpora.items():
         sign = SIGN_TO_WORSE_BEHAVIOUR[corpus_key]
-        _log(f"Block A: {corpus_key} ({len(bundles)} sessions)")
-        output["block_a"][corpus_key] = run_block_a(
+        _log(f"serial dependence test: {corpus_key} ({len(bundles)} sessions)")
+        output["block_a"][corpus_key] = run_serial_dependence(
             bundles, sign, corpus_key, f"deviation_serial_dependence_and_temporal_locus|block_a|{corpus_key}")
         _flush(output)
-        _log(f"  Block A {corpus_key} branch at primary window: "
+        _log(f"  serial dependence test {corpus_key} branch at primary window: "
              f"{output['block_a'][corpus_key]['branch_at_primary_window']} elapsed={time.time() - t0:.0f}s")
 
     output["block_b"] = {}
     for corpus_key, (bundles, full_epoch_present) in corpora.items():
         sign = SIGN_TO_WORSE_BEHAVIOUR[corpus_key]
-        _log(f"Block B: {corpus_key} ({len(bundles)} sessions)")
-        output["block_b"][corpus_key] = run_block_b(bundles, sign, corpus_key, full_epoch_present)
+        _log(f"temporal locus test: {corpus_key} ({len(bundles)} sessions)")
+        output["block_b"][corpus_key] = run_temporal_locus(bundles, sign, corpus_key, full_epoch_present)
         _flush(output)
-        _log(f"  Block B {corpus_key} branch: {output['block_b'][corpus_key]['branch']['branch']} "
+        _log(f"  temporal locus test {corpus_key} branch: {output['block_b'][corpus_key]['branch']['branch']} "
              f"elapsed={time.time() - t0:.0f}s")
 
     output["how_this_artifact_was_assembled"] = {

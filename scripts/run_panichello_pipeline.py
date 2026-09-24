@@ -38,6 +38,7 @@ from drift_dynamics import (  # noqa: E402
 )
 from provenance import canonical_json, git_commit, sha256_file  # noqa: E402
 from spike_pipeline import FrozenPSTHTransform  # noqa: E402
+from selectivity_test import two_stage_selectivity_test  # noqa: E402
 
 BIN_MS = 50
 DELAY_WINDOW_MS = (300, 1450)
@@ -125,10 +126,30 @@ def cue_selective_units(counts: np.ndarray, labels: np.ndarray, rng: np.random.G
     threshold = np.percentile(null, 95.0, axis=0)
     selective = observed > threshold
     return {
+        "procedure": "single_stage_percentile_null",
         "n_units": int(rates.shape[1]),
         "n_cue_selective_units": int(np.sum(selective)),
         "cue_selective_fraction": float(np.mean(selective)),
         "method": "delay-rate eta-squared above the unit-specific 95th label-permutation percentile",
+    }
+
+
+def cue_selective_units_two_stage(counts: np.ndarray, labels: np.ndarray, rng: np.random.Generator) -> dict:
+    """Shared two-stage permutation selectivity test applied per unit, one cue presentation per trial."""
+    rates = counts.mean(axis=2)
+    n_trials = rates.shape[0]
+    trial_id = np.arange(n_trials)
+    results = [two_stage_selectivity_test(rates[:, unit], labels, trial_id, rng)
+               for unit in range(rates.shape[1])]
+    computed = [r for r in results if r["status"] == "computed"]
+    selective = [r["meets_selectivity_criterion"] for r in computed]
+    return {
+        "procedure": "two_stage_trial_block_permutation",
+        "n_units": int(rates.shape[1]), "n_units_computed": len(computed),
+        "n_cue_selective_units": int(sum(selective)),
+        "cue_selective_fraction": float(np.mean(selective)) if selective else float("nan"),
+        "method": "trial-block permutation omnibus across cues, then a right-tailed permutation test of "
+                  "the preferred cue's mean against the rest",
     }
 
 
@@ -196,6 +217,8 @@ def analyze_session(path: Path) -> dict:
     source_checks = {
         "intermittent_confidence": out_of_fold_cue_confidence(counts, labels_kept, seed),
         "cue_specific_ensembles": cue_selective_units(counts, labels_kept, np.random.default_rng(seed)),
+        "cue_specific_ensembles_two_stage": cue_selective_units_two_stage(
+            counts, labels_kept, np.random.default_rng(seed + 5000)),
     }
     splitter = StratifiedKFold(N_SPLITS, shuffle=True, random_state=seed)
     folds = []

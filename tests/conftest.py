@@ -1,7 +1,16 @@
 """Shared fixtures for all test modules."""
 
+import os
+from pathlib import Path
+
 import numpy as np
 import pytest
+
+
+os.environ.setdefault(
+    "NUMBA_CACHE_DIR",
+    str(Path(__file__).resolve().parents[1] / ".pytest_cache" / "numba"),
+)
 
 
 @pytest.fixture

@@ -11,7 +11,7 @@ admitted at margin while the unit grain (dandi_000574, single_unit, pooled)
 is excluded, and every one of the other six shared observables ties. This
 script asks two questions about that one asymmetric observable, on the same
 patients and the same trials Boran's co-located spike-and-LFP recordings
-provide:
+provide at overlapping session keys but different grain-specific trial counts:
 
 1. Within each grain, across sessions, does the number of cross-validation
    splits the observable manages to fit correlate with the leading latent's
@@ -35,7 +35,9 @@ Deliverable: results/observability_matched_modality_test.json.
 from __future__ import annotations
 
 import json
+import os
 import sys
+import tempfile
 from collections import Counter
 from pathlib import Path
 
@@ -47,7 +49,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from io_utils import locked_json_update  # noqa: E402
 from provenance import canonical_json, git_commit  # noqa: E402
-from statistics import pearson_permutation_test, spearman_permutation_test, stable_seed  # noqa: E402
+from statistics import paired_sign_flip_test, pearson_permutation_test, spearman_permutation_test, stable_seed  # noqa: E402
 
 SEED = 20260813
 
@@ -229,8 +231,8 @@ def select_asymmetric_observable(census: dict) -> dict:
 def matched_modality_test(unit_sessions: list[dict], lfp_sessions: list[dict], bin_ms: int) -> dict:
     """Pairs the same patient's same session across grains at the given bin
     width and reports the one asymmetric observable (cross_validated_nugget_
-    fraction) side by side, with same-trial pairing verified in code rather
-    than assumed."""
+fraction) side by side, with patient/session keys and trial-count differences
+reported explicitly."""
     unit_by_key = {(s["patient"], s["session"]): s for s in unit_sessions if s["bin_ms"] == bin_ms}
     lfp_by_key = {(s["patient"], s["session"]): s for s in lfp_sessions if s["bin_ms"] == bin_ms}
     shared_keys = sorted(set(unit_by_key) & set(lfp_by_key))
@@ -282,14 +284,7 @@ def matched_modality_test(unit_sessions: list[dict], lfp_sessions: list[dict], b
 
 
 def compute_grain_discordance_paired_test(matched_tests: dict) -> dict:
-    """The matched-grain test's discordant sessions -- where cross_validated_
-    nugget_fraction fits at one grain and not the other -- are the only
-    sessions carrying information about which grain wins; sessions where it
-    fits at both grains or neither are uninformative about direction and are
-    excluded here by construction. This is the within-patient paired version
-    of the census's own margin-based grain ordering: an exact two-sided
-    binomial test (scipy.stats.binomtest, null p=0.5) of present_at_lfp_
-    absent_at_unit against present_at_unit_absent_at_lfp, at each bin width."""
+    """Session-level discordance diagnostic; repeated sessions are not independent."""
     per_bin = {}
     for bin_key, test in matched_tests.items():
         counts = test["counts"]
@@ -316,7 +311,13 @@ def compute_grain_discordance_paired_test(matched_tests: dict) -> dict:
                 f"50/50 null gives p={p_value:.4f}, which {licenses}."
             ),
         }
+    summaries = "; ".join(
+        f"bin_ms=={v['bin_ms']}: {v['present_at_lfp_absent_at_unit']} vs "
+        f"{v['present_at_unit_absent_at_lfp']}, p={v['two_sided_exact_binomial_p_value']:.4f}"
+        for v in per_bin.values()
+    )
     return {
+        "status": "diagnostic_only_repeated_sessions_are_not_independent",
         "method": (
             "scipy.stats.binomtest(n_present_at_lfp_absent_at_unit, n_discordant, 0.5, "
             "alternative='two-sided'), restricted to the discordant sessions at each bin width -- "
@@ -328,17 +329,52 @@ def compute_grain_discordance_paired_test(matched_tests: dict) -> dict:
             "results/observability_and_power_census.json's margin_aware_modality_result ranks the "
             "LFP grain above the unit grain with a summed rank difference that its own "
             "margin_aware_modality_result_basis field attributes entirely to cross_validated_"
-            "nugget_fraction. This is the within-patient paired test of that same observable, on "
-            "the same patients and sessions, and it is null at both bin widths (bin_ms==200: "
-            f"{per_bin['bin200']['present_at_lfp_absent_at_unit']} vs "
-            f"{per_bin['bin200']['present_at_unit_absent_at_lfp']}, p="
-            f"{per_bin['bin200']['two_sided_exact_binomial_p_value']:.4f}; bin_ms==100: "
-            f"{per_bin['bin100']['present_at_lfp_absent_at_unit']} vs "
-            f"{per_bin['bin100']['present_at_unit_absent_at_lfp']}, p="
-            f"{per_bin['bin100']['two_sided_exact_binomial_p_value']:.4f}). The grain ordering is "
-            "therefore not supported by a within-patient paired test of its sole contributing "
+            "nugget_fraction. This is a repeated-session diagnostic of that same observable, on "
+            "the same patient and session keys; per-bin results are "
+            f"{summaries}. The grain ordering is "
+            "therefore not supported by this diagnostic count of its sole contributing "
             "observable: on the one observable responsible for the entire ranking, the two grains "
             "are statistically indistinguishable from each other at the session level."
+        ),
+    }
+
+
+def compute_grain_discordance_participant_test(matched_tests: dict) -> dict:
+    per_bin = {}
+    for bin_key, test in matched_tests.items():
+        by_patient = {}
+        for session in test["sessions"]:
+            score = float(session["lfp_status"] == "fitted") - float(session["unit_status"] == "fitted")
+            by_patient.setdefault(session["patient"], []).append(score)
+        patient_ids = sorted(by_patient)
+        differences = np.asarray([np.mean(by_patient[patient]) for patient in patient_ids], dtype=float)
+        result = paired_sign_flip_test(
+            differences,
+            np.zeros_like(differences),
+            n_perm=N_PERM,
+            alternative="two-sided",
+            n_boot=N_PERM,
+            rng=_seed("participant_discordance", test["bin_ms"]),
+        )
+        per_bin[bin_key] = {
+            "bin_ms": test["bin_ms"],
+            "n_participants": len(patient_ids),
+            "participant_ids": patient_ids,
+            "participant_mean_lfp_minus_unit_fittability": {
+                patient: float(value) for patient, value in zip(patient_ids, differences)
+            },
+            "mean_difference": result["mean_diff"],
+            "ci95": [result["ci_lower"], result["ci_upper"]],
+            "two_sided_sign_flip_p_value": result["p_value"],
+        }
+    return {
+        "status": "computed",
+        "independent_unit": "participant",
+        "method": "participant-mean session fittability difference with a two-sided participant sign-flip test and participant bootstrap interval",
+        "by_bin_width": per_bin,
+        "scope": (
+            "same participant and session keys, but not the same admitted trials; grain-specific trial counts "
+            "and channel counts remain uncontrolled, so this is not a modality-value estimate"
         ),
     }
 
@@ -367,8 +403,9 @@ SCOPE_CAVEAT = (
     "single leading latent (structure=='pooled' for the unit grain, all bipolar contacts for the LFP "
     "grain), with no region stratification in either. What this test actually measures is narrower and "
     "still the whole point of the census-restatement duty this section carries: whether one specific "
-    "estimator's cross-validated fit succeeds on the same patients and the same trials at one resolution "
-    "and not the other. That is a fittability comparison, not a demonstration that anatomical information "
+    "estimator's cross-validated fit succeeds on the same patient and session keys at one resolution "
+    "and not the other. Trial admission and channel counts differ across grains. This is a fittability "
+    "comparison, not a demonstration that anatomical information "
     "invisible to spikes becomes visible in the local field potential."
 )
 
@@ -393,11 +430,12 @@ def build_artifact() -> dict:
     asymmetric = select_asymmetric_observable(census)
     matched_tests = {f"bin{bin_ms}": matched_modality_test(unit_all, lfp_all, bin_ms) for bin_ms in (100, 200)}
     discordance = compute_grain_discordance_paired_test(matched_tests)
+    participant_test = compute_grain_discordance_participant_test(matched_tests)
 
     c200 = matched_tests["bin200"]["counts"]
     c100 = matched_tests["bin100"]["counts"]
-    p200 = discordance["by_bin_width"]["bin200"]["two_sided_exact_binomial_p_value"]
-    p100 = discordance["by_bin_width"]["bin100"]["two_sided_exact_binomial_p_value"]
+    p200 = participant_test["by_bin_width"]["bin200"]["two_sided_sign_flip_p_value"]
+    p100 = participant_test["by_bin_width"]["bin100"]["two_sided_sign_flip_p_value"]
     headline = (
         "The census's only asymmetric shared observable between the unit and LFP grains, cross_validated_"
         "nugget_fraction, is asymmetric in admission status at bin_ms==200 only (unit grain excluded, LFP "
@@ -409,13 +447,11 @@ def build_artifact() -> dict:
         f"{c200['present_at_both']}, and fits at neither in {c200['absent_at_both']}. At bin_ms==100, "
         f"where both grains are admitted, the same four-way split is {c100['present_at_lfp_absent_at_unit']} "
         f"LFP-only, {c100['present_at_unit_absent_at_lfp']} unit-only, {c100['present_at_both']} both, "
-        f"{c100['absent_at_both']} neither. grain_discordance_paired_test reports an exact two-sided "
-        "binomial test of the LFP-only versus unit-only counts -- the only sessions that carry information "
-        f"about which grain wins -- at each bin width, and neither split is distinguishable from a 50/50 "
-        f"split (bin_ms==200: {c200['present_at_lfp_absent_at_unit']} vs "
-        f"{c200['present_at_unit_absent_at_lfp']}, p={p200:.4f}; bin_ms==100: "
-        f"{c100['present_at_lfp_absent_at_unit']} vs {c100['present_at_unit_absent_at_lfp']}, p={p100:.4f}); "
-        "this per-session discordance should not be read as a systematic advantage for either grain. This "
+        f"{c100['absent_at_both']} neither. The participant-level sign-flip test is not significant at "
+        f"either width (bin_ms==200: p={p200:.4f}; bin_ms==100: p={p100:.4f}). The session-level exact "
+        "count is retained only as a diagnostic because sessions repeat within participant. In addition, "
+        "25 of 26 session keys have different grain-specific trial counts, so the comparison does not "
+        "isolate modality from trial admission or population count. This "
         "is a fittability asymmetry on one specific estimator, not a demonstration of a between-region "
         "signal (see scope_caveat_between_region_language): both grains pool across their whole recorded "
         "population, so no region contrast is being tested."
@@ -425,9 +461,34 @@ def build_artifact() -> dict:
         "the observability-and-power census ranks the LFP grain above the unit grain on one shared "
         "observable, cross_validated_nugget_fraction, with the entire summed rank difference coming from "
         "that one observable; this restates what that ranking measures using the same patients and the "
-        "same trials Boran's co-located spike-and-LFP recordings provide, asking whether it reflects "
+        "same session keys in Boran's co-located spike-and-LFP recordings, asking whether it reflects "
         "instrument quality, latent timescale, dimensionality, or population size"
     )
+
+    identification_audit = {
+        "status": "bounded_session_key_comparison",
+        "identified_dimensions": {
+            "participant": "same patient identifier required",
+            "session": "same session identifier required",
+            "task": "Boran dandi_000574 delay epoch for both grains",
+            "label": "no item label is used; the tested estimator is label-free",
+        },
+        "nonidentified_dimensions": {
+            "trial_set": "not identified: 25 of 26 session keys have different trial counts across grains",
+            "count": "not identified: unit and contact counts are neither equalized nor adjusted",
+            "anatomy": "not identified: both cells are pooled populations and no region contrast is estimated",
+            "modality_value": "not identified as a causal or signal-quality effect: unit and LFP populations differ in channel count and measurement physics",
+            "band": "not applicable to this delay-epoch estimator; no frequency-band contrast is available",
+            "unmatched_records": "excluded: rows without the same patient/session key are never pooled",
+        },
+        "admissible_estimand": "participant-mean difference in cross-validated estimator fittability across matched session keys and grain-specific admitted trials",
+        "inadmissible_claims": [
+            "anatomical region superiority",
+            "LFP signal absent from spikes",
+            "modality causal benefit",
+            "cross-corpus or cross-task pooled effect",
+        ],
+    }
 
     return {
         "schema_version": "1.0.0",
@@ -442,6 +503,8 @@ def build_artifact() -> dict:
         "fittability_correlation_caveats": FITTABILITY_CORRELATION_CAVEATS,
         "matched_modality_test_by_bin_width": matched_tests,
         "grain_discordance_paired_test": discordance,
+        "grain_discordance_participant_test": participant_test,
+        "identification_audit": identification_audit,
         "scope_caveat_between_region_language": SCOPE_CAVEAT,
     }
 
@@ -477,7 +540,7 @@ def extend_census_with_result_basis(payload: dict) -> dict:
             "difference is a MARGIN BAND -- an integer rank derived from how many cross-validation splits "
             "fit, crossing a floor -- rather than a difference in the observable's reported value. "
             "results/observability_matched_modality_test.json measured what governs that margin at the "
-            "per-session level, on the same patients and the same trials: within each grain, the number "
+            "per-session level, on the same patient and session keys: within each grain, the number "
             "of fitted splits correlates with the leading latent's lag-one autocorrelation and with "
             "unit/channel count, significantly for several grain-and-bin-width combinations (see that "
             "artifact's fittability_correlations_by_grain_and_bin_width field for every coefficient and "
@@ -513,11 +576,37 @@ def extend_census_with_result_basis(payload: dict) -> dict:
 
 
 CENSUS_PAIRED_TEST_FIELD = "margin_aware_modality_result_paired_test"
+CENSUS_PARTICIPANT_TEST_FIELD = "margin_aware_modality_result_participant_test"
+
+
+def extend_census_with_participant_test(payload: dict) -> dict:
+    test = payload["grain_discordance_participant_test"]
+    result = {
+        "observable_tested": "cross_validated_nugget_fraction",
+        "independent_unit": "participant",
+        "bin100": test["by_bin_width"]["bin100"],
+        "bin200": test["by_bin_width"]["bin200"],
+        "scope": test["scope"],
+        "supersedes_for_inference": CENSUS_PAIRED_TEST_FIELD,
+        "reading": (
+            "The participant-level sign-flip tests do not establish a systematic grain advantage. "
+            "The earlier session-level binomial result remains a repeated-session diagnostic only. "
+            "Different trial and channel counts across grains prevent a modality-value interpretation."
+        ),
+    }
+    existing = json.loads(CENSUS_PATH.read_text())
+    if CENSUS_PARTICIPANT_TEST_FIELD in existing:
+        if canonical_json(existing[CENSUS_PARTICIPANT_TEST_FIELD]) != canonical_json(result):
+            raise RuntimeError(f"{CENSUS_PARTICIPANT_TEST_FIELD} already exists with different content")
+        return result
+    with locked_json_update(CENSUS_PATH) as census:
+        census[CENSUS_PARTICIPANT_TEST_FIELD] = result
+    return result
 
 
 def extend_census_with_paired_test_null_result(payload: dict) -> dict:
     """Adds exactly one new top-level field to results/observability_and_
-    power_census.json recording that a within-patient paired test of
+    power_census.json recording the historical repeated-session diagnostic of
     margin_aware_modality_result's sole contributing observable
     (cross_validated_nugget_fraction) is null at both bin widths. Every
     pre-existing key is verified byte-identical before and after -- this is
@@ -541,9 +630,9 @@ def extend_census_with_paired_test_null_result(payload: dict) -> dict:
         "reading": (
             "margin_aware_modality_result ranks the LFP grain above the unit grain using a summed "
             "rank difference that margin_aware_modality_result_basis attributes entirely to cross_"
-            "validated_nugget_fraction. The within-patient paired test of that same observable is "
+            "validated_nugget_fraction. The repeated-session diagnostic of that same observable is "
             f"null at both bin widths (bin_ms==100: p={p100:.4f}; bin_ms==200: p={p200:.4f}), so the "
-            "grain ordering is not supported by a within-patient paired test of its sole contributing "
+            "grain ordering is not supported by that diagnostic count of its sole contributing "
             "observable: on the observable responsible for the entire ranking, the two grains are "
             "statistically indistinguishable from each other at the session level."
         ),
@@ -569,12 +658,13 @@ def extend_census_with_paired_test_null_result(payload: dict) -> dict:
 def main() -> None:
     payload = build_artifact()
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    OUTPUT_PATH.write_text(canonical_json(payload))
+    with tempfile.NamedTemporaryFile("w", dir=OUTPUT_PATH.parent, prefix=f".{OUTPUT_PATH.name}.", delete=False) as handle:
+        handle.write(canonical_json(payload))
+        temporary = Path(handle.name)
+    os.replace(temporary, OUTPUT_PATH)
     print(f"wrote {OUTPUT_PATH}", file=sys.stderr)
-    extend_census_with_result_basis(payload)
-    print(f"extended {CENSUS_PATH} with '{CENSUS_EXTENSION_FIELD}' (extend-only, verified)", file=sys.stderr)
-    extend_census_with_paired_test_null_result(payload)
-    print(f"extended {CENSUS_PATH} with '{CENSUS_PAIRED_TEST_FIELD}' (extend-only, verified)", file=sys.stderr)
+    extend_census_with_participant_test(payload)
+    print(f"extended {CENSUS_PATH} with '{CENSUS_PARTICIPANT_TEST_FIELD}'", file=sys.stderr)
     print(json.dumps({
         "precursor_n_sessions_complete_of_total": f"{payload['precursor']['n_sessions_complete']}/{payload['precursor']['n_sessions_total']}",
         "asymmetric_observables_bin200": payload["asymmetric_observable_selection"][200]["asymmetric_observables"],
@@ -582,6 +672,7 @@ def main() -> None:
         "fittability_unit_grain_bin200_rho_corr": payload["fittability_correlations_by_grain_and_bin_width"]["unit_grain"]["bin200"]["correlations"]["leading_latent_lag_one_autocorrelation"],
         "fittability_lfp_grain_bin200_rho_corr": payload["fittability_correlations_by_grain_and_bin_width"]["lfp_grain"]["bin200"]["correlations"]["leading_latent_lag_one_autocorrelation"],
         "grain_discordance_paired_test_p_values": {b: v["two_sided_exact_binomial_p_value"] for b, v in payload["grain_discordance_paired_test"]["by_bin_width"].items()},
+        "grain_discordance_participant_test_p_values": {b: v["two_sided_sign_flip_p_value"] for b, v in payload["grain_discordance_participant_test"]["by_bin_width"].items()},
     }, indent=2))
 
 

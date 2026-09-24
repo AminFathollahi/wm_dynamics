@@ -114,8 +114,8 @@ from run_dissociation_cross_preparation_test import BIN_MS, MIN_TRIALS_WITH_DEFI
 from run_state_space_dimensionality_sweep import CTG_N_SPLITS, CTG_STEP  # noqa: E402
 from run_state_space_estimation_robustness import (  # noqa: E402
     MAJORITY_SIGNIFICANCE_THRESHOLD, MICROSTIM_CANDIDATES, OPERATING_RANK, STATUS_VOCABULARY,
-    aggregate_claim, class_mean_coordinates, fit_representation, restated_claim_cell,
-    rung_three_sample_size,
+    aggregate_claim, class_mean_coordinates, fit_representation, interval_agreement,
+    restated_claim_cell, rung_three_sample_size,
 )
 
 RESULTS = ROOT / "results"
@@ -408,11 +408,12 @@ def build_corpus_claims(records_by_candidate: dict[str, list[dict]]) -> dict:
     for cell_key in CLAIM_CELL_KEYS:
         estimators, verdict_keys = {}, {}
         for candidate, records in sorted(records_by_candidate.items()):
-            agg, vkey = aggregate_claim(records, cell_key)
+            agg, vkey = aggregate_claim(records, cell_key, candidate)
             agg["verdict_key"] = vkey
             estimators[candidate] = agg
             verdict_keys[candidate] = vkey
         decision = decide_reduction_sensitivity(verdict_keys)
+        decision["interval_agreement"] = interval_agreement(estimators)
         block = {"metric": CLAIM_METRIC[cell_key], "estimator_cells": estimators,
                 "reduction_sensitivity": decision, "status": decision["branch"]}
         native = estimators.get("native_full_rank", {})

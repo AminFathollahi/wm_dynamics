@@ -4,8 +4,8 @@ report-following statistic built on it; (2) the landed/target object index, reim
 raw Cartesian columns and proved to agree with run_component_and_item_binding's own swap indicator, on
 hand-computed trials where the correct answer is known by construction; (3) the subspace decomposition of
 the full rate-free direction, proved to agree with cv_regression_subspace's own within/outside magnitudes
-on synthetic data; (4) the pooling-against-0.5 helper; (5) the Block A and Block B decision-rule
-classifiers, every named branch; (6) the Block 0 timing-premise stop condition, both triggered and clear."""
+on synthetic data; (4) the pooling-against-0.5 helper; (5) the report-following and subspace-component decision-rule
+classifiers, every named branch; (6) the timing-premise stop condition, both triggered and clear."""
 
 from __future__ import annotations
 
@@ -25,11 +25,12 @@ from run_pre_cue_state_and_reported_item_identity import (  # noqa: E402
     BRANCH_B_ORDERING_NOT_ESTABLISHED, BRANCH_B_OUTSIDE, BRANCH_REPRODUCTION_GATE_FAILED,
     BRANCH_TASK_GEOM_NEEDS_DECODED, BRANCH_TASK_GEOM_NOT_COVERED, BRANCH_TASK_GEOM_NOT_SEPARABLE,
     BRANCH_TASK_GEOM_POWERED_NULL, BRANCH_TASK_GEOM_REPRODUCED, MIN_POOLED_TEST_TRIALS,
-    _block_b_label_validity_gap_statement, _landed_and_target_index, _landed_identity_check,
+    _subspace_component_label_validity_gap_statement, _landed_and_target_index, _landed_identity_check,
     _loo_subspace_component_vectors, _paired_session_test_full,
     _primary_below_half_bias_only_control_gap_statement, _pool_against_half, _report_following_fraction,
-    _subspace_decomposition_identity_check, block0_timing_premise, circular_abs_diff, decide_block_a,
-    decide_block_b, decide_swap_destination_task_geometry,
+    _subspace_decomposition_identity_check, circular_abs_diff, decide_report_following_branch,
+    measure_pre_cue_window_timing_premise,
+    decide_subspace_component_branch, decide_swap_destination_task_geometry,
 )
 from run_component_and_item_binding import _object_geometry  # noqa: E402
 from run_deviation_subspace_decomposition import cv_regression_subspace  # noqa: E402
@@ -172,7 +173,7 @@ def test_pool_against_half_too_few_sessions():
 
 
 # ---------------------------------------------------------------------------------------------------
-# Block A decision rule
+# Report-following decision rule
 # ---------------------------------------------------------------------------------------------------
 
 def _pooled(mean_fraction: float, significant: bool, mdd: float = 0.02) -> dict:
@@ -186,108 +187,108 @@ def _pooled(mean_fraction: float, significant: bool, mdd: float = 0.02) -> dict:
     }
 
 
-def test_block_a_reproduction_gate_failed_short_circuits():
-    result = decide_block_a("not_reproduced", 1000, _pooled(0.7, True), _pooled(0.5, False),
+def test_report_following_reproduction_gate_failed_short_circuits():
+    result = decide_report_following_branch("not_reproduced", 1000, _pooled(0.7, True), _pooled(0.5, False),
                              np.array([0.7, 0.7]), np.array([0.5, 0.5]))
     assert result["branch"] == BRANCH_REPRODUCTION_GATE_FAILED
 
 
-def test_block_a_too_few_pooled_test_trials():
-    result = decide_block_a("reproduced_exactly", MIN_POOLED_TEST_TRIALS - 1, _pooled(0.7, True),
+def test_report_following_too_few_pooled_test_trials():
+    result = decide_report_following_branch("reproduced_exactly", MIN_POOLED_TEST_TRIALS - 1, _pooled(0.7, True),
                              _pooled(0.5, False), np.array([0.7, 0.7]), np.array([0.5, 0.5]))
     assert result["branch"] == BRANCH_A_TOO_FEW
     assert result["n_pooled_test_trials_across_gate_cleared_sessions"] == MIN_POOLED_TEST_TRIALS - 1
 
 
-def test_block_a_positive_branch():
-    result = decide_block_a("reproduced_exactly", 500, _pooled(0.65, True), _pooled(0.5, False),
+def test_report_following_positive_branch():
+    result = decide_report_following_branch("reproduced_exactly", 500, _pooled(0.65, True), _pooled(0.5, False),
                              np.array([0.65, 0.7]), np.array([0.5, 0.51]))
     assert result["branch"] == BRANCH_A_POSITIVE
 
 
-def test_block_a_bias_confound_branch_runs_paired_test():
+def test_report_following_bias_confound_branch_runs_paired_test():
     a_vals = np.array([0.65, 0.7, 0.68, 0.66, 0.71])
     c_vals = np.array([0.63, 0.69, 0.67, 0.64, 0.70])
-    result = decide_block_a("reproduced_exactly", 500, _pooled(0.68, True), _pooled(0.67, True), a_vals, c_vals)
+    result = decide_report_following_branch("reproduced_exactly", 500, _pooled(0.68, True), _pooled(0.67, True), a_vals, c_vals)
     assert result["branch"] == BRANCH_A_BIAS_CONFOUND
     assert "paired_test_a_vs_c" in result
     assert result["paired_test_a_vs_c"]["status"] == "computed"
 
 
-def test_block_a_surprise_branch():
-    result = decide_block_a("reproduced_exactly", 500, _pooled(0.35, True), _pooled(0.5, False),
+def test_report_following_surprise_branch():
+    result = decide_report_following_branch("reproduced_exactly", 500, _pooled(0.35, True), _pooled(0.5, False),
                              np.array([0.35, 0.3]), np.array([0.5, 0.5]))
     assert result["branch"] == BRANCH_A_SURPRISE
 
 
-def test_block_a_powered_null_branch():
-    result = decide_block_a("reproduced_exactly", 500, _pooled(0.51, False, mdd=0.03), _pooled(0.5, False),
+def test_report_following_powered_null_branch():
+    result = decide_report_following_branch("reproduced_exactly", 500, _pooled(0.51, False, mdd=0.03), _pooled(0.5, False),
                              np.array([0.51, 0.49]), np.array([0.5, 0.5]))
     assert result["branch"] == BRANCH_A_POWERED_NULL
     assert "retrieval" in result["retrieval_locus_statement"]
 
 
-def test_block_a_inconclusive_branch():
-    result = decide_block_a("reproduced_exactly", 500, _pooled(0.51, False, mdd=0.08), _pooled(0.5, False),
+def test_report_following_inconclusive_branch():
+    result = decide_report_following_branch("reproduced_exactly", 500, _pooled(0.51, False, mdd=0.08), _pooled(0.5, False),
                              np.array([0.51, 0.49]), np.array([0.5, 0.5]))
     assert result["branch"] == BRANCH_A_INCONCLUSIVE
 
 
 # ---------------------------------------------------------------------------------------------------
-# Block B decision rule
+# Subspace-component decision rule
 # ---------------------------------------------------------------------------------------------------
 
-def test_block_b_outside_only_with_significant_paired_test():
+def test_subspace_component_outside_only_with_significant_paired_test():
     outside_vals = np.array([0.65, 0.7, 0.68, 0.66, 0.71, 0.69])
     inside_vals = np.array([0.50, 0.49, 0.51, 0.50, 0.48, 0.52])
     pooled_outside = _pooled(0.68, True, mdd=0.01)
     pooled_inside = _pooled(0.50, False, mdd=0.01)
     pooled_outside["p_value"], pooled_inside["p_value"] = 0.001, 0.9
-    result = decide_block_b(pooled_outside, pooled_inside, outside_vals, inside_vals)
+    result = decide_subspace_component_branch(pooled_outside, pooled_inside, outside_vals, inside_vals)
     assert result["branch"] == BRANCH_B_OUTSIDE
 
 
-def test_block_b_inside_only_with_significant_paired_test():
+def test_subspace_component_inside_only_with_significant_paired_test():
     inside_vals = np.array([0.65, 0.7, 0.68, 0.66, 0.71, 0.69])
     outside_vals = np.array([0.50, 0.49, 0.51, 0.50, 0.48, 0.52])
     pooled_outside = _pooled(0.50, False, mdd=0.01)
     pooled_inside = _pooled(0.68, True, mdd=0.01)
     pooled_outside["p_value"], pooled_inside["p_value"] = 0.9, 0.001
-    result = decide_block_b(pooled_outside, pooled_inside, outside_vals, inside_vals)
+    result = decide_subspace_component_branch(pooled_outside, pooled_inside, outside_vals, inside_vals)
     assert result["branch"] == BRANCH_B_INSIDE
 
 
-def test_block_b_both_significant():
+def test_subspace_component_both_significant():
     outside_vals = np.array([0.65, 0.7, 0.68, 0.66, 0.71, 0.69])
     inside_vals = np.array([0.64, 0.69, 0.67, 0.65, 0.70, 0.68])
     pooled_outside = _pooled(0.68, True, mdd=0.01)
     pooled_inside = _pooled(0.67, True, mdd=0.01)
     pooled_outside["p_value"], pooled_inside["p_value"] = 0.001, 0.002
-    result = decide_block_b(pooled_outside, pooled_inside, outside_vals, inside_vals)
+    result = decide_subspace_component_branch(pooled_outside, pooled_inside, outside_vals, inside_vals)
     assert result["branch"] == BRANCH_B_BOTH
     assert "collinearity_outside_vs_inside_across_sessions" in result
 
 
-def test_block_b_neither_significant():
+def test_subspace_component_neither_significant():
     vals = np.array([0.50, 0.49, 0.51, 0.50, 0.48, 0.52])
     pooled = _pooled(0.50, False, mdd=0.02)
-    result = decide_block_b(pooled, pooled, vals, vals)
+    result = decide_subspace_component_branch(pooled, pooled, vals, vals)
     assert result["branch"] == BRANCH_B_NEITHER
 
 
-def test_block_b_ordering_not_established_when_paired_test_not_significant():
+def test_subspace_component_ordering_not_established_when_paired_test_not_significant():
     # Outside significant, inside not, but the two per-session series are identical -- the paired
     # difference is exactly zero, so ordering cannot be established even though one component "wins".
     outside_vals = np.array([0.65, 0.7, 0.68, 0.66, 0.71, 0.69])
     pooled_outside = _pooled(0.68, True, mdd=0.01)
     pooled_inside = _pooled(0.50, False, mdd=0.01)
     pooled_outside["p_value"], pooled_inside["p_value"] = 0.001, 0.9
-    result = decide_block_b(pooled_outside, pooled_inside, outside_vals, outside_vals)
+    result = decide_subspace_component_branch(pooled_outside, pooled_inside, outside_vals, outside_vals)
     assert result["branch"] == BRANCH_B_ORDERING_NOT_ESTABLISHED
 
 
 # ---------------------------------------------------------------------------------------------------
-# Block 0 timing premise
+# Timing premise
 # ---------------------------------------------------------------------------------------------------
 
 def _behaviour_with_margins(margins: list[float]) -> tuple[pd.DataFrame, dict]:
@@ -302,23 +303,23 @@ def _behaviour_with_margins(margins: list[float]) -> tuple[pd.DataFrame, dict]:
     return behaviour, session
 
 
-def test_block0_does_not_trigger_when_every_margin_clears_the_loaders_own_threshold():
+def test_timing_premise_does_not_trigger_when_every_margin_clears_the_loaders_own_threshold():
     behaviour, session = _behaviour_with_margins([1.0, 1.05, 1.2, 0.999])
-    result = block0_timing_premise([session], behaviour)
+    result = measure_pre_cue_window_timing_premise([session], behaviour)
     assert result["stop_condition_triggered"] is False
     assert result["n_trials_pooled"] == 4
     assert result["n_trials_the_loader_already_refused_for_a_too_short_delay"] == 3
 
 
-def test_block0_triggers_when_a_margin_is_short_of_the_loaders_own_threshold():
+def test_timing_premise_triggers_when_a_margin_is_short_of_the_loaders_own_threshold():
     behaviour, session = _behaviour_with_margins([1.0, 1.05, 0.5, 0.999])  # 0.5 s margin: a real violation
-    result = block0_timing_premise([session], behaviour)
+    result = measure_pre_cue_window_timing_premise([session], behaviour)
     assert result["stop_condition_triggered"] is True
     assert result["n_trials_overlapping_cue_onset_by_the_loaders_own_threshold"] == 1
 
 
 # ---------------------------------------------------------------------------------------------------
-# Extension: the direct paired test of A against C, present in every Block A branch (not only the
+# Extension: the direct paired test of A against C, present in every report-following branch (not only the
 # bias-confound branch), with its own sd and minimum detectable difference.
 # ---------------------------------------------------------------------------------------------------
 
@@ -331,23 +332,23 @@ def test_paired_session_test_full_carries_sd_and_mdd():
     assert result["minimum_detectable_paired_difference_at_80pct_power"]["status"] == "computed"
 
 
-def test_block_a_surprise_branch_carries_the_paired_test_and_its_detection_floor_statement():
+def test_report_following_surprise_branch_carries_the_paired_test_and_its_detection_floor_statement():
     # A is significantly below 0.5, C is also significantly below 0.5 -- exactly the delivered
     # configuration this extension was written to record, but on the surprise branch, which the
     # earlier implementation did not attach the paired test to at all.
     a_vals = np.array([0.40, 0.42, 0.38, 0.44, 0.41, 0.39])
     c_vals = np.array([0.35, 0.37, 0.36, 0.34, 0.38, 0.33])
-    result = decide_block_a("reproduced_exactly", 500, _pooled(0.407, True), _pooled(0.355, True),
+    result = decide_report_following_branch("reproduced_exactly", 500, _pooled(0.407, True), _pooled(0.355, True),
                              a_vals, c_vals)
     assert result["branch"] == BRANCH_A_SURPRISE
     assert result["paired_test_a_vs_c"]["status"] == "computed"
     assert result["paired_test_a_vs_c_detection_floor_statement"] is not None
 
 
-def test_block_a_positive_branch_also_carries_the_paired_test():
+def test_report_following_positive_branch_also_carries_the_paired_test():
     a_vals = np.array([0.65, 0.7, 0.68, 0.66, 0.71])
     c_vals = np.array([0.50, 0.51, 0.49, 0.50, 0.52])
-    result = decide_block_a("reproduced_exactly", 500, _pooled(0.68, True), _pooled(0.504, False),
+    result = decide_report_following_branch("reproduced_exactly", 500, _pooled(0.68, True), _pooled(0.504, False),
                              a_vals, c_vals)
     assert result["branch"] == BRANCH_A_POSITIVE
     assert result["paired_test_a_vs_c"]["status"] == "computed"
@@ -358,7 +359,7 @@ def test_detection_floor_statement_says_underpowered_when_mdd_exceeds_a_departur
     # coarse mdd -- the statement must say the separation test is underpowered relative to A's own effect.
     a_vals = np.array([0.52, 0.48, 0.52, 0.48, 0.52, 0.48])
     c_vals = np.array([0.52, 0.47, 0.53, 0.49, 0.51, 0.47])
-    result = decide_block_a("reproduced_exactly", 500, _pooled(0.5, False), _pooled(0.5, False),
+    result = decide_report_following_branch("reproduced_exactly", 500, _pooled(0.5, False), _pooled(0.5, False),
                              a_vals, c_vals)
     statement = result["paired_test_a_vs_c_detection_floor_statement"]
     if statement is not None:
@@ -442,13 +443,13 @@ def test_bias_only_control_gap_statement_does_not_fire_when_c_is_smaller_or_oppo
     assert "does not apply as written" in statement
 
 
-def test_block_b_label_validity_gap_statement_fires_below_half():
+def test_subspace_component_label_validity_gap_statement_fires_below_half():
     pooled_a = _pooled(0.4486, True)
-    statement = _block_b_label_validity_gap_statement(pooled_a)
+    statement = _subspace_component_label_validity_gap_statement(pooled_a)
     assert "no component" in statement
 
 
-def test_block_b_label_validity_gap_statement_clear_above_half():
+def test_subspace_component_label_validity_gap_statement_clear_above_half():
     pooled_a = _pooled(0.60, True)
-    statement = _block_b_label_validity_gap_statement(pooled_a)
+    statement = _subspace_component_label_validity_gap_statement(pooled_a)
     assert "does not apply here" in statement

@@ -93,7 +93,7 @@ from corpus_sessions import data_root  # noqa: E402
 from preprocessing import band_power  # noqa: E402
 from provenance import canonical_json, git_commit  # noqa: E402
 from statistics import (  # noqa: E402
-    bootstrap_ci, minimum_detectable_paired_difference, partial_correlation_permutation_test,
+    Z_80_POWER, bootstrap_ci, minimum_detectable_paired_difference, partial_correlation_permutation_test,
     permutation_pvalue, stable_seed,
 )
 from run_haslacher_phase_omega import (  # noqa: E402
@@ -109,7 +109,7 @@ from run_haslacher_phase_diffusion import (  # noqa: E402
 )
 from run_recording_tier_component_transfer import (  # noqa: E402
     MEANINGFUL_EFFECT_THRESHOLD_R_UNITS, N_ROTATION_NULL_DRAWS, _bias_only_values,
-    _patient_clustered_test, block_a_tier as presence_test_tier, discover_000574_sessions, load_000574_session_tiers,
+    _patient_clustered_test, existence_tier as presence_test_tier, discover_000574_sessions, load_000574_session_tiers,
     rate_free_state_deviation, rotation_null_variance_test,
 )
 
@@ -220,10 +220,13 @@ def minimum_detectable_correlation(n: int, alpha: float = 0.05, power: float = 0
     power, via the Fisher z transform's normal approximation -- the correlation analogue of
     statistics.minimum_detectable_paired_difference, which is built for paired mean differences and does
     not apply to a between-participant correlation coefficient."""
-    from scipy.stats import norm
     if n < 4:
         return {"status": "not_computable", "n": n}
-    z_factor = float(norm.ppf(1 - alpha / 2) + norm.ppf(power))
+    if (alpha, power) == (0.05, 0.80):
+        z_factor = Z_80_POWER
+    else:
+        from scipy.stats import norm
+        z_factor = float(norm.ppf(1 - alpha / 2) + norm.ppf(power))
     z_effect = z_factor / np.sqrt(n - 3)
     return {"status": "computed", "n": n, "alpha": alpha, "power": power,
             "z_factor": z_factor, "mdd_r": float(np.tanh(z_effect))}
@@ -235,10 +238,13 @@ def minimum_detectable_group_difference(n1: int, n2: int, pooled_sd: float,
     observed pooled standard deviation -- the two-sample analogue of
     statistics.minimum_detectable_paired_difference, needed because the phase-modulation test's
     between-group amplitude contrast is not a paired design."""
-    from scipy.stats import norm
     if n1 < 2 or n2 < 2 or not np.isfinite(pooled_sd):
         return {"status": "not_computable", "n1": n1, "n2": n2}
-    z_factor = float(norm.ppf(1 - alpha / 2) + norm.ppf(power))
+    if (alpha, power) == (0.05, 0.80):
+        z_factor = Z_80_POWER
+    else:
+        from scipy.stats import norm
+        z_factor = float(norm.ppf(1 - alpha / 2) + norm.ppf(power))
     mdd = z_factor * pooled_sd * np.sqrt(1.0 / n1 + 1.0 / n2)
     return {"status": "computed", "n1": n1, "n2": n2, "pooled_sd": float(pooled_sd),
             "alpha": alpha, "power": power, "z_factor": z_factor, "mdd": float(mdd)}

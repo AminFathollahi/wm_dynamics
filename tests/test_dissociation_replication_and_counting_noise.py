@@ -3,9 +3,9 @@ the pieces that could silently break this analysis without erroring: (1) the
 Poisson surrogate construction actually removes trial-to-trial direction
 structure while preserving each trial's own total-count distribution,
 (2) the within-item-count-level trial-count-weighted combination arithmetic,
-(3) Block A's decision-rule classifier, (4) Block B's decision-rule
-classifier, and (5) the two-sided empirical p-value helper the counting-noise
-comparison is built on."""
+(3) the dissociation-replication arm's decision-rule classifier, (4) the
+counting-noise census's decision-rule classifier, and (5) the two-sided
+empirical p-value helper the counting-noise comparison is built on."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from run_dissociation_replication_and_counting_noise import (  # noqa: E402
-    _attach_block_b_label_disclosure, _block_a_branch, _block_b_branch, _count_separation_disclosure,
+    _attach_counting_noise_label_disclosure, _dissociation_replication_branch, _counting_noise_census_branch, _count_separation_disclosure,
     _heterogeneity_disclosure, _magnitude_diagnostic_verdict, _observable_arrays, _primary_cell_label_disclosure,
     _session_observable_arm, _two_sided_empirical_p, poisson_surrogate_and_real_deviation_magnitudes,
     poisson_surrogate_draw_correlations,
@@ -151,31 +151,31 @@ def test_two_sided_empirical_p_is_symmetric_in_direction():
 
 
 # ---------------------------------------------------------------------------------------------------
-# Block B branch classifier
+# Counting-noise census branch classifier
 # ---------------------------------------------------------------------------------------------------
 
-def test_block_b_branch_explained_by_counting_noise():
-    assert _block_b_branch(real_mean=-0.05, p_value=0.4, surrogate_mean=-0.06, mdd_value=0.02) == \
+def test_counting_noise_census_branch_explained_by_counting_noise():
+    assert _counting_noise_census_branch(real_mean=-0.05, p_value=0.4, surrogate_mean=-0.06, mdd_value=0.02) == \
         "deviation_gate_value_is_explained_by_counting_noise"
 
 
-def test_block_b_branch_exceeds_counting_noise():
-    assert _block_b_branch(real_mean=-0.5, p_value=0.001, surrogate_mean=-0.1, mdd_value=0.02) == \
+def test_counting_noise_census_branch_exceeds_counting_noise():
+    assert _counting_noise_census_branch(real_mean=-0.5, p_value=0.001, surrogate_mean=-0.1, mdd_value=0.02) == \
         "deviation_gate_failure_exceeds_counting_noise"
 
 
-def test_block_b_branch_wrong_direction():
-    assert _block_b_branch(real_mean=0.5, p_value=0.001, surrogate_mean=-0.1, mdd_value=0.02) == \
+def test_counting_noise_census_branch_wrong_direction():
+    assert _counting_noise_census_branch(real_mean=0.5, p_value=0.001, surrogate_mean=-0.1, mdd_value=0.02) == \
         "deviation_gate_value_is_not_in_the_counting_noise_direction"
 
 
-def test_block_b_branch_inconclusive_when_mdd_exceeds_observed():
-    assert _block_b_branch(real_mean=0.02, p_value=0.3, surrogate_mean=-0.06, mdd_value=0.5) == \
+def test_counting_noise_census_branch_inconclusive_when_mdd_exceeds_observed():
+    assert _counting_noise_census_branch(real_mean=0.02, p_value=0.3, surrogate_mean=-0.06, mdd_value=0.5) == \
         "inconclusive_below_detection_floor"
 
 
 # ---------------------------------------------------------------------------------------------------
-# Block A branch classifier
+# Dissociation-replication branch classifier
 # ---------------------------------------------------------------------------------------------------
 
 def _entry(significant: bool, r: float, mdd: float | None) -> dict:
@@ -200,42 +200,42 @@ def _cell(gate_sig: bool, amp_raw_sig: bool, amp_partial_sig: bool, dev_raw_sig:
     }
 
 
-def test_block_a_branch_gate_not_significant():
-    branch = _block_a_branch(_cell(False, False, False, False, False))
+def test_dissociation_replication_branch_gate_not_significant():
+    branch = _dissociation_replication_branch(_cell(False, False, False, False, False))
     assert branch["branch"] == "dominant_mode_is_not_rate_in_this_preparation"
 
 
-def test_block_a_branch_dissociation_replicates():
-    branch = _block_a_branch(_cell(True, True, False, True, True))
+def test_dissociation_replication_branch_dissociation_replicates():
+    branch = _dissociation_replication_branch(_cell(True, True, False, True, True))
     assert branch["branch"] == "dissociation_replicates_in_the_better_powered_corpus"
 
 
-def test_block_a_branch_amplitude_survives():
-    branch = _block_a_branch(_cell(True, True, True, False, False))
+def test_dissociation_replication_branch_amplitude_survives():
+    branch = _dissociation_replication_branch(_cell(True, True, True, False, False))
     assert branch["branch"] == "dominant_amplitude_link_survives_the_rate_control_here"
 
 
-def test_block_a_branch_neither_predicts_powered_null():
-    branch = _block_a_branch(_cell(True, False, False, False, False, amp_mdd=0.05, dev_mdd=0.05))
+def test_dissociation_replication_branch_neither_predicts_powered_null():
+    branch = _dissociation_replication_branch(_cell(True, False, False, False, False, amp_mdd=0.05, dev_mdd=0.05))
     assert branch["branch"] == "neither_observable_predicts_report_error_in_this_corpus"
     assert branch["sub_label"] == "powered_null"
 
 
-def test_block_a_branch_neither_predicts_inconclusive_sub_label():
-    branch = _block_a_branch(_cell(True, False, False, False, False, amp_mdd=0.99, dev_mdd=0.99))
+def test_dissociation_replication_branch_neither_predicts_inconclusive_sub_label():
+    branch = _dissociation_replication_branch(_cell(True, False, False, False, False, amp_mdd=0.99, dev_mdd=0.99))
     assert branch["branch"] == "neither_observable_predicts_report_error_in_this_corpus"
     assert branch["sub_label"] == "inconclusive"
 
 
-def test_block_a_branch_off_list_combination_is_inconclusive():
+def test_dissociation_replication_branch_off_list_combination_is_inconclusive():
     # amplitude raw significant but its partial does not survive, AND the deviation does not survive its
     # own partial either -- none of branches 2-4 match, so the pre-declared rule's own "otherwise" fires.
-    branch = _block_a_branch(_cell(True, True, False, True, False))
+    branch = _dissociation_replication_branch(_cell(True, True, False, True, False))
     assert branch["branch"] == "inconclusive_below_detection_floor"
 
 
-def test_block_a_branch_void_cell_is_reported_as_void_not_as_a_result():
-    branch = _block_a_branch(_cell(True, True, False, True, True, void=True))
+def test_dissociation_replication_branch_void_cell_is_reported_as_void_not_as_a_result():
+    branch = _dissociation_replication_branch(_cell(True, True, False, True, True, void=True))
     assert branch["branch"] == "void_orthogonality_gate_failed"
 
 
@@ -407,14 +407,14 @@ def test_count_separation_disclosure_flags_the_asymmetric_pattern():
     assert cs["unsampled_gap_in_total_spike_count_per_trial_bounds"] == [353.0, 989.5]
 
 
-def test_attach_block_b_label_disclosure_only_fires_on_its_own_branch():
-    fired = _attach_block_b_label_disclosure(
+def test_attach_counting_noise_label_disclosure_only_fires_on_its_own_branch():
+    fired = _attach_counting_noise_label_disclosure(
         {"branch": "deviation_gate_value_is_not_in_the_counting_noise_direction", "real_gate_mean_value": -0.2057,
          "surrogate_distribution": {"mean": -0.449}})
     assert "label_disclosure" in fired
     assert fired["label_disclosure"]["observed_gate_is_negative"] is True
 
-    unfired = _attach_block_b_label_disclosure({"branch": "deviation_gate_failure_exceeds_counting_noise"})
+    unfired = _attach_counting_noise_label_disclosure({"branch": "deviation_gate_failure_exceeds_counting_noise"})
     assert "label_disclosure" not in unfired
 
 
@@ -423,7 +423,7 @@ def test_attach_block_b_label_disclosure_only_fires_on_its_own_branch():
 # ---------------------------------------------------------------------------------------------------
 
 def test_zero_drop_reconciles_when_every_seen_session_is_either_loaded_or_refused():
-    # The exact reconciliation expression run_block_a and run_block_b both assert: every session counted
+    # The exact reconciliation expression run_dissociation_replication and run_counting_noise_census both assert: every session counted
     # as "seen" must be accounted for as either analysed or refused-with-a-reason, never left uncounted.
     seen_sessions = [f"s{i}" for i in range(10)]
     loaded = set(seen_sessions[:7])

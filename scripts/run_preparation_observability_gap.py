@@ -103,7 +103,7 @@ from corpus_sessions import (  # noqa: E402
 from provenance import canonical_json  # noqa: E402
 from state_persistence import _d_series, binomial_thin, lag_reachability_note  # noqa: E402
 from statistics import (  # noqa: E402
-    fdr_bh, minimum_detectable_paired_difference, paired_sign_flip_test,
+    Z_80_POWER, fdr_bh, minimum_detectable_paired_difference, paired_sign_flip_test,
     permutation_pvalue, power_to_detect_effect, stable_seed,
 )
 from run_state_persistence import (  # noqa: E402
@@ -794,7 +794,7 @@ def sessions_needed(effect: float, sd: float, power: float = 0.80, alpha: float 
     are on the same footing."""
     if effect == 0 or sd <= 0 or not math.isfinite(effect) or not math.isfinite(sd):
         return None
-    z = float(stats.norm.ppf(1 - alpha / 2) + stats.norm.ppf(power))
+    z = Z_80_POWER if (alpha, power) == (0.05, 0.80) else float(stats.norm.ppf(1 - alpha / 2) + stats.norm.ppf(power))
     return int(math.ceil((z * sd / abs(effect)) ** 2))
 
 

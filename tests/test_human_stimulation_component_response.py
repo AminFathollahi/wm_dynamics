@@ -23,13 +23,14 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from statistics import Z_80_POWER  # noqa: E402
 from run_human_stimulation_component_response import (  # noqa: E402
     ALPHA,
     MEANINGFUL_EFFECT_THRESHOLD_NORMALISED_DISPLACEMENT,
     _bipolar_channel_shanks,
     _bootstrap_pooled_mdd_displacement,
-    _classify_block_a,
-    _classify_block_b,
+    _classify_component_recall_failure_link,
+    _classify_stimulation_displacement,
     _classify_pretask_titration,
     _classify_two_arm_meta,
     _contact_shank,
@@ -47,7 +48,7 @@ from run_human_stimulation_component_response import (  # noqa: E402
     _task_period_subject_level_slopes,
     _verify_commensurable_normalisation,
     channel_condition_masks,
-    compute_block_b_displacement,
+    compute_stimulation_displacement,
     _dose_quantities,
     find_pretask_titration_series,
     minimum_detectable_correlation,
@@ -88,7 +89,7 @@ def test_planted_displacement_is_recovered():
     activity = np.vstack([control_activity, stim_activity])
     stim_flag = np.array([0] * n_ctrl + [1] * n_stim)
 
-    out = compute_block_b_displacement(activity, stim_flag)
+    out = compute_stimulation_displacement(activity, stim_flag)
     control_deviation = out["control_deviation"]
     stim_deviation = out["stim_deviation"]
 
@@ -120,7 +121,7 @@ def test_matched_distribution_produces_no_displacement():
     activity = np.vstack([control_activity, stim_activity])
     stim_flag = np.array([0] * n_ctrl + [1] * n_stim)
 
-    out = compute_block_b_displacement(activity, stim_flag)
+    out = compute_stimulation_displacement(activity, stim_flag)
     displacement = float(np.nanmean(out["stim_deviation"]) - np.nanmean(out["control_deviation"]))
     assert displacement == pytest.approx(0.0, abs=0.08)
 
@@ -146,8 +147,8 @@ def test_reference_and_control_deviation_are_built_from_control_trials_only():
     activity_a = np.vstack([control_activity, stim_activity_a])
     activity_b = np.vstack([control_activity, stim_activity_b])
 
-    out_a = compute_block_b_displacement(activity_a, stim_flag)
-    out_b = compute_block_b_displacement(activity_b, stim_flag)
+    out_a = compute_stimulation_displacement(activity_a, stim_flag)
+    out_b = compute_stimulation_displacement(activity_b, stim_flag)
 
     # The reference direction and every control trial's own leave-one-out deviation must be IDENTICAL
     # across the two runs: only the stimulated rows differ between activity_a and activity_b, and
@@ -220,38 +221,38 @@ def test_minimum_detectable_correlation_shrinks_with_more_subjects():
 # Pre-declared branch classifiers
 # ---------------------------------------------------------------------------------------------------
 
-def test_classify_block_a_void_control_overrides_positive_branch():
+def test_classify_component_recall_failure_link_void_control_overrides_positive_branch():
     main_test = {"status": "computed", "mean_value": 0.2, "p_value": 0.01}
     void_test = {"status": "computed", "r": 0.25, "p_value": 0.02}
-    assert _classify_block_a(main_test, {"status": "computed", "mdd": 0.05}, void_test) == \
+    assert _classify_component_recall_failure_link(main_test, {"status": "computed", "mdd": 0.05}, void_test) == \
         "component_recall_link_not_separable_from_a_session_level_offset"
 
 
-def test_classify_block_a_positive_without_void_reproduction():
+def test_classify_component_recall_failure_link_positive_without_void_reproduction():
     main_test = {"status": "computed", "mean_value": 0.2, "p_value": 0.01}
     void_test = {"status": "computed", "r": 0.01, "p_value": 0.9}
-    assert _classify_block_a(main_test, {"status": "computed", "mdd": 0.05}, void_test) == \
+    assert _classify_component_recall_failure_link(main_test, {"status": "computed", "mdd": 0.05}, void_test) == \
         "component_predicts_recall_failure_in_human_intracranial_recording"
 
 
-def test_classify_block_b_artifact_only_when_full_significant_but_shank_excluded_is_not():
+def test_classify_stimulation_displacement_artifact_only_when_full_significant_but_shank_excluded_is_not():
     pooled = {
         "full_channel_set": {"status": "computed", "mean_value": 1.5, "p_value": 0.01,
                              "mdd": {"status": "computed", "mdd": 0.3}},
         "excluding_stimulated_shank": {"status": "computed", "mean_value": 0.1, "p_value": 0.6,
                                        "mdd": {"status": "computed", "mdd": 0.3}},
     }
-    assert _classify_block_b(pooled) == "stimulation_displacement_not_separable_from_recording_artifact"
+    assert _classify_stimulation_displacement(pooled) == "stimulation_displacement_not_separable_from_recording_artifact"
 
 
-def test_classify_block_b_survives_when_shank_excluded_still_significant_same_sign():
+def test_classify_stimulation_displacement_survives_when_shank_excluded_still_significant_same_sign():
     pooled = {
         "full_channel_set": {"status": "computed", "mean_value": 1.5, "p_value": 0.01,
                              "mdd": {"status": "computed", "mdd": 0.3}},
         "excluding_stimulated_shank": {"status": "computed", "mean_value": 1.2, "p_value": 0.02,
                                        "mdd": {"status": "computed", "mdd": 0.3}},
     }
-    assert _classify_block_b(pooled) == "stimulation_displaces_the_component"
+    assert _classify_stimulation_displacement(pooled) == "stimulation_displaces_the_component"
 
 
 # ---------------------------------------------------------------------------------------------------
@@ -430,17 +431,17 @@ def test_ladder_rung_no_loss_when_retained_equals_seen():
 # Two-arm dose-scaling meta-analysis
 # ---------------------------------------------------------------------------------------------------
 
-def _block_d_row(subject: str, pair: str, amplitude: float, displacement: float) -> dict:
+def _dose_response_row(subject: str, pair: str, amplitude: float, displacement: float) -> dict:
     return {"subject": subject, "stim_channel": pair, "amplitude_uA": amplitude,
            "normalised_displacement": displacement}
 
 
 def test_task_period_dose_arm_only_pools_subjects_with_amplitude_variation():
     rows = [
-        _block_d_row("A", "P1-P2", 1000.0, 0.1), _block_d_row("A", "P1-P2", 1500.0, 0.3),
-        _block_d_row("B", "P3-P4", 500.0, -0.2), _block_d_row("B", "P3-P4", 1000.0, 0.0),
+        _dose_response_row("A", "P1-P2", 1000.0, 0.1), _dose_response_row("A", "P1-P2", 1500.0, 0.3),
+        _dose_response_row("B", "P3-P4", 500.0, -0.2), _dose_response_row("B", "P3-P4", 1000.0, 0.0),
         # Subject C has two sessions but a CONSTANT amplitude -- no dose axis, must be dropped.
-        _block_d_row("C", "P5-P6", 1000.0, 0.05), _block_d_row("C", "P5-P6", 1000.0, 0.4),
+        _dose_response_row("C", "P5-P6", 1000.0, 0.05), _dose_response_row("C", "P5-P6", 1000.0, 0.4),
     ]
     pooled, range_summary, subjects = _task_period_dose_arm(rows, exclude_subjects=set())
     assert subjects == {"A", "B"}
@@ -453,8 +454,8 @@ def test_task_period_dose_arm_only_pools_subjects_with_amplitude_variation():
 
 def test_task_period_dose_arm_exclude_subjects_removes_them_from_pooling():
     rows = [
-        _block_d_row("A", "P1-P2", 1000.0, 0.1), _block_d_row("A", "P1-P2", 1500.0, 0.3),
-        _block_d_row("B", "P3-P4", 500.0, -0.2), _block_d_row("B", "P3-P4", 1000.0, 0.0),
+        _dose_response_row("A", "P1-P2", 1000.0, 0.1), _dose_response_row("A", "P1-P2", 1500.0, 0.3),
+        _dose_response_row("B", "P3-P4", 500.0, -0.2), _dose_response_row("B", "P3-P4", 1000.0, 0.0),
     ]
     pooled, range_summary, subjects = _task_period_dose_arm(rows, exclude_subjects={"B"})
     assert subjects == {"A"}
@@ -501,10 +502,9 @@ def test_pretask_titration_dose_arm_excludes_overlap_subject_and_rebuilds():
 def test_displacement_scale_arm_multiplies_slope_and_se_by_realised_range():
     pooled_slope = {"status": "computed", "n_subjects": 5, "mean_value": 0.002, "p_value": 0.3,
                     "ci_lower": -0.001, "ci_upper": 0.005,
-                    "mdd": {"status": "computed", "mdd": 0.0028015852181129683}}
+                    "mdd": {"status": "computed", "mdd": 0.001 * Z_80_POWER}}
     range_summary = {"median_uA": 500.0}
-    z_factor = 2.8015852181129683
-    out = _displacement_scale_arm(pooled_slope, range_summary, "some_arm", z_factor)
+    out = _displacement_scale_arm(pooled_slope, range_summary, "some_arm", Z_80_POWER)
     assert out["status"] == "computed"
     assert out["displacement_estimate"] == pytest.approx(0.002 * 500.0)
     # se_slope = mdd / z_factor = 0.001 exactly, by construction of the mdd above.
@@ -549,14 +549,14 @@ def test_verify_commensurable_normalisation_detects_agreement_and_mismatch():
     pretask = {"per_series": {"s1": {"status": "computed", "session_key": "sess1", "subject": "X"}}}
     closedloop_records = [{"session_key": "sess1", "arrays": arrays}]
 
-    matching_block_b = {"per_session": {"sess1": {"conditions": {"excluding_stimulated_shank": {
+    matching_stimulation_displacement = {"per_session": {"sess1": {"conditions": {"excluding_stimulated_shank": {
         "status": "computed", "spontaneous_control_sd": true_sd}}}}}
-    out = _verify_commensurable_normalisation(pretask, matching_block_b, closedloop_records)
+    out = _verify_commensurable_normalisation(pretask, matching_stimulation_displacement, closedloop_records)
     assert out["commensurable"] is True and out["n_sessions_checked"] == 1
 
-    mismatched_block_b = {"per_session": {"sess1": {"conditions": {"excluding_stimulated_shank": {
+    mismatched_stimulation_displacement = {"per_session": {"sess1": {"conditions": {"excluding_stimulated_shank": {
         "status": "computed", "spontaneous_control_sd": true_sd + 1.0}}}}}
-    out_bad = _verify_commensurable_normalisation(pretask, mismatched_block_b, closedloop_records)
+    out_bad = _verify_commensurable_normalisation(pretask, mismatched_stimulation_displacement, closedloop_records)
     assert out_bad["commensurable"] is False
 
 
@@ -635,8 +635,8 @@ def test_interpretability_note_when_combinable_does_not_overclaim_the_heterogene
 
 def test_task_period_subject_level_slopes_matches_pooled_mean():
     rows = [
-        _block_d_row("A", "P1-P2", 1000.0, 0.1), _block_d_row("A", "P1-P2", 1500.0, 0.3),
-        _block_d_row("B", "P3-P4", 500.0, -0.2), _block_d_row("B", "P3-P4", 1000.0, 0.0),
+        _dose_response_row("A", "P1-P2", 1000.0, 0.1), _dose_response_row("A", "P1-P2", 1500.0, 0.3),
+        _dose_response_row("B", "P3-P4", 500.0, -0.2), _dose_response_row("B", "P3-P4", 1000.0, 0.0),
     ]
     pooled, _, _ = _task_period_dose_arm(rows, exclude_subjects=set())
     vals = _task_period_subject_level_slopes(rows, set())
@@ -704,7 +704,7 @@ def test_exhaustive_sign_flip_check_rejects_non_minimum_observed():
 
 _BOOT_TASK_VALS = np.array([-0.01, 0.02, 0.005])
 _BOOT_PRETASK_VALS = np.array([-0.001, 0.002, 0.0005, 0.003, -0.002, 0.001, 0.0004])
-_BOOT_Z = 2.8015852181129683
+_BOOT_Z = Z_80_POWER
 
 
 def test_bootstrap_pooled_mdd_displacement_scales_linearly_with_range():

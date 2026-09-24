@@ -523,6 +523,8 @@ def fit_sequential_autoencoder(train_X, test_X, k, rng, is_spiking, bin_ms):
 
 
 CEBRA_TIME_OFFSET = 1
+CEBRA_RECEPTIVE_FIELD = 1
+CEBRA_BOUNDARY_GAP = max(CEBRA_TIME_OFFSET, CEBRA_RECEPTIVE_FIELD)
 CEBRA_MAX_ITERATIONS = 1200  # fixed across every session, never tuned against a session's own data:
 # this is the exact iteration count the feasibility probe (verify_contrastive_embedding_environment.py)
 # used for its held-out-reconstruction checks -- the check that most resembles this gate's own
@@ -536,15 +538,17 @@ def _is_out_of_memory(exc: Exception) -> bool:
     return "out of memory" in str(exc).lower()
 
 
-def _trial_gap_pad(flat: np.ndarray, n_trials: int, n_bins: int, gap: int) -> tuple[np.ndarray, np.ndarray]:
-    """Insert `gap` filler rows (the column mean of `flat`'s own real rows) between every trial of a
-    trial-major flattened (n_trials * n_bins, n_features) array, so that a purely time-contrastive fit
-    over the concatenated session never treats one trial's last bin and the next trial's first bin as
-    temporal neighbours. Returns the padded array and a boolean mask marking which of its rows are
-    real (non-filler) data, so the filler can be dropped again after the model has been applied."""
+def _trial_gap_pad(
+    flat: np.ndarray,
+    n_trials: int,
+    n_bins: int,
+    gap: int,
+    filler: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Separate flattened trials with supplied filler rows and return the real-row mask."""
     n_features = flat.shape[1]
     trials = flat.reshape(n_trials, n_bins, n_features)
-    filler = flat.mean(axis=0, keepdims=True)
+    filler = np.asarray(filler, dtype=flat.dtype).reshape(1, n_features)
     rows, is_real = [], []
     for trial in trials:
         rows.append(trial)
@@ -572,8 +576,13 @@ def fit_time_contrastive_embedding(train_X, test_X, k, rng, is_spiking, bin_ms):
     z_train = (flat_train - mean) / std
     z_test = (flat_test - mean) / std
 
-    padded_train, real_train = _trial_gap_pad(z_train, n_tr, n_b, CEBRA_TIME_OFFSET)
-    padded_test, real_test = _trial_gap_pad(z_test, n_te, n_b, CEBRA_TIME_OFFSET)
+    filler = z_train.mean(axis=0)
+    padded_train, real_train = _trial_gap_pad(
+        z_train, n_tr, n_b, CEBRA_BOUNDARY_GAP, filler
+    )
+    padded_test, real_test = _trial_gap_pad(
+        z_test, n_te, n_b, CEBRA_BOUNDARY_GAP, filler
+    )
     if padded_train.shape[0] < 3:
         return {"status": "failed_to_train",
                 "reason": f"n_padded_train_rows={padded_train.shape[0]} < 3, cebra needs at least 3 timepoints to fit"}
@@ -619,25 +628,32 @@ def fit_time_contrastive_embedding(train_X, test_X, k, rng, is_spiking, bin_ms):
 
 
 def fit_temporal_diffusion_embedding(train_X, test_X, k, rng, is_spiking, bin_ms):
-    """A diffusion-manifold embedding whose graph construction is smoothed along the row order before
-    the embedding is built, so that rows nearby in time end up nearby in the embedding even when they
-    would not be nearest neighbours by instantaneous population state alone -- the temporal variant of
-    the plain diffusion embedding used for the trajectory and manifold claims in this project. Rows are
-    trial-major (every trial's own bins are contiguous), so the smoothing window is capped at the
-    session's own bin count to keep it from blending across a trial boundary more than unavoidably at
-    the single row where one trial's last bin sits next to the next trial's first."""
+    """Fit T-PHATE with training-derived separators between trial trajectories."""
     import tphate
     flat_train, n_tr, n_b = _flatten(anscombe_counts(train_X) if is_spiking else train_X)
     flat_test, n_te, _ = _flatten(anscombe_counts(test_X) if is_spiking else test_X)
     n_features = flat_train.shape[1]
     k_use = int(np.clip(k, 1, min(n_features - 1, 10)))
     try:
-        knn = max(2, min(5, flat_train.shape[0] // 4))
         smooth_window = max(1, min(3, n_b - 1))
-        op = tphate.TPHATE(n_components=k_use, knn=knn, smooth_window=smooth_window, verbose=0,
-                            n_jobs=1, random_state=int(rng.integers(0, 2**31 - 1)))
-        latent_train = op.fit_transform(flat_train)
-        latent_test = op.transform(flat_test)
+        filler = flat_train.mean(axis=0)
+        padded_train, real_train = _trial_gap_pad(
+            flat_train, n_tr, n_b, smooth_window, filler
+        )
+        padded_test, real_test = _trial_gap_pad(
+            flat_test, n_te, n_b, smooth_window, filler
+        )
+        knn = max(2, min(5, padded_train.shape[0] // 4))
+        op = tphate.TPHATE(
+            n_components=k_use,
+            knn=knn,
+            smooth_window=smooth_window,
+            verbose=0,
+            n_jobs=1,
+            random_state=int(rng.integers(0, 2**31 - 1)),
+        )
+        latent_train = op.fit_transform(padded_train)[real_train]
+        latent_test = op.transform(padded_test)[real_test]
     except Exception as exc:
         return {"status": "failed_to_train", "reason": f"temporal_diffusion_embedding raised: {exc}"}
     return {"status": "fitted", "k_used": k_use,

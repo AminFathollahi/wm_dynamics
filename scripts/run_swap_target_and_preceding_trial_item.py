@@ -59,14 +59,14 @@ shift-invariant and pass through unchanged. This reuses ``_pool_values``
 ``minimum_detectable_paired_difference``) exactly rather than writing a
 second pooling primitive for a 0.5 null.
 
-SESSION-LEVEL SPATIAL BIAS CONTROL. Block A's target-referenced statistic could in principle be
+SESSION-LEVEL SPATIAL BIAS CONTROL. The preceding-item behavioural test's target-referenced statistic could in principle be
 reproduced by nothing more than a generic, non-trial-specific spatial bias in where the two uncued
 objects happen to sit relative to a typical target position in that session, rather than by any
 relationship to the SPECIFIC trial that preceded the one being scored. This is tested directly: the
 identical two-alternative statistic is recomputed with the preceding trial's own target angle replaced
 by the session's own mean cued-object angle (a single constant per session, carrying the session's
 spatial layout but no trial-specific information), and the two per-session proportions are compared by
-a direct paired test. The result is reported alongside block A's own branch, not folded into it.
+a direct paired test. The result is reported alongside the preceding-item behavioural test's own branch, not folded into it.
 """
 
 from __future__ import annotations
@@ -125,10 +125,10 @@ BRANCH_GATE_FAILED = "void_reproduction_gate_did_not_reproduce"
 BRANCH_SYMMETRY_PREMISE_FAILED = "block_0_shuffled_null_not_centred_on_one_half_stopped_before_block_a_or_b"
 
 NEAR_SEPARATION_THRESHOLD_DEGREES = 15.0
-BLOCK0_N_SHUFFLES = 1000
-BLOCK0_CENTERING_Z_THRESHOLD = 3.0  # three Monte-Carlo standard errors, declared before any draw is run
+SYMMETRY_PREMISE_N_SHUFFLES = 1000
+SYMMETRY_PREMISE_CENTERING_Z_THRESHOLD = 3.0  # three Monte-Carlo standard errors, declared before any draw is run
 
-BLOCK_A_MDD_POWERED_NULL_THRESHOLD = 0.05  # proportion units, both statistics; declared before any number is read
+PRECEDING_ITEM_BEHAVIOURAL_MDD_POWERED_NULL_THRESHOLD = 0.05  # proportion units, both statistics; declared before any number is read
 
 BRANCH_A_TARGET = "swaps_land_on_the_object_nearest_the_preceding_trials_remembered_item"
 BRANCH_A_RESPONSE = "swaps_repeat_the_preceding_trials_response_rather_than_its_remembered_item"
@@ -163,7 +163,7 @@ DROP_SWAP_DEST_TIE = "swap_destination_ambiguous_tie_between_the_two_uncued_obje
 DROP_SESSION_ARRAYS = "session_excluded_arrays_not_computable"
 SURVIVING = "surviving_item_count_3_swap_trial_with_admissible_preceding_trial"
 
-BLOCK_A_DECISION_RULE_DECLARED_BEFORE_FITTING = (
+PRECEDING_ITEM_BEHAVIOURAL_DECISION_RULE_DECLARED_BEFORE_FITTING = (
     "Two per-session two-alternative proportions (target-referenced, response-referenced), each pooled "
     "across sessions by a two-sided paired sign-flip test against 0.5. 'Significant' means two-sided "
     "p <= 0.05; 'above'/'below' is the sign of (pooled mean - 0.5). Checked in this order, so a below-0.5 "
@@ -181,15 +181,16 @@ BLOCK_A_DECISION_RULE_DECLARED_BEFORE_FITTING = (
     "response significantly larger -> rule 2's label; no significant paired difference -> "
     "'swaps_follow_the_preceding_trial_but_its_remembered_item_and_its_response_cannot_be_separated'.\n"
     "  4. Neither significant (and neither below 0.5): if BOTH statistics' own minimum detectable "
-    f"paired difference at 80% power is below {BLOCK_A_MDD_POWERED_NULL_THRESHOLD} (proportion units) -> "
+    f"paired difference at 80% power is below {PRECEDING_ITEM_BEHAVIOURAL_MDD_POWERED_NULL_THRESHOLD} (proportion units) -> "
     "'powered_null_swap_destination_is_unrelated_to_the_preceding_trial'; otherwise -> "
     "'inconclusive_below_detection_floor', never quoted without its detection floor.\n"
     "Any pattern not covered above is recorded as 'outcome_not_covered_by_the_pre_declared_rule' with "
     "every number, not stretched onto a listed cell."
 )
 
-BLOCK_A_SESSION_LEVEL_SPATIAL_BIAS_CONTROL_DECISION_RULE_DECLARED_BEFORE_FITTING = (
-    "A control on the target-referenced statistic only, reported alongside block A's own branch and never "
+PRECEDING_ITEM_BEHAVIOURAL_SPATIAL_BIAS_CONTROL_DECISION_RULE_DECLARED_BEFORE_FITTING = (
+    "A control on the target-referenced statistic only, reported alongside the preceding-item behavioural "
+    "test's own branch and never "
     "gating or overriding it. The identical two-alternative statistic, computed the same way (per-trial "
     "indicator against a reference angle, ties excluded and counted, pooled within session then across "
     "sessions by a two-sided paired sign-flip test against 0.5), but with the preceding trial's target "
@@ -213,7 +214,7 @@ BLOCK_A_SESSION_LEVEL_SPATIAL_BIAS_CONTROL_DECISION_RULE_DECLARED_BEFORE_FITTING
     "test's own minimum detectable difference at 80% power."
 )
 
-BLOCK_B_DECISION_RULE_DECLARED_BEFORE_FITTING = (
+SERIAL_PULL_NEURAL_LINK_DECISION_RULE_DECLARED_BEFORE_FITTING = (
     "Per session, the mean per-trial content-specific serial pull difference on trials whose swap "
     "destination is the object nearer the preceding trial's target ('previous-item swaps') minus the "
     "same mean on trials where it is not, pooled across sessions by a two-sided paired sign-flip test "
@@ -558,7 +559,7 @@ def analyse_session(session: dict, behaviour, seed_prefix: str) -> dict:
     }
 
 
-def _block0_shuffle_draws(swap_theta: np.ndarray, other_theta: np.ndarray, prev_target_theta: np.ndarray,
+def _symmetry_premise_shuffle_draws(swap_theta: np.ndarray, other_theta: np.ndarray, prev_target_theta: np.ndarray,
                            n_shuffles: int, seed_tag: str) -> list[float | None]:
     n = len(swap_theta)
     draws: list[float | None] = []
@@ -574,7 +575,7 @@ def _block0_shuffle_draws(swap_theta: np.ndarray, other_theta: np.ndarray, prev_
 
 
 # ---------------------------------------------------------------------------
-# Block A / Block B pooling
+# Preceding-item behavioural / serial-pull neural pooling
 # ---------------------------------------------------------------------------
 
 def _residualize(y: np.ndarray, x: np.ndarray) -> np.ndarray:
@@ -583,10 +584,11 @@ def _residualize(y: np.ndarray, x: np.ndarray) -> np.ndarray:
     return y - design @ coeffs
 
 
-def _block_b_session_values(session_rows: list[dict]) -> dict:
+def _serial_pull_neural_session_values(session_rows: list[dict]) -> dict:
     """Per-session raw / rate-control / bias-only-control / spike-count-partial group differences
-    (mean on previous-item-swap trials minus mean on the others), restricted to the trials Block A
-    admitted and for which the delivered serial-pull estimator's own eligibility gate also qualifies."""
+    (mean on previous-item-swap trials minus mean on the others), restricted to the trials the
+    preceding-item behavioural test admitted and for which the delivered serial-pull estimator's own
+    eligibility gate also qualifies."""
     per_session = {"raw": [], "rate": [], "bias": [], "partial": [], "sessions": []}
     for row in session_rows:
         if row.get("status") != "computed":
@@ -631,7 +633,7 @@ def _block_b_session_values(session_rows: list[dict]) -> dict:
     return per_session
 
 
-def _block_a_branch(target_pooled: dict, response_pooled: dict, rows: list[dict]) -> dict:
+def _preceding_item_behavioural_branch(target_pooled: dict, response_pooled: dict, rows: list[dict]) -> dict:
     target_vals = [tr["indicator_target"] for row in rows if row.get("status") == "computed"
                    for tr in row["trial_records"] if tr["indicator_target"] is not None]
     response_vals = [tr["indicator_response"] for row in rows if row.get("status") == "computed"
@@ -694,15 +696,15 @@ def _block_a_branch(target_pooled: dict, response_pooled: dict, rows: list[dict]
     response_mdd = _mdd(response_pooled)
     result["target_minimum_detectable_paired_difference"] = target_mdd
     result["response_minimum_detectable_paired_difference"] = response_mdd
-    if target_mdd is not None and response_mdd is not None and target_mdd < BLOCK_A_MDD_POWERED_NULL_THRESHOLD \
-            and response_mdd < BLOCK_A_MDD_POWERED_NULL_THRESHOLD:
+    if target_mdd is not None and response_mdd is not None and target_mdd < PRECEDING_ITEM_BEHAVIOURAL_MDD_POWERED_NULL_THRESHOLD \
+            and response_mdd < PRECEDING_ITEM_BEHAVIOURAL_MDD_POWERED_NULL_THRESHOLD:
         result["branch"] = BRANCH_A_POWERED_NULL
     else:
         result["branch"] = BRANCH_A_INCONCLUSIVE
     return result
 
 
-def _block_b_branch(raw_pooled: dict, rate_pooled: dict, bias_pooled: dict, partial_pooled: dict,
+def _serial_pull_neural_branch(raw_pooled: dict, rate_pooled: dict, bias_pooled: dict, partial_pooled: dict,
                      reference_effect: float) -> dict:
     result: dict = {}
     bias_sig = bool(bias_pooled.get("status") == "tested" and bias_pooled.get("significant"))
@@ -762,8 +764,8 @@ def main() -> None:
                  "destination has a two-alternative answer with an exact 0.5 null.",
         "min_pooled_admissible_swap_trials": MIN_POOLED_ADMISSIBLE_SWAP_TRIALS,
         "near_separation_threshold_degrees": NEAR_SEPARATION_THRESHOLD_DEGREES,
-        "block_a_decision_rule_declared_before_fitting": BLOCK_A_DECISION_RULE_DECLARED_BEFORE_FITTING,
-        "block_b_decision_rule_declared_before_fitting": BLOCK_B_DECISION_RULE_DECLARED_BEFORE_FITTING,
+        "block_a_decision_rule_declared_before_fitting": PRECEDING_ITEM_BEHAVIOURAL_DECISION_RULE_DECLARED_BEFORE_FITTING,
+        "block_b_decision_rule_declared_before_fitting": SERIAL_PULL_NEURAL_LINK_DECISION_RULE_DECLARED_BEFORE_FITTING,
         "status": "running",
     }
     _flush(output)
@@ -890,7 +892,7 @@ def main() -> None:
         return
 
     # -----------------------------------------------------------------
-    # Block 0 -- the symmetry premise
+    # Symmetry premise
     # -----------------------------------------------------------------
     all_separations = [tr["angular_separation_between_uncued_objects_degrees"]
                         for r in computed_rows for tr in r["trial_records"]]
@@ -905,11 +907,11 @@ def main() -> None:
         other_theta = np.array([tr["other_theta"] for tr in recs])
         prev_target_theta = np.array([tr["prev_target_theta"] for tr in recs])
         seed_tag = f"swap_target_and_preceding_trial_item|block0|{r['session']}"
-        shuffle_by_session[r["session"]] = _block0_shuffle_draws(
-            swap_theta, other_theta, prev_target_theta, BLOCK0_N_SHUFFLES, seed_tag)
+        shuffle_by_session[r["session"]] = _symmetry_premise_shuffle_draws(
+            swap_theta, other_theta, prev_target_theta, SYMMETRY_PREMISE_N_SHUFFLES, seed_tag)
 
     pooled_null = []
-    for d in range(BLOCK0_N_SHUFFLES):
+    for d in range(SYMMETRY_PREMISE_N_SHUFFLES):
         draw_vals = [draws[d] for draws in shuffle_by_session.values() if draws[d] is not None]
         if draw_vals:
             pooled_null.append(float(np.mean(draw_vals)))
@@ -917,9 +919,9 @@ def main() -> None:
     null_sd = float(np.std(pooled_null, ddof=1)) if len(pooled_null) >= 2 else None
     mc_error = (null_sd / np.sqrt(len(pooled_null))) if null_sd is not None else None
     z_off_center = (abs(null_mean - 0.5) / mc_error) if (null_mean is not None and mc_error) else None
-    centred = bool(z_off_center is not None and z_off_center <= BLOCK0_CENTERING_Z_THRESHOLD)
+    centred = bool(z_off_center is not None and z_off_center <= SYMMETRY_PREMISE_CENTERING_Z_THRESHOLD)
 
-    block0 = {
+    symmetry_premise_result = {
         "angular_separation_between_the_two_uncued_objects_degrees": {
             "n_trials": len(all_separations),
             "median": float(np.median(all_separations)) if all_separations else None,
@@ -929,29 +931,29 @@ def main() -> None:
         "n_trials_within_15_degrees": n_near,
         "near_separation_threshold_degrees": NEAR_SEPARATION_THRESHOLD_DEGREES,
         "shuffle_null": {
-            "n_shuffles": BLOCK0_N_SHUFFLES, "n_draws_pooled": len(pooled_null),
+            "n_shuffles": SYMMETRY_PREMISE_N_SHUFFLES, "n_draws_pooled": len(pooled_null),
             "mean": null_mean, "sd": null_sd, "monte_carlo_error_of_mean": mc_error,
-            "z_offset_from_one_half": z_off_center, "centering_z_threshold": BLOCK0_CENTERING_Z_THRESHOLD,
+            "z_offset_from_one_half": z_off_center, "centering_z_threshold": SYMMETRY_PREMISE_CENTERING_Z_THRESHOLD,
             "centred_on_one_half": centred,
         },
     }
-    output["block_0_symmetry_premise"] = block0
+    output["block_0_symmetry_premise"] = symmetry_premise_result
     _flush(output)
-    _log(f"block 0: centred={centred} null_mean={null_mean} elapsed={time.time() - t0:.0f}s")
+    _log(f"symmetry premise: centred={centred} null_mean={null_mean} elapsed={time.time() - t0:.0f}s")
 
     if not centred:
-        output["branch"] = {"branch": BRANCH_SYMMETRY_PREMISE_FAILED, "block_0": block0}
+        output["branch"] = {"branch": BRANCH_SYMMETRY_PREMISE_FAILED, "block_0": symmetry_premise_result}
         output["status"] = "complete"
         output["wall_clock_s"] = time.time() - t0
         _flush(output)
-        _log("STOPPING: block 0 shuffled null is not centred on 0.5 within its own Monte Carlo error")
+        _log("STOPPING: symmetry-premise shuffled null is not centred on 0.5 within its own Monte Carlo error")
         print(json.dumps({"branch": BRANCH_SYMMETRY_PREMISE_FAILED}, indent=2))
         return
 
     # -----------------------------------------------------------------
-    # Block A -- behavioural
+    # Preceding-item behavioural test
     # -----------------------------------------------------------------
-    def _block_a_pooled(exclude_near: bool) -> dict:
+    def _preceding_item_behavioural_pooled(exclude_near: bool) -> dict:
         by_session_t: dict[str, list[float]] = {}
         by_session_r: dict[str, list[float]] = {}
         n_ties_t = n_ties_r = 0
@@ -979,46 +981,46 @@ def main() -> None:
             "n_ties_target_excluded": n_ties_t, "n_ties_response_excluded": n_ties_r,
         }
 
-    block_a_primary = _block_a_pooled(exclude_near=False)
-    block_a_branch = _block_a_branch(block_a_primary["target_referenced"], block_a_primary["response_referenced"],
+    preceding_item_primary = _preceding_item_behavioural_pooled(exclude_near=False)
+    preceding_item_behavioural_branch = _preceding_item_behavioural_branch(preceding_item_primary["target_referenced"], preceding_item_primary["response_referenced"],
                                       computed_rows)
-    block_a_sensitivity = _block_a_pooled(exclude_near=True)
+    preceding_item_sensitivity = _preceding_item_behavioural_pooled(exclude_near=True)
 
     output["block_a_behavioural"] = {
-        "primary": block_a_primary, "branch": block_a_branch,
-        "sensitivity_excluding_near_15_degree_trials": block_a_sensitivity,
+        "primary": preceding_item_primary, "branch": preceding_item_behavioural_branch,
+        "sensitivity_excluding_near_15_degree_trials": preceding_item_sensitivity,
     }
     _flush(output)
-    _log(f"block A branch: {block_a_branch['branch']} elapsed={time.time() - t0:.0f}s")
+    _log(f"preceding-item behavioural branch: {preceding_item_behavioural_branch['branch']} elapsed={time.time() - t0:.0f}s")
 
     # -----------------------------------------------------------------
-    # Block B -- neural
+    # Serial-pull neural test
     # -----------------------------------------------------------------
-    block_b_vals = _block_b_session_values(computed_rows)
-    raw_pooled = _pool_values([v for v in block_b_vals["raw"] if v is not None])
-    rate_pooled = _pool_values([v for v in block_b_vals["rate"] if v is not None])
-    bias_vals = [v for v in block_b_vals["bias"] if v is not None]
-    partial_vals = [v for v in block_b_vals["partial"] if v is not None]
+    serial_pull_neural_vals = _serial_pull_neural_session_values(computed_rows)
+    raw_pooled = _pool_values([v for v in serial_pull_neural_vals["raw"] if v is not None])
+    rate_pooled = _pool_values([v for v in serial_pull_neural_vals["rate"] if v is not None])
+    bias_vals = [v for v in serial_pull_neural_vals["bias"] if v is not None]
+    partial_vals = [v for v in serial_pull_neural_vals["partial"] if v is not None]
     bias_pooled = _pool_values(bias_vals) if len(bias_vals) >= 2 else {"status": "not_computable", "n_sessions": len(bias_vals)}
     partial_pooled = _pool_values(partial_vals) if len(partial_vals) >= 2 else {"status": "not_computable", "n_sessions": len(partial_vals)}
 
     reference_effect = abs(serial_pull_reference["mean_value"])
-    block_b_branch = _block_b_branch(raw_pooled, rate_pooled, bias_pooled, partial_pooled, reference_effect)
+    serial_pull_neural_branch = _serial_pull_neural_branch(raw_pooled, rate_pooled, bias_pooled, partial_pooled, reference_effect)
 
     output["block_b_neural"] = {
-        "n_sessions_contributing": len(block_b_vals["sessions"]),
-        "per_session_summary": block_b_vals["sessions"],
+        "n_sessions_contributing": len(serial_pull_neural_vals["sessions"]),
+        "per_session_summary": serial_pull_neural_vals["sessions"],
         "raw_group_difference": raw_pooled,
         "rate_control_group_difference": rate_pooled,
         "bias_only_control_group_difference": bias_pooled,
         "spike_count_partial_group_difference": partial_pooled,
         "reference_effect_size_delivered_pooled_content_specific_serial_pull": reference_effect,
-        "branch": block_b_branch,
+        "branch": serial_pull_neural_branch,
     }
     _flush(output)
-    _log(f"block B branch: {block_b_branch['branch']} elapsed={time.time() - t0:.0f}s")
+    _log(f"serial-pull neural branch: {serial_pull_neural_branch['branch']} elapsed={time.time() - t0:.0f}s")
 
-    output["branch"] = {"block_a": block_a_branch["branch"], "block_b": block_b_branch["branch"]}
+    output["branch"] = {"block_a": preceding_item_behavioural_branch["branch"], "block_b": serial_pull_neural_branch["branch"]}
     output["how_this_artifact_was_assembled"] = {
         "n_model_fits_served_from_an_earlier_invocation": _FITS_SERVED_FROM_CHECKPOINT,
         "n_model_fits_computed_in_this_invocation": _FITS_COMPUTED_HERE,
@@ -1031,8 +1033,8 @@ def main() -> None:
     _log(f"complete elapsed={time.time() - t0:.0f}s")
     print(json.dumps({
         "reproduction_gate": gate_status, "n_pooled_surviving": n_pooled_surviving,
-        "block_0_centred": centred, "block_a_branch": block_a_branch["branch"],
-        "block_b_branch": block_b_branch["branch"],
+        "symmetry_premise_centred": centred, "preceding_item_behavioural_branch": preceding_item_behavioural_branch["branch"],
+        "serial_pull_neural_branch": serial_pull_neural_branch["branch"],
     }, indent=2, default=float))
 
 
