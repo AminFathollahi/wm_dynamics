@@ -594,8 +594,8 @@ DECISION_RULES = {
         "another; only each cell's own slope-versus-gap curve is reported"
     ),
     "relationship_to_rotation_analysis": (
-        "this module never claims to replicate, confirm, or be confirmed by results/"
-        "subspace_rotation_time_separation.json -- they are different estimands (predictive "
+        "this module never claims to replicate, confirm, or be confirmed by the "
+        "sample-size-matched subspace rotation-versus-time-separation test -- they are different estimands (predictive "
         "transfer of a fitted read-out vs. subspace overlap between two independent fits) computed "
         "on overlapping but not identical data (this module's chunk-pair performance measurement has "
         "no analogue in the rotation module, and its circular-shift null is unrelated to that "

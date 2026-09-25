@@ -3822,6 +3822,37 @@ def make_structure_identifiability_legs_figure():
     plt.close(fig)
 
 
+def make_ram_state_excursion_figure():
+    """Post-train channel-space band-power distance from baseline, per
+    100 ms bin after train offset, stimulated vs matched sham, one panel
+    per corpus (open loop, closed loop), one colour per corpus."""
+    nature_style()
+    path = RESULTS / "ram_stimulation_state_excursion.json"
+    if not path.is_file():
+        return
+    artifact = json.loads(path.read_text())
+    corpora = [c for c in artifact["per_corpus"] if c != "pooled"]
+    colors = {corpora[0]: PALETTE["zero_back"], corpora[1]: PALETTE["two_back"]} if len(corpora) == 2 else {}
+    fig, axes = plt.subplots(1, len(corpora), figsize=(3.4 * len(corpora), 2.8), squeeze=False)
+    for i, corpus in enumerate(corpora):
+        ax = axes[0, i]
+        block = artifact["per_corpus"][corpus]
+        curve = block["time_course_raw"]
+        t = [b["time_since_offset_s"] for b in curve]
+        stim = [b["stimulated_mean"] for b in curve]
+        sham = [b["sham_mean"] for b in curve]
+        color = colors.get(corpus, PALETTE["neutral"])
+        ax.plot(t, stim, color=color, lw=1.2, label="stimulated")
+        ax.plot(t, sham, color=color, lw=1.2, ls="--", label="sham")
+        p = block["excursion_corrected"]["p_value"]
+        ax.set(xlabel="time since train offset (s)", ylabel="band-power distance from baseline",
+               title=f"{corpus}\ncorrected excursion p={p:.4f}")
+        ax.legend(frameon=False, fontsize=5.5)
+    fig.tight_layout()
+    save_figure(fig, "fig_ram_state_excursion")
+    plt.close(fig)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Main
 # ─────────────────────────────────────────────────────────────────────────────
@@ -3843,6 +3874,7 @@ if __name__ == "__main__":
         make_latent_displacement_scaling_figure()
         make_functional_microcircuit_graph_figure()
         make_structure_identifiability_legs_figure()
+        make_ram_state_excursion_figure()
         raise SystemExit(0)
     stats_data = load_all_stats()
 
@@ -3909,6 +3941,9 @@ if __name__ == "__main__":
 
     print("Generating Supplementary S11 (benchmark N/A + behavior bound)...")
     make_figS11_macaque_pfc_microstimulation_leaderboard_and_behavior_bound()
+
+    print("Generating RAM state-excursion time course...")
+    make_ram_state_excursion_figure()
 
     print("\nAll figures saved to figures/")
     for f in sorted(FIGURES_DIR.glob("fig*.pdf")):

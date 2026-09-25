@@ -1,0 +1,222 @@
+{
+  "generated_at": "2026-09-19T23:18:41+0330",
+  "data_root": "/media/amin/ADATA HD710 PRO/Research/Representation/Working Memory/data",
+  "all_complete": true,
+  "corpora": {
+    "alagapan_phase_stimulation": {
+      "resolved_root": "/media/amin/ADATA HD710 PRO/Research/Representation/Working Memory/data/alagapan, cell_reports",
+      "mode": "explicit",
+      "required": 21,
+      "present": 21,
+      "absent_paths": [],
+      "absent_total": 0,
+      "bytes_on_disk": 2318720189,
+      "status": "complete"
+    },
+    "dandi_000004": {
+      "resolved_root": "/media/amin/ADATA HD710 PRO/Research/Representation/Working Memory/data/000004",
+      "mode": "glob_fail_safe",
+      "required": 87,
+      "present": 87,
+      "absent_paths": [],
+      "absent_total": 0,
+      "bytes_on_disk": 6197474020,
+      "status": "complete"
+    },
+    "dandi_000469": {
+      "resolved_root": "/media/amin/ADATA HD710 PRO/Research/Representation/Working Memory/data/000469",
+      "mode": "glob_fail_safe",
+      "required": 21,
+      "present": 21,
+      "absent_paths": [],
+      "absent_total": 0,
+      "bytes_on_disk": 5570383128,
+      "status": "complete"
+    },
+    "dandi_000574": {
+      "resolved_root": "/media/amin/ADATA HD710 PRO/Research/Representation/Working Memory/data/000574",
+      "mode": "glob_fail_safe",
+      "required": 37,
+      "present": 37,
+      "absent_paths": [],
+      "absent_total": 0,
+      "bytes_on_disk": 107315450285,
+      "status": "complete"
+    },
+    "dandi_000673": {
+      "resolved_root": "/media/amin/ADATA HD710 PRO/Research/Representation/Working Memory/data/000673",
+      "mode": "manifest",
+      "required": 44,
+      "present": 44,
+      "absent_paths": [],
+      "absent_total": 0,
+      "bytes_on_disk": 23440983616,
+      "status": "complete"
+    },
+    "dandi_001187": {
+      "resolved_root": "/media/amin/ADATA HD710 PRO/Research/Representation/Working Memory/data/001187",
+      "mode": "manifest",
+      "required": 46,
+      "present": 46,
+      "absent_paths": [],
+      "absent_total": 0,
+      "bytes_on_disk": 20665003724,
+      "status": "complete"
+    },
+    "ds004752": {
+      "resolved_root": "/media/amin/ADATA HD710 PRO/Research/Representation/Working Memory/data/ds004752",
+      "mode": "glob_fail_safe",
+      "required": 68,
+      "present": 68,
+      "absent_paths": [],
+      "absent_total": 0,
+      "bytes_on_disk": 177453,
+      "status": "complete"
+    },
+    "ds005034": {
+      "resolved_root": "/media/amin/ADATA HD710 PRO/Research/Representation/Working Memory/data/ds005034",
+      "mode": "explicit",
+      "required": 300,
+      "present": 300,
+      "absent_paths": [],
+      "absent_total": 0,
+      "bytes_on_disk": 65885203723,
+      "status": "complete"
+    },
+    "ds006848": {
+      "resolved_root": "/media/amin/ADATA HD710 PRO/Research/Representation/Working Memory/data/ds006848",
+      "mode": "explicit",
+      "required": 90,
+      "present": 90,
+      "absent_paths": [],
+      "absent_total": 0,
+      "bytes_on_disk": 40073364455,
+      "status": "complete"
+    },
+    "haslacher_clam_tacs": {
+      "resolved_root": "/media/amin/ADATA HD710 PRO/Research/Representation/Working Memory/data/Working-memory-CLAM-tACS/Data",
+      "mode": "explicit",
+      "required": 276,
+      "present": 276,
+      "absent_paths": [],
+      "absent_total": 0,
+      "bytes_on_disk": 73420579370,
+      "status": "complete"
+    },
+    "inagaki_alm5": {
+      "resolved_root": "/media/amin/ADATA HD710 PRO/Research/Representation/Working Memory/data/Inagaki/SiliconProbeData/SiliconProbeData",
+      "mode": "glob_fail_safe",
+      "required": 23,
+      "present": 23,
+      "absent_paths": [],
+      "absent_total": 0,
+      "bytes_on_disk": 226290385,
+      "status": "complete"
+    },
+    "kai_miller_nback": {
+      "resolved_root": "/media/amin/ADATA HD710 PRO/Research/Representation/Working Memory/data/kai miller/memory_nback/memory_nback",
+      "mode": "explicit",
+      "required": 8,
+      "present": 8,
+      "absent_paths": [],
+      "absent_total": 0,
+      "bytes_on_disk": 544700669,
+      "status": "complete"
+    },
+    "macaque_pfc_microstimulation": {
+      "resolved_root": "/media/amin/ADATA HD710 PRO/Research/Representation/Working Memory/data/Soldado-Magraner/PFC_uStim_data/data",
+      "mode": "explicit",
+      "required": 33,
+      "present": 33,
+      "absent_paths": [],
+      "absent_total": 0,
+      "bytes_on_disk": 7728624152,
+      "status": "complete"
+    },
+    "panichello_2024": {
+      "resolved_root": "/media/amin/ADATA HD710 PRO/Research/Representation/Working Memory/data/Panichello_2024",
+      "mode": "glob_fail_safe",
+      "required": 25,
+      "present": 25,
+      "absent_paths": [],
+      "absent_total": 0,
+      "bytes_on_disk": 151791893,
+      "status": "complete"
+    },
+    "pfc3": {
+      "resolved_root": "/media/amin/ADATA HD710 PRO/Research/Representation/Working Memory/data/PFC-3/extracted/data",
+      "mode": "glob_fail_safe",
+      "required": 8041,
+      "present": 8041,
+      "absent_paths": [],
+      "absent_total": 0,
+      "bytes_on_disk": 396250656,
+      "status": "complete"
+    },
+    "pfc4": {
+      "resolved_root": "/media/amin/ADATA HD710 PRO/Research/Representation/Working Memory/data/pfc-4/extracted/data",
+      "mode": "glob_fail_safe",
+      "required": 267,
+      "present": 267,
+      "absent_paths": [],
+      "absent_total": 0,
+      "bytes_on_disk": 234742760,
+      "status": "complete"
+    },
+    "ram_ds005489_openloop": {
+      "resolved_root": "/media/amin/ADATA HD710 PRO/Research/Representation/Working Memory/data/ds005489-download",
+      "mode": "glob_fail_safe",
+      "required": 76,
+      "present": 76,
+      "absent_paths": [],
+      "absent_total": 0,
+      "bytes_on_disk": 46796,
+      "status": "complete"
+    },
+    "ram_ds005557_closedloop": {
+      "resolved_root": "/media/amin/ADATA HD710 PRO/Research/Representation/Working Memory/data/ds005557-download",
+      "mode": "glob_fail_safe",
+      "required": 29,
+      "present": 29,
+      "absent_paths": [],
+      "absent_total": 0,
+      "bytes_on_disk": 17881,
+      "status": "complete"
+    },
+    "watters_2026": {
+      "resolved_root": "/media/amin/ADATA HD710 PRO/Research/Representation/Working Memory/data/Watters/data_for_modeling",
+      "mode": "explicit",
+      "required": 16170,
+      "present": 16170,
+      "absent_paths": [],
+      "absent_total": 0,
+      "bytes_on_disk": 21329021735,
+      "status": "complete"
+    },
+    "wolff_eeg_impulse": {
+      "resolved_root": "/media/amin/ADATA HD710 PRO/Research/Representation/Working Memory/data/Wolff/data",
+      "mode": "glob_fail_safe",
+      "required": 48,
+      "present": 48,
+      "absent_paths": [],
+      "absent_total": 0,
+      "bytes_on_disk": 11873081576,
+      "status": "complete"
+    }
+  },
+  "crcns_status": {
+    "pfc-2": {
+      "status_file_value": "verification_failed listed=144 processed=10 mismatched=4",
+      "verdict": "excluded_from_project",
+      "note": "rat prefrontal-cortex corpus, deliberately excluded from this project (never registered in config/datasets.json); its verification_failed status is not chased."
+    },
+    "pfc-4": {
+      "status_file_value": "complete",
+      "verdict": "ok"
+    },
+    "pfc-7": {
+      "status_file_value": "initializing",
+      "verdict": "ok"
+    }
+  }
+}
