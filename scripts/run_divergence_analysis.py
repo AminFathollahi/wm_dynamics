@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Flow divergence ∇·v and personalized stimulation electrode selection — all 3 datasets.
 
-For each subject across Miller (ECoG), Boran (iEEG), and Rutishauser (single-unit):
+For each subject across ECoG n-back corpus (ECoG), DANDI 000574 (iEEG), and human single-unit DANDI corpora (single-unit):
   1. Extract mean high-load maintenance trajectory Z_mean(t).
   2. Fit DMD on Z_mean → linear operator A  (x(t+1) ≈ A x(t)).
   3. Divergence of the flow field: ∇·v = trace(A − I) / dt  [s⁻¹].
@@ -9,12 +9,12 @@ For each subject across Miller (ECoG), Boran (iEEG), and Rutishauser (single-uni
   4. Dominant unstable direction v* = eigvec of A with largest Re(eigenvalue).
      This is the direction perturbations grow fastest along.
 
-For Miller and Boran (TES1 DLPFC coverage exists):
+For ECoG n-back corpus and DANDI 000574 (TES1 DLPFC coverage exists):
   5. Compute alignment of each TES1 B_i with v*: align_i = |cos(B_i, v*)|.
      Dynamic optimal donor = argmax_i align_i  (subject-specific, state-dependent).
      Compare to static best-by-Gramian (current approach).
 
-For Rutishauser: divergence only (MTL/medial frontal outside TES1 DLPFC coverage).
+For human single-unit DANDI corpora: divergence only (MTL/medial frontal outside TES1 DLPFC coverage).
 
 Saves: results/divergence_analysis.npz, updates all_statistics.json
 
@@ -41,9 +41,9 @@ BORAN_SUBJECTS    = [f"sub-{i:02d}" for i in range(1, 10)]
 RUSHI_SUBJECTS    = [f"sub-{n}" for n in [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,18,21]]
 
 DMD_RANK    = 8
-RANK_SWEEP  = (5, 6, 7, 8)   # truncation ranks below full rank (d=8); audit item 1b
-MAINT_T0  = 0.30   # Miller: maintenance onset (s)
-MAINT_T1  = 1.40   # Miller: maintenance offset (s)
+RANK_SWEEP  = (5, 6, 7, 8)   # truncation ranks below full rank (d=8)
+MAINT_T0  = 0.30   # ECoG n-back corpus: maintenance onset (s)
+MAINT_T1  = 1.40   # ECoG n-back corpus: maintenance offset (s)
 
 
 # ── Core computation ──────────────────────────────────────────────────────────
@@ -227,7 +227,7 @@ def rank_robustness_check(Z_trials: np.ndarray, dt: float) -> dict:
 
 
 def process_miller(out: dict, all_rows: dict, tes1):
-    print("  Miller ECoG:")
+    print("  ECoG n-back corpus:")
     for subj in MILLER_SUBJECTS:
         geo   = np.load(RESULTS / f"02_geometry_{subj}.npz", allow_pickle=True)
         Z     = geo["Z"]; task_id = geo["task_id"]; times = geo["times"]
@@ -253,9 +253,9 @@ def process_miller(out: dict, all_rows: dict, tes1):
         _save_subj(out, f"miller_{subj}", dmd, t_maint, align,
                    static_idx, dynamic_idx, align_gain, has_tes1=True)
         _save_timing(out, f"miller_{subj}", sw)
-        _print_subj("Miller", subj, dmd, static_idx, dynamic_idx,
+        _print_subj("ECoG n-back", subj, dmd, static_idx, dynamic_idx,
                     align, align_gain)
-        _print_timing("Miller", subj, sw)
+        _print_timing("ECoG n-back", subj, sw)
         all_rows["miller"][subj] = _row(dmd, static_idx, dynamic_idx,
                                         align[static_idx], align[dynamic_idx],
                                         align_gain)
@@ -264,12 +264,12 @@ def process_miller(out: dict, all_rows: dict, tes1):
 
 
 def process_boran(out: dict, all_rows: dict, tes1_boran):
-    print("  Boran iEEG:")
+    print("  DANDI 000574 iEEG:")
     for subj in BORAN_SUBJECTS:
         geo = np.load(RESULTS / f"boran_geometry_{subj}.npz", allow_pickle=True)
         Z   = geo["Z"]; ss = geo["set_sizes"]; times = geo["times"]
 
-        # full epoch is the maintenance window for Boran (0–3 s)
+        # full epoch is the maintenance window for DANDI 000574 (0–3 s)
         Z_trials_ss8 = Z[ss == 8]
         Z_mean = Z_trials_ss8.mean(0)                 # (T, 8)
         dt     = float(np.median(np.diff(times)))
@@ -289,9 +289,9 @@ def process_boran(out: dict, all_rows: dict, tes1_boran):
         _save_subj(out, f"boran_{subj}", dmd, times, align,
                    static_idx, dynamic_idx, align_gain, has_tes1=True)
         _save_timing(out, f"boran_{subj}", sw)
-        _print_subj("Boran", subj, dmd, static_idx, dynamic_idx,
+        _print_subj("DANDI 000574", subj, dmd, static_idx, dynamic_idx,
                     align, align_gain)
-        _print_timing("Boran", subj, sw)
+        _print_timing("DANDI 000574", subj, sw)
         all_rows["boran"][subj] = _row(dmd, static_idx, dynamic_idx,
                                        align[static_idx], align[dynamic_idx],
                                        align_gain)
@@ -300,7 +300,7 @@ def process_boran(out: dict, all_rows: dict, tes1_boran):
 
 
 def process_rutishauser(out: dict, all_rows: dict):
-    print("  Rutishauser single-unit:")
+    print("  human single-unit DANDI:")
     for subj in RUSHI_SUBJECTS:
         path = RESULTS / f"dandi000469_geometry_{subj}.npz"
         if not path.exists():
@@ -324,16 +324,16 @@ def process_rutishauser(out: dict, all_rows: dict):
         all_rows["rutishauser"][subj].update(ens_row)
 
 
-# ── Previously-uncovered cohorts (Boran units, DANDI 001187, DANDI 000673) ──
+# ── Previously-uncovered cohorts (DANDI 000574 units, DANDI 001187, DANDI 000673) ──
 # Growth rate + tangling at DMD_RANK=8 (this module's existing full-latent-rank
-# convention -- ALL of Miller/Boran-iEEG/Rutishauser above are fit the same way,
+# convention -- ALL of ECoG n-back corpus/DANDI 000574-iEEG/human single-unit DANDI corpora above are fit the same way,
 # so keeping these three cohorts at the same rank is what makes them poolable
-# into the SAME forest as their siblings via aggregate_forest_syntheses.py; see
-# agent_report.md for why this differs from the Soldago-benchmark r=7 in STEP A.
+# into the SAME forest as their siblings via aggregate_forest_syntheses.py; this
+# differs from the rank-7 fit of the earlier benchmark step.
 # r=7 is still reported per-cohort via the EXISTING RANK_SWEEP=(5,6,7,8)
 # rank-robustness mechanism below (rank_robustness_check), not by truncating
 # the primary fit differently from its siblings. No LQR/TES1 (MTL, no TES1
-# DLPFC coverage -- DATASET_ANALYSIS_MATRIX.md principled exclusion #2).
+# DLPFC coverage).
 MIN_TRIALS_K2 = 10
 
 
@@ -346,7 +346,7 @@ def _rotation_freq_hz(eigenvalues: np.ndarray, dt: float) -> float:
 
 
 def process_boran_units(out: dict, all_rows: dict):
-    print("  Boran units (single-unit):")
+    print("  DANDI 000574 units (single-unit):")
     for path in sorted(RESULTS.glob("dandi000574_units_geometry_sub-*.npz")):
         key = path.stem.replace("dandi000574_units_geometry_", "")
         geo = np.load(path, allow_pickle=True)
@@ -379,7 +379,7 @@ def process_boran_units(out: dict, all_rows: dict):
 def _process_load1v3_dynamics(out: dict, all_rows: dict, group: str, geom_prefix: str):
     """Shared loader for DANDI 001187 / 000673: load-1-vs-load-3 (context)
     high-load-trajectory dynamics, mirroring process_rutishauser's load-3-only
-    convention for the sibling Rutishauser-lineage cohort (DANDI 000469)."""
+    convention for the sibling human single-unit DANDI cohort (DANDI 000469)."""
     for path in sorted(RESULTS.glob(f"{geom_prefix}_sub-*.npz")):
         key = path.stem.replace(f"{geom_prefix}_", "")
         geo = np.load(path, allow_pickle=True)
@@ -523,17 +523,17 @@ def main():
     d0673_divs = [v["div_scalar"] for v in all_rows["dandi000673"].values()]
 
     print(f"\n  Cross-dataset divergence (mean ± SD) [s⁻¹]:")
-    print(f"    Miller: {np.mean(miller_divs):.4f} ± {np.std(miller_divs):.4f}")
-    print(f"    Boran:  {np.mean(boran_divs):.4f}  ± {np.std(boran_divs):.4f}")
+    print(f"    ECoG n-back corpus: {np.mean(miller_divs):.4f} ± {np.std(miller_divs):.4f}")
+    print(f"    DANDI 000574:  {np.mean(boran_divs):.4f}  ± {np.std(boran_divs):.4f}")
     print(f"    Rushi.: {np.mean(rushi_divs):.4f}  ± {np.std(rushi_divs):.4f}")
     if bu_divs:
-        print(f"    Boran units:   {np.mean(bu_divs):.4f} ± {np.std(bu_divs):.4f} (N={len(bu_divs)})")
+        print(f"    DANDI 000574 units:   {np.mean(bu_divs):.4f} ± {np.std(bu_divs):.4f} (N={len(bu_divs)})")
     if d1187_divs:
         print(f"    DANDI 001187:  {np.mean(d1187_divs):.4f} ± {np.std(d1187_divs):.4f} (N={len(d1187_divs)})")
     if d0673_divs:
         print(f"    DANDI 000673:  {np.mean(d0673_divs):.4f} ± {np.std(d0673_divs):.4f} (N={len(d0673_divs)})")
 
-    # Boran units (spiking) vs Boran iEEG (LFP) dynamics, within
+    # DANDI 000574 units (spiking) vs DANDI 000574 iEEG (LFP) dynamics, within
     # the same subjects/trials -- paired on shared subjects, same design as the
     # axis-rotation comparison in run_axis_rotation_analysis.py.
     from statistics import paired_sign_flip_test
@@ -556,7 +556,7 @@ def main():
                           "mean_diff": res_div["mean_diff"], "ci_lower": res_div["ci_lower"],
                           "ci_upper": res_div["ci_upper"], "p_value": res_div["p_value"]},
         }
-        print(f"\n  Spiking-vs-LFP div_scalar (Boran units vs Boran iEEG, N={len(shared)}): "
+        print(f"\n  Spiking-vs-LFP div_scalar (DANDI 000574 units vs DANDI 000574 iEEG, N={len(shared)}): "
               f"units={div_bu.mean():.4f} ieeg={div_ie.mean():.4f} diff={res_div['mean_diff']:+.4f} "
               f"[{res_div['ci_lower']:.4f},{res_div['ci_upper']:.4f}] p={res_div['p_value']:.4f} "
               f"({'AGREE' if res_div['p_value'] >= 0.05 else 'DIVERGE'})")
@@ -570,11 +570,11 @@ def main():
     boran_gains  = [all_rows["boran"][s]["align_gain_x"]
                     for s in BORAN_SUBJECTS if s in all_rows["boran"]]
     print(f"\n  Dynamic vs static electrode alignment gain (mean ± SD):")
-    print(f"    Miller: {np.mean(miller_gains):.2f}× ± {np.std(miller_gains):.2f}×")
-    print(f"    Boran:  {np.mean(boran_gains):.2f}×  ± {np.std(boran_gains):.2f}×")
+    print(f"    ECoG n-back corpus: {np.mean(miller_gains):.2f}× ± {np.std(miller_gains):.2f}×")
+    print(f"    DANDI 000574:  {np.mean(boran_gains):.2f}×  ± {np.std(boran_gains):.2f}×")
 
     # Cross-subject timing summary (time-resolved sliding-window divergence)
-    print(f"\n  Optimal stimulation timing (sliding-window ∇·v, N.B. Rutishauser "
+    print(f"\n  Optimal stimulation timing (sliding-window ∇·v, N.B. human single-unit DANDI corpora "
           f"excluded — only 30 samples/trial, too coarse to window):")
     for label, subs in [("Miller", MILLER_SUBJECTS), ("Boran", BORAN_SUBJECTS)]:
         key = label.lower()
@@ -585,7 +585,7 @@ def main():
               f"±{np.std(t_maxs):.3f}s (N={len(t_mins)})")
 
     # Rank-robustness summary: is the single-trial-ensemble-vs-mean divergence
-    # contrast (the R2 claim) stable away from full-rank DMD (audit item 1b)?
+    # contrast (the R2 claim) stable away from full-rank DMD?
     robust_flags = [row["rank_sweep_sign_robust"]
                     for ds in all_rows.values() for row in ds.values()
                     if "rank_sweep_sign_robust" in row]

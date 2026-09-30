@@ -9,6 +9,7 @@ empirical p-value helper the counting-noise comparison is built on."""
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -18,13 +19,10 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from run_dissociation_replication_and_counting_noise import (  # noqa: E402
-    _attach_counting_noise_label_disclosure, _dissociation_replication_branch, _counting_noise_census_branch, _count_separation_disclosure,
-    _heterogeneity_disclosure, _magnitude_diagnostic_verdict, _observable_arrays, _primary_cell_label_disclosure,
-    _session_observable_arm, _two_sided_empirical_p, poisson_surrogate_and_real_deviation_magnitudes,
-    poisson_surrogate_draw_correlations,
-)
+from run_dissociation_replication_and_counting_noise import _attach_counting_noise_label_disclosure, _dissociation_replication_branch, _counting_noise_census_branch, _count_separation_disclosure, _heterogeneity_disclosure, _magnitude_diagnostic_verdict, _primary_cell_label_disclosure, _session_observable_arm, _two_sided_empirical_p, poisson_surrogate_and_real_deviation_magnitudes, poisson_surrogate_draw_correlations
+from corpus_sessions import _observable_arrays
 from run_rate_free_state_geometry_behavior_link import rate_free_state_deviation  # noqa: E402
+from provenance import checkpoint_safe, restore_checkpoint  # noqa: E402
 
 
 # ---------------------------------------------------------------------------------------------------
@@ -280,6 +278,19 @@ def test_within_load_combination_matches_a_hand_computed_weighted_average():
     assert min(r_values) - 1e-9 <= arm["within_load_trial_count_weighted"][stat] <= max(r_values) + 1e-9
 
 
+def test_session_observable_arm_per_level_keys_survive_a_checkpoint_round_trip():
+    """per_level is str(level)-keyed and is checkpointed whole inside the fit-cached row. No current
+    read site looks it up by key after a resume (dormant per the audit), but the round-trip property
+    must still hold: a resumed session's per_level must come back with the same string keys it was
+    written with, not int."""
+    session = _synthetic_watters_session(seed=3)
+    arrays, _excluded, _usable = _observable_arrays(session["counts"], session)
+    arm = _session_observable_arm(arrays, "deviation", "test_round_trip")
+    restored_per_level = restore_checkpoint(json.loads(json.dumps(checkpoint_safe(arm["per_level"]))))
+    assert list(restored_per_level) == list(arm["per_level"])
+    assert all(isinstance(key, str) for key in restored_per_level)
+
+
 def test_within_load_weight_favours_the_larger_level():
     # 50 trials at level 1, 30 at level 2 -- construct arrays where the two levels have deliberately
     # different correlations and check the combined value sits closer to the LARGER level's value than
@@ -429,6 +440,6 @@ def test_zero_drop_reconciles_when_every_seen_session_is_either_loaded_or_refuse
     loaded = set(seen_sessions[:7])
     refused = {s: "some_named_reason" for s in seen_sessions[7:]}
     assert len(seen_sessions) == len(loaded) + len(refused)
-    # A session dropped from BOTH sets (the defect this assertion exists to catch) must break the check.
+    # A session dropped from BOTH sets (the error this assertion exists to catch) must break the check.
     seen_with_a_drop = seen_sessions + ["s10_never_counted_anywhere"]
     assert len(seen_with_a_drop) != len(loaded) + len(refused)

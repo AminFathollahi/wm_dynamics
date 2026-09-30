@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-09-19T23:18:41+0330",
-  "data_root": "/media/amin/ADATA HD710 PRO/Research/Representation/Working Memory/data",
+  "generated_at": "2026-09-26T02:00:54+0330",
+  "data_root": "<data_root>",
   "all_complete": true,
   "corpora": {
     "alagapan_phase_stimulation": {
-      "resolved_root": "/media/amin/ADATA HD710 PRO/Research/Representation/Working Memory/data/alagapan, cell_reports",
+      "resolved_root": "<data_root>/alagapan, cell_reports",
       "mode": "explicit",
       "required": 21,
       "present": 21,
@@ -14,7 +14,7 @@
       "status": "complete"
     },
     "dandi_000004": {
-      "resolved_root": "/media/amin/ADATA HD710 PRO/Research/Representation/Working Memory/data/000004",
+      "resolved_root": "<data_root>/000004",
       "mode": "glob_fail_safe",
       "required": 87,
       "present": 87,
@@ -24,7 +24,7 @@
       "status": "complete"
     },
     "dandi_000469": {
-      "resolved_root": "/media/amin/ADATA HD710 PRO/Research/Representation/Working Memory/data/000469",
+      "resolved_root": "<data_root>/000469",
       "mode": "glob_fail_safe",
       "required": 21,
       "present": 21,
@@ -34,7 +34,7 @@
       "status": "complete"
     },
     "dandi_000574": {
-      "resolved_root": "/media/amin/ADATA HD710 PRO/Research/Representation/Working Memory/data/000574",
+      "resolved_root": "<data_root>/000574",
       "mode": "glob_fail_safe",
       "required": 37,
       "present": 37,
@@ -44,7 +44,7 @@
       "status": "complete"
     },
     "dandi_000673": {
-      "resolved_root": "/media/amin/ADATA HD710 PRO/Research/Representation/Working Memory/data/000673",
+      "resolved_root": "<data_root>/000673",
       "mode": "manifest",
       "required": 44,
       "present": 44,
@@ -54,7 +54,7 @@
       "status": "complete"
     },
     "dandi_001187": {
-      "resolved_root": "/media/amin/ADATA HD710 PRO/Research/Representation/Working Memory/data/001187",
+      "resolved_root": "<data_root>/001187",
       "mode": "manifest",
       "required": 46,
       "present": 46,
@@ -64,7 +64,7 @@
       "status": "complete"
     },
     "ds004752": {
-      "resolved_root": "/media/amin/ADATA HD710 PRO/Research/Representation/Working Memory/data/ds004752",
+      "resolved_root": "<data_root>/ds004752",
       "mode": "glob_fail_safe",
       "required": 68,
       "present": 68,
@@ -74,7 +74,7 @@
       "status": "complete"
     },
     "ds005034": {
-      "resolved_root": "/media/amin/ADATA HD710 PRO/Research/Representation/Working Memory/data/ds005034",
+      "resolved_root": "<data_root>/ds005034",
       "mode": "explicit",
       "required": 300,
       "present": 300,
@@ -84,7 +84,7 @@
       "status": "complete"
     },
     "ds006848": {
-      "resolved_root": "/media/amin/ADATA HD710 PRO/Research/Representation/Working Memory/data/ds006848",
+      "resolved_root": "<data_root>/ds006848",
       "mode": "explicit",
       "required": 90,
       "present": 90,
@@ -94,7 +94,7 @@
       "status": "complete"
     },
     "haslacher_clam_tacs": {
-      "resolved_root": "/media/amin/ADATA HD710 PRO/Research/Representation/Working Memory/data/Working-memory-CLAM-tACS/Data",
+      "resolved_root": "<data_root>/Working-memory-CLAM-tACS/Data",
       "mode": "explicit",
       "required": 276,
       "present": 276,
@@ -104,7 +104,7 @@
       "status": "complete"
     },
     "inagaki_alm5": {
-      "resolved_root": "/media/amin/ADATA HD710 PRO/Research/Representation/Working Memory/data/Inagaki/SiliconProbeData/SiliconProbeData",
+      "resolved_root": "<data_root>/Inagaki/SiliconProbeData/SiliconProbeData",
       "mode": "glob_fail_safe",
       "required": 23,
       "present": 23,
@@ -114,7 +114,7 @@
       "status": "complete"
     },
     "kai_miller_nback": {
-      "resolved_root": "/media/amin/ADATA HD710 PRO/Research/Representation/Working Memory/data/kai miller/memory_nback/memory_nback",
+      "resolved_root": "<data_root>/kai miller/memory_nback/memory_nback",
       "mode": "explicit",
       "required": 8,
       "present": 8,
@@ -124,7 +124,7 @@
       "status": "complete"
     },
     "macaque_pfc_microstimulation": {
-      "resolved_root": "/media/amin/ADATA HD710 PRO/Research/Representation/Working Memory/data/Soldado-Magraner/PFC_uStim_data/data",
+      "resolved_root": "<data_root>/Soldado-Magraner/PFC_uStim_data/data",
       "mode": "explicit",
       "required": 33,
       "present": 33,
@@ -134,7 +134,7 @@
       "status": "complete"
     },
     "panichello_2024": {
-      "resolved_root": "/media/amin/ADATA HD710 PRO/Research/Representation/Working Memory/data/Panichello_2024",
+      "resolved_root": "<data_root>/Panichello_2024",
       "mode": "glob_fail_safe",
       "required": 25,
       "present": 25,
@@ -144,7 +144,7 @@
       "status": "complete"
     },
     "pfc3": {
-      "resolved_root": "/media/amin/ADATA HD710 PRO/Research/Representation/Working Memory/data/PFC-3/extracted/data",
+      "resolved_root": "<data_root>/PFC-3/extracted/data",
       "mode": "glob_fail_safe",
       "required": 8041,
       "present": 8041,
@@ -154,7 +154,7 @@
       "status": "complete"
     },
     "pfc4": {
-      "resolved_root": "/media/amin/ADATA HD710 PRO/Research/Representation/Working Memory/data/pfc-4/extracted/data",
+      "resolved_root": "<data_root>/pfc-4/extracted/data",
       "mode": "glob_fail_safe",
       "required": 267,
       "present": 267,
@@ -164,7 +164,7 @@
       "status": "complete"
     },
     "ram_ds005489_openloop": {
-      "resolved_root": "/media/amin/ADATA HD710 PRO/Research/Representation/Working Memory/data/ds005489-download",
+      "resolved_root": "<data_root>/ds005489-download",
       "mode": "glob_fail_safe",
       "required": 76,
       "present": 76,
@@ -174,7 +174,7 @@
       "status": "complete"
     },
     "ram_ds005557_closedloop": {
-      "resolved_root": "/media/amin/ADATA HD710 PRO/Research/Representation/Working Memory/data/ds005557-download",
+      "resolved_root": "<data_root>/ds005557-download",
       "mode": "glob_fail_safe",
       "required": 29,
       "present": 29,
@@ -184,7 +184,7 @@
       "status": "complete"
     },
     "watters_2026": {
-      "resolved_root": "/media/amin/ADATA HD710 PRO/Research/Representation/Working Memory/data/Watters/data_for_modeling",
+      "resolved_root": "<data_root>/Watters/data_for_modeling",
       "mode": "explicit",
       "required": 16170,
       "present": 16170,
@@ -194,7 +194,7 @@
       "status": "complete"
     },
     "wolff_eeg_impulse": {
-      "resolved_root": "/media/amin/ADATA HD710 PRO/Research/Representation/Working Memory/data/Wolff/data",
+      "resolved_root": "<data_root>/Wolff/data",
       "mode": "glob_fail_safe",
       "required": 48,
       "present": 48,
@@ -215,7 +215,7 @@
       "verdict": "ok"
     },
     "pfc-7": {
-      "status_file_value": "initializing",
+      "status_file_value": "complete",
       "verdict": "ok"
     }
   }

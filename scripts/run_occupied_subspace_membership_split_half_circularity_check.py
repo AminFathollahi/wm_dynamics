@@ -46,7 +46,7 @@ cluster-bootstrap 95% interval and, where computable, the pooled control contras
   3. the interval includes 0 (its lower bound is at or below 0) ->
      'the_reversal_is_withdrawn_as_unmeasured_under_split_half_estimation' -- the split-half contrast has
      collapsed toward the chance reference. This is NOT a re-affirmation of the delivered pipeline's
-     'outside' branch (that branch is independently voided by the degenerate-null defect documented in
+     'outside' branch (that branch is independently voided by the degenerate-null error documented in
      results/occupied_subspace_membership_effect_size.json); it means this corpus's data cannot separate
      genuine axis membership from an artifact of estimating both objects on the same trials, and the
      reversal this module's own in-sample block reported is withdrawn as UNMEASURED, not replaced.
@@ -78,12 +78,14 @@ for _sub in ("src", "scripts"):
 
 from corpus_sessions import data_root  # noqa: E402
 from provenance import _json_safe  # noqa: E402
-from run_deviation_axis_structure import (  # noqa: E402
-    CORPORA, _residual_rows, _trial_count_weighted, _unit_residual_matrix, leading_eigenvector,
-)
-from run_deviation_serial_dependence_and_temporal_locus import unit_direction_vectors  # noqa: E402
-from run_dissociation_cross_preparation_test import MIN_TRIALS_WITH_DEFINED_DIRECTION  # noqa: E402
-from run_occupied_subspace_membership_effect_size import _whole_session_cluster_bootstrap  # noqa: E402
+from info_decoding import _residual_rows
+from info_decoding import _unit_residual_matrix
+from subspace_identity import leading_eigenvector
+from info_decoding import CORPORA
+from run_multi_object_interference_and_locus_within_item_count import _trial_count_weighted
+from statistics import unit_direction_vectors
+from statistics import MIN_TRIALS_WITH_DEFINED_DIRECTION
+from info_decoding import _whole_session_cluster_bootstrap
 from run_occupied_subspace_rank_estimation import entry_holdout_rank  # noqa: E402
 from run_occupied_subspace_rank_selection_repair import _load_corpora_and_accounting  # noqa: E402
 from statistics import stable_seed  # noqa: E402
@@ -279,7 +281,7 @@ def main() -> None:
     loaded, _zero_drop = _load_corpora_and_accounting(root)
     bundles = loaded["bundles"]
 
-    from run_deviation_axis_structure import _collect_axis_entries  # local import, unchanged function
+    from info_decoding import _collect_axis_entries
     axis_entries_by_corpus = {c: _collect_axis_entries(bundles[c], c) for c in CORPORA}
 
     in_sample = json.loads(ARTIFACT_PATH.read_text())["occupied_state_space_membership_by_corpus"]

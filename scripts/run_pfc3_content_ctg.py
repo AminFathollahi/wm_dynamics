@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-"""CRCNS pfc-3 (Constantinidis lab) macaque PFC content-CTG — cross-species replication.
+"""CRCNS pfc-3 macaque PFC content-CTG — cross-species replication.
 
 Single-neuron spike trains from macaque dlPFC during a spatial delayed-match-
--to-sample task (Meyer/Qi/Stanford/Constantinidis 2011; Kobak et al. 2016).
+-to-sample task, as documented in the CRCNS pfc-3 dataset release and the
+original dPCA paper this dataset was published with.
 9 possible cue locations, held across a tightly fixed ~2 s cue-to-sample delay
-(Cue_onT -> Sample_onT). Unlike Miller/Boran (load/context only) or Rutishauser
+(Cue_onT -> Sample_onT). Unlike ECoG n-back corpus/DANDI 000574 (load/context only) or human single-unit DANDI corpora
 (item identity but only 5 trials/class after CV), this dataset gives a genuine
 item-identity-during-delay test with a real memorandum (spatial location) in a
 species/lab lineage independent of the two MTL datasets, providing a genuinely
-independent replication that does not share the Boran/Rutishauser lineage's
+independent replication that does not share the DANDI 000574/human single-unit DANDI's
 task and methodology overlap.
 
 Neurons were NOT recorded simultaneously, so a pseudo-population is built:
@@ -35,14 +36,13 @@ import scipy.io as sio
 from geometry import ctg_content_permutation_null, temporal_stability_tau
 from spike_pipeline import FrozenPSTHTransform
 from provenance import _json_safe
+from corpus_sessions import N_NEURONS_TARGET  # noqa: E402
 
-DATA_DIR = dataset_path("pfc3")
 RESULTS = ROOT / "results"
 
 WINDOW_S = 2.0            # delay duration: fixed ~2.03s Cue_onT -> Sample_onT
 BIN_MS = 100
 MIN_TRIALS_PER_CLASS = 8
-N_NEURONS_TARGET = 80
 M_PSEUDO = 15              # pseudo-trials per class
 CTG_STEP = 2
 N_SPLITS = 3
@@ -89,7 +89,8 @@ def load_neuron_spatial(fp: Path):
 
 
 def main():
-    files = sorted(glob.glob(str(DATA_DIR / "*.mat")))
+    data_dir = dataset_path("pfc3")
+    files = sorted(glob.glob(str(data_dir / "*.mat")))
     rng_py = random.Random(SEED)
     rng_py.shuffle(files)
 
@@ -157,7 +158,7 @@ def main():
     with open(stats_path) as f:
         stats = json.load(f)
     stats["pfc3_content_ctg"] = {
-        "dataset": "CRCNS pfc-3 (Constantinidis lab, macaque dlPFC, spatial DMS)",
+        "dataset": "CRCNS pfc-3 (macaque dlPFC, spatial DMS)",
         "n_neurons": n_neurons,
         "n_pseudo_trials": int(X.shape[0]),
         "n_classes": res["n_classes"],

@@ -7,7 +7,8 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-from run_dandi_000004_recognition_generalization import _participant_rows, recognition_correct
+from run_dandi_000004_recognition_generalization import _participant_rows
+from corpus_sessions import recognition_correct
 
 
 def test_recognition_response_mapping():

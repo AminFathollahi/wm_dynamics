@@ -9,17 +9,18 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import json
+
 import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from run_deviation_serial_dependence_and_temporal_locus import (  # noqa: E402
-    _adjacency_statistic, _serial_dependence_branch, _temporal_locus_branch, _cosine_at_lag, _detrend,
-    _sign_to_worse_behaviour, rate_free_state_deviation_neighbour_excluded, unit_direction_vectors,
-)
+from run_deviation_serial_dependence_and_temporal_locus import N_SHUFFLES_PER_SESSION, _adjacency_statistic, _pool_adjacency, _serial_dependence_branch, _temporal_locus_branch, _sign_to_worse_behaviour, rate_free_state_deviation_neighbour_excluded
+from statistics import _cosine_at_lag, _detrend, unit_direction_vectors
 from run_rate_free_state_geometry_behavior_link import rate_free_state_deviation  # noqa: E402
+from provenance import checkpoint_safe, restore_checkpoint  # noqa: E402
 
 
 # ---------------------------------------------------------------------------------------------------
@@ -226,3 +227,18 @@ def test_temporal_locus_single_surviving_window_no_ordering_possible():
              "ordering_test_latest_minus_earliest_surviving": None}
     # Only one window survives -> vacuously "present in every surviving window", no ordering test exists.
     assert _temporal_locus_branch(split, True)["branch"] == "accuracy_predicting_component_is_present_throughout_the_delay"
+
+
+def test_pool_adjacency_survives_a_checkpoint_round_trip_of_a_resumed_session():
+    """_session_serial_dependence_geometry stores windows keyed by str(window). A resumed session's
+    fit comes back through restore_checkpoint before _pool_adjacency ever sees it, and the read site
+    is a direct subscript (g["windows"][str(window)]), not .get -- pre-fix this raised KeyError the
+    moment a resumed session reached this loop. Round-trip a session shaped like the checkpoint and
+    confirm it is still findable by str(window) afterwards."""
+    session = {"status": "computed", "windows": {
+        "50": {"adjacency_statistic_observed": 0.3, "shuffle_null_draws": [0.0] * N_SHUFFLES_PER_SESSION},
+    }}
+    restored = restore_checkpoint(json.loads(json.dumps(checkpoint_safe(session))))
+    result = _pool_adjacency([restored], 50)  # must not raise KeyError
+    assert result["n_sessions_contributing_real"] == 1
+    assert result["n_sessions_contributing_null"] == 1

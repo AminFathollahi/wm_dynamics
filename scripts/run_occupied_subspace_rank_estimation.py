@@ -2,7 +2,7 @@
 decomposition that can actually return an interior rank, and re-answers whether the residual-direction
 axis lies inside the occupied state space for the two macaque corpora the delivered decomposition covers.
 
-THE DEFECT THIS REPLACES, from first principles. The delivered rank selector picks an occupied-subspace
+THE ERROR THIS REPLACES, from first principles. The delivered rank selector picks an occupied-subspace
 rank k by 5-fold cross-validated PCA reconstruction error: it fits a subspace on training trials and
 reconstructs each held-out TRIAL using that trial's OWN coordinates in every candidate direction. Because
 the candidate subspaces of increasing rank are nested, held-out squared error at rank k equals
@@ -82,16 +82,21 @@ for _sub in ("src", "scripts"):
 
 from corpus_sessions import data_root  # noqa: E402
 from provenance import _json_safe, git_commit  # noqa: E402
-from run_component_identity_subspace_atlas import N_BOOT_SESSION_CLUSTER, Z_80_POWER  # noqa: E402
-from run_deviation_axis_structure import (  # noqa: E402
-    CORPORA, N_RANDOM_AXIS_DRAWS, _collect_axis_entries, _cv_pca_rank, _macaque_bundles, _occupied_space_decomposition,
-    _panichello_directory, _trial_count_weighted, _watters_bundles, _weighted_combine_draws,
-    classify_occupied_space_branch, leading_eigenvector, pooled_off_fraction_against_matched_null,
-)
-from run_component_effect_size_and_anatomy import _contiguous_folds  # noqa: E402
+from info_decoding import N_BOOT_SESSION_CLUSTER
+from statistics import Z_80_POWER
+from run_deviation_axis_structure import _macaque_bundles
+from info_decoding import _collect_axis_entries
+from info_decoding import _cv_pca_rank, _occupied_space_decomposition, _weighted_combine_draws, classify_occupied_space_branch, pooled_off_fraction_against_matched_null
+from corpus_sessions import _watters_bundles
+from subspace_identity import leading_eigenvector
+from info_decoding import CORPORA, N_RANDOM_AXIS_DRAWS
+from corpus_sessions import _panichello_directory
+from run_multi_object_interference_and_locus_within_item_count import _trial_count_weighted
+from subspace_identity import _contiguous_folds
 from run_occupied_subspace_rank_selection_repair import _load_corpora_and_accounting  # noqa: E402
 from state_persistence import slope_across_sessions_test  # noqa: E402
 from statistics import permutation_pvalue, stable_seed  # noqa: E402
+from info_decoding import ESTIMATOR_NAMES, _gate_status_for_corpus  # noqa: E402
 
 OUTPUT_PATH = ROOT / "results" / "occupied_subspace_rank_estimation.json"
 CHECKPOINT_DIR = ROOT / "results" / ".checkpoints" / "run_occupied_subspace_rank_estimation"
@@ -108,7 +113,6 @@ SYNTHETIC_SIZES = (("small", 150, 30), ("medium", 500, 100), ("large", 900, 600)
 SYNTHETIC_SEARCH_CEILING_CASES = (("entry_holdout_cap_1", 150, 30, 3, 1),)
 SYNTHETIC_RANK_TOLERANCE = 3
 
-ESTIMATOR_NAMES = ("entry_holdout_bicross_validation", "permutation_eigenvalue_threshold")
 
 DECISION_RULE_DECLARED_BEFORE_FITTING = (
     "TWO ESTIMATORS, both new, both from first principles in numpy, applied to the identical (R, U, axis) "
@@ -630,27 +634,6 @@ def _run_corpus(bundles: list[dict], corpus_key: str) -> dict:
     }
 
 
-def _gate_status_for_corpus(corpus_result: dict, gate: dict) -> dict:
-    """Validation is SCALE-CONDITIONAL, not a single global pass/fail: `minimum_validated_ambient_unit_count`
-    is already the smallest tested ambient size at which an estimator passed the low-noise gate, so a corpus
-    whose own median ambient unit count sits at or above that size is validated for that estimator even if
-    the estimator failed the gate at a SMALLER tested size (`passes_gate_overall` is reported alongside for
-    transparency, but requiring it in addition would make the per-size minimum meaningless -- an estimator
-    that only works above some scale is still usable on cells above that scale). Extrapolation beyond the
-    largest tested size (600 ambient units) is not attempted; recovery only ever improved with ambient size
-    in the synthetic gate here, so this is a disclosed, one-directional assumption, not a measured fact above
-    that ceiling."""
-    median_units = corpus_result["median_ambient_unit_count_across_cells"]
-    out = {}
-    for est_name in ESTIMATOR_NAMES:
-        g = gate["gate_by_estimator"][est_name]
-        min_p = g["minimum_validated_ambient_unit_count"]
-        validated = bool(min_p is not None and median_units is not None and median_units >= min_p)
-        out[est_name] = {
-            "passes_gate_overall": g["passes_gate_overall"], "minimum_validated_ambient_unit_count": min_p,
-            "corpus_median_ambient_unit_count": median_units, "validated_for_this_corpus": validated,
-        }
-    return out
 
 
 def _rank_identification_summary(corpus_result: dict) -> dict:

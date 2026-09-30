@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Leakage-free confined-drift analysis for the Kai Miller ECoG N-back dataset.
+"""Leakage-free confined-drift analysis for the ECoG n-back corpus N-back dataset.
 
 Task-generality arm of the human drift spine (see scripts/run_human_drift_spine_000469.py,
 the structural template this script follows): the same leave-one-out
@@ -12,7 +12,7 @@ high-gamma power instead of single-unit spike counts).
 Condition factor: N-back load level (0/1/2), the closest analogue this task
 has to Sternberg's memory-set-size load. The analysis window is the
 stimulus-locked epoch (-0.2 to +1.5 s) built by src/preprocessing.py's
-Miller helpers, since N-back has no explicit delay period -- items must be
+ECoG n-back corpus helpers, since N-back has no explicit delay period -- items must be
 held across the inter-stimulus interval to the next comparison, not across a
 cued maintenance window, so this is an honest task-structure difference from
 the Sternberg spine, not an oversight.
@@ -59,13 +59,12 @@ from preprocessing import (  # noqa: E402
 )
 from provenance import canonical_json, git_commit, sha256_file  # noqa: E402
 from spike_pipeline import FrozenPSTHTransform  # noqa: E402
+from preprocessing import AXIS_WINDOW  # noqa: E402
+from preprocessing import POST_MS, PRE_MS, bin_time_axis, iid_log_likelihood  # noqa: E402
 
 BIN_MS = 100
-PRE_MS = 200.0
-POST_MS = 1500.0
 N_COMPONENTS = 8
 N_SPLITS = 5
-AXIS_WINDOW = (0.2, 1.0)
 LOCS_DIR = MILLER_DATA_DIR / "memory_nback" / "memory_nback" / "locs"
 RULE_PATH = ROOT / "preregistration" / "rotation_drift_decision_rule.json"
 RULE_HASH = "c9505c80aed6b6c82494e472991a519c46a60a00bd8bfab7e6375f0706dc0ecd"
@@ -80,10 +79,9 @@ PREPROCESSING_PROVENANCE = {
     "substitute_applied": (
         "literature-standard ECoG QC substituted in its absence: MAD-based "
         "bad-channel rejection (median absolute deviation, robust-stats "
-        "standard, threshold=3), common-average re-reference (Engel et al. "
-        "2005), 60 Hz US line-noise notch + 4 harmonics, and Hilbert-envelope "
-        "high-gamma (70-150 Hz) power (Crone et al. 1998; Ray & Maunsell "
-        "2011) -- as already implemented in src/preprocessing.py. This is a "
+        "standard, threshold=3), common-average re-reference, "
+        "60 Hz US line-noise notch + 4 harmonics, and Hilbert-envelope "
+        "high-gamma (70-150 Hz) power -- as already implemented in src/preprocessing.py. This is a "
         "literature-standard substitute, not an author instruction."
     ),
     "no_smoothing_for_drift_fit": (
@@ -161,10 +159,6 @@ def matched_complement_direction(
     return candidates[selected], target_variance, float(variances[selected])
 
 
-def iid_log_likelihood(test: np.ndarray, train: np.ndarray) -> float:
-    variance = max(float(np.nanvar(train)), 1e-10)
-    values = test[np.isfinite(test)]
-    return float(np.sum(-0.5 * (np.log(2 * np.pi * variance) + values * values / variance)))
 
 
 def trial_prediction_advantage(train: np.ndarray, test: np.ndarray) -> dict:
@@ -185,20 +179,6 @@ def trial_prediction_advantage(train: np.ndarray, test: np.ndarray) -> dict:
     }
 
 
-def bin_time_axis(epochs_ct: np.ndarray, times: np.ndarray, bin_ms: float, srate: float) -> tuple[np.ndarray, np.ndarray]:
-    """Block-average the trailing time axis into non-overlapping bins.
-
-    Unlike a smoothing kernel, non-overlapping block averaging does not
-    introduce cross-bin autocorrelation, so it stays compatible with
-    drift_dynamics.py's unsmoothed-observation requirement.
-    """
-    bin_samples = max(int(round(bin_ms * srate / 1000.0)), 1)
-    n_bins = epochs_ct.shape[-1] // bin_samples
-    trimmed = epochs_ct[..., : n_bins * bin_samples]
-    binned = trimmed.reshape(*trimmed.shape[:-1], n_bins, bin_samples).mean(axis=-1)
-    time_trimmed = times[: n_bins * bin_samples]
-    bin_times = time_trimmed.reshape(n_bins, bin_samples).mean(axis=-1)
-    return binned, bin_times
 
 
 def fit_condition_drift(
@@ -483,7 +463,7 @@ def electrode_coverage(subj: str) -> dict:
             "subdural ECoG grid/strip electrodes; by recording modality these "
             "cannot sample medial temporal lobe structures, so no "
             "within-dataset lateral-cortex-vs-MTL contrast is possible here "
-            "(unlike Boran, which co-locates iEEG and MTL depth electrodes in "
+            "(unlike DANDI 000574, which co-locates iEEG and MTL depth electrodes in "
             "the same patients). The comparison this dataset supports is "
             "cross-dataset: this lateral-cortex-only confinement estimate "
             "against the MTL-inclusive DANDI 000469/001187 estimates."
@@ -524,7 +504,7 @@ def main() -> None:
     if sha256_file(RULE_PATH) != RULE_HASH:
         raise SystemExit("frozen adjudication rule hash mismatch; refusing to fit real data")
     if not DATA_DIR.is_dir():
-        raise SystemExit(f"Miller data not staged at configured path: {DATA_DIR}")
+        raise SystemExit(f"ECoG n-back corpus data not staged at configured path: {DATA_DIR}")
 
     patients = {}
     for index, subj in enumerate(SUBJECTS):
@@ -533,7 +513,7 @@ def main() -> None:
 
     complete = {subj: row for subj, row in patients.items() if row["status"] == "complete"}
     if not complete:
-        raise SystemExit("no Miller patient completed the drift fit")
+        raise SystemExit("no ECoG n-back corpus patient completed the drift fit")
 
     switching_decomposition = summarize_switching_decompositions([
         fold for patient in complete.values() for fold in patient["drift"]["folds"]
@@ -562,7 +542,7 @@ def main() -> None:
         "note": (
             "qualitative comparison only, not a formal joint test; DANDI 000469 "
             "is single-unit spiking with hippocampal/MTL and lateral-temporal "
-            "coverage under a repeated-item Sternberg delay, Miller is lateral "
+            "coverage under a repeated-item Sternberg delay, ECoG n-back corpus is lateral "
             "subdural ECoG high-gamma power under a delay-free N-back task -- "
             "modality, region, and task all differ simultaneously, so this "
             "cannot isolate which difference (if any) drives a discrepancy"
@@ -580,7 +560,7 @@ def main() -> None:
 
     output = {
         "schema_version": "1.0.0", "analysis_id": "human_drift_spine_miller_nback",
-        "dataset": "Kai Miller ECoG N-back (memory_nback library)",
+        "dataset": "ECoG n-back corpus (memory_nback library)",
         "canonical_role": "task-generality arm (N-back vs Sternberg); lateral-cortex ECoG vs MTL-inclusive comparison",
         "required_ethics_statement": REQUIRED_ETHICS_STATEMENT,
         "code_commit": git_commit(ROOT), "decision_rule_hash": RULE_HASH,

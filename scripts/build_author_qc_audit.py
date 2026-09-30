@@ -8,12 +8,14 @@ result.  Missing author instructions route to documented domain-standard QC.
 """
 from __future__ import annotations
 
+import ast
 import json
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 RESULTS = ROOT / "results"
+SRC = ROOT / "src"
 DEFAULT_OUTPUT_PATH = RESULTS / "author_preprocessing_qc_audit.json"
 
 
@@ -22,12 +24,33 @@ def _load(name: str) -> dict | None:
     return json.loads(path.read_text()) if path.exists() else None
 
 
+def _imported_src_modules(source: str) -> list[Path]:
+    """src/<name>.py files this source imports at module level."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return []
+    names = set()
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                names.add(alias.name.split(".")[0])
+        elif isinstance(node, ast.ImportFrom):
+            if node.module and not (node.level and node.level > 0):
+                names.add(node.module.split(".")[0])
+    return [SRC / f"{name}.py" for name in names if (SRC / f"{name}.py").exists()]
+
+
 def _source_contains(relative: str, terms: list[str]) -> bool:
     path = ROOT / relative
     if not path.exists():
         return False
     source = path.read_text(errors="replace")
-    return all(term in source for term in terms)
+    combined = [source]
+    for module_path in _imported_src_modules(source):
+        combined.append(module_path.read_text(errors="replace"))
+    haystack = "\n".join(combined)
+    return all(term in haystack for term in terms)
 
 
 def main() -> None:
@@ -83,7 +106,7 @@ def main() -> None:
             "deviation_or_limit": "The staged-release sensitivity is available, but legacy analyses remain archival because their source version cannot be recovered. The staged result is not a numerical replication claim.",
         },
         {
-            "dataset": "Boran co-located spikes and iEEG",
+            "dataset": "DANDI 000574 co-located spikes and iEEG",
             "grain": "same patient and trials viewed through two modalities",
             "instruction_source": "release processing plus domain-standard spike and HFA QC",
             "required_qc": ["exact cross-modality trial alignment", "spike-rate QC", "line-noise removal", "bipolar/reference audit", "artifact-free HFA", "same-fold comparison"],
@@ -93,7 +116,7 @@ def main() -> None:
             "deviation_or_limit": "Legacy modality results cannot substitute for the required lambda agreement analysis.",
         },
         {
-            "dataset": "Miller memory n-back ECoG",
+            "dataset": "ECoG n-back corpus",
             "grain": "patient-session-task condition",
             "instruction_source": "release dataset-notes document plus domain-standard ECoG QC",
             "required_qc": ["sampling metadata", "bad-channel exclusion", "line-noise removal", "reference audit", "task-event validity"],
@@ -105,7 +128,7 @@ def main() -> None:
             "deviation_or_limit": "Release lacks response accuracy needed for the behavior arm.",
         },
         {
-            "dataset": "Wolff EEG impulse",
+            "dataset": "Impulse-perturbation scalp EEG",
             "grain": "participant; trials nested within participant",
             "instruction_source": "released MATLAB figure scripts and Mahalanobis tuning function",
             "required_qc": ["source event timing", "continuous orientation", "source channel/orientation conventions", "participant uncertainty", "voltage and alpha negative controls"],
@@ -115,7 +138,7 @@ def main() -> None:
             "deviation_or_limit": "Scalp EEG cannot be equated to intracranial scale or localization.",
         },
         {
-            "dataset": "Inagaki ALM",
+            "dataset": "Mouse anterior lateral motor cortex delayed response",
             "grain": "mouse-session; perturbation and control trials within session",
             "instruction_source": "released SiliconProbeData structure/examples and SI perturbation tables",
             "required_qc": ["source trial-type labels", "unperturbed-only endogenous fit", "unit presence/rate QC", "real perturbation recovery", "mouse-level reporting"],
@@ -149,7 +172,7 @@ def main() -> None:
             "deviation_or_limit": "Existing HGP/v-star artifacts remain archival. The current feature-bank result is episodic encoding, and closed-loop item-level treatment remains propensity-selected rather than causal.",
         },
         {
-            "dataset": "Haslacher CLAM-tACS",
+            "dataset": "Closed-loop tACS scalp EEG",
             "grain": "participant; six phase conditions within participant; active/control between participants",
             "instruction_source": "release Data/README.md, fully audited",
             "required_qc": ["pyprep baseline noisy channels", "0.418-V saturation", "group exclusions with protected Pz ring", "200-Hz resample", "8-14 Hz filter", "SASS", "post-SASS spectrum", "average reference after SASS", "retention-only epochs"],
@@ -160,7 +183,7 @@ def main() -> None:
             "deviation_or_limit": "Concurrent scalp tACS remains artifact-sensitive even after SASS; failed participants are excluded under the prespecified QC gate and the retained sample remains a G3 candidate only.",
         },
         {
-            "dataset": "Alagapan iEEG stimulation",
+            "dataset": "Phase-locked intracranial stimulation",
             "grain": "three descriptive patient cases",
             "instruction_source": "released Preprocessing.m and StimArtifactRemoval_ICA.m",
             "required_qc": ["event-defined retention", "actual sampling rate", "seizure-contact exclusion", "stimulation-contact exclusion", "common-average reference", "post-stim spectral sanity"],
@@ -181,7 +204,7 @@ def main() -> None:
             "deviation_or_limit": "Cannot identify a neural input map or pass G3/G4.",
         },
         {
-            "dataset": "Panichello macaque lPFC",
+            "dataset": "Macaque lPFC spatial working memory",
             "grain": "25 sessions nested in three animals",
             "instruction_source": "release README; author-provided 1-ms spike rasters and condition labels",
             "required_qc": ["file integrity", "author time axis", "all sessions", "cue-angle stratification", "outcome-blind representation", "animal-level heterogeneity"],
@@ -191,7 +214,7 @@ def main() -> None:
             "deviation_or_limit": "Release includes author-identified single- and multi-units together; no raw spike-sorting rerun is possible from this package.",
         },
         {
-            "dataset": "Watters multi-object WM",
+            "dataset": "Macaque multi-object working memory",
             "grain": "sessions nested in Elgar/Perle and triangle/ring configurations",
             "instruction_source": "official GitHub processing/modeling READMEs and released OSF caches",
             "required_qc": ["author good-unit/source inclusion", "source trial maps", "processed spike cache", "optimizer-seed averaging", "animal/configuration separation", "stable unit presence"],

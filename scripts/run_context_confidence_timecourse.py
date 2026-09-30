@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Context (load/set-size) decoder confidence across the maintenance window,
 and its relationship to trial outcome, across every dataset with both a
-load/set-size label and a trial-level correct/error label: Boran iEEG, Boran
-single units, and the three DANDI Rutishauser-lineage single-unit cohorts.
-Miller is excluded — no behavioral accuracy field in the public release (see
+load/set-size label and a trial-level correct/error label: DANDI 000574 iEEG, DANDI 000574
+single units, and the three DANDI human single-unit DANDI cohorts.
+ECoG n-back corpus is excluded — no behavioral accuracy field in the public release (see
 Methods).
 
 Uses geometry.out_of_fold_class_confidence on each dataset's already-computed
@@ -69,10 +69,10 @@ def _run_dataset(glob_pattern: str, load_field: str, outcome_field: str, low_val
 
 
 def main():
-    print("Boran iEEG...")
+    print("DANDI 000574 iEEG...")
     boran_ieeg = _run_dataset("boran_geometry_sub-*.npz", "set_sizes", "correct", 4, 8,
                               len("boran_geometry_"))
-    print("Boran single units...")
+    print("DANDI 000574 single units...")
     boran_units = _run_dataset("dandi000574_units_geometry_*.npz", "set_size", "correct", 4, 8,
                                len("dandi000574_units_geometry_"))
     print("DANDI 000469...")

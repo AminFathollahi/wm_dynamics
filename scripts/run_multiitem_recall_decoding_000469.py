@@ -32,7 +32,6 @@ from geometry import time_resolved_content_decoding
 from statistics import stable_seed, paired_sign_flip_test
 from provenance import _json_safe
 
-DATA_DIR = dataset_path("dandi_000469")
 RESULTS = ROOT / "results"
 
 BIN_MS = 100
@@ -59,7 +58,7 @@ def _class_counts_ok(labels: np.ndarray) -> bool:
 
 
 def process_subject(subj: str) -> dict | None:
-    nwb_path = DATA_DIR / subj / f"{subj}_ses-2_ecephys+image.nwb"
+    nwb_path = dataset_path("dandi_000469") / subj / f"{subj}_ses-2_ecephys+image.nwb"
     if not nwb_path.exists():
         return None
     with h5py.File(str(nwb_path), "r") as f:
@@ -76,7 +75,7 @@ def process_subject(subj: str) -> dict | None:
         item_labels = {name: trials[field][:].astype(int) for name, (field, _) in ITEM_FIELDS.items()}
         item_onsets = {name: trials[onset_field][:] for name, (_, onset_field) in ITEM_FIELDS.items()}
 
-    # Same firing-rate QC floor as run_000469_pipeline.py (Daume et al. 2024),
+    # Same firing-rate QC floor as run_000469_pipeline.py (this dataset's original QC floor),
     # applied here too since this script re-reads raw spike trains directly
     # rather than reusing that script's already-QC'd geometry output.
     rate_mask = low_rate_unit_mask(spike_lists, t_maint, MAINT_WIN)

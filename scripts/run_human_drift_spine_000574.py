@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Leakage-free confined-drift analysis for DANDI 000574 (Boran verbal Sternberg).
+"""Leakage-free confined-drift analysis for DANDI 000574 (DANDI 000574 verbal Sternberg).
 
 000574's public NWB release has ``set_letters == "not available"`` on every
 trial (see ``scripts/run_boran_pipeline.py`` and
@@ -12,7 +12,7 @@ recoverable from every session: Sternberg set size (4/6/8 letters), per the
 task's own ``general/experiment_description`` field
 (fixation [-6,-5] s, encoding [-5,-3] s, maintenance [-3,0] s relative to the
 probe -- i.e. maintenance onset = trial start + 3.0 s for 3.0 s, matching the
-window already used by the sibling 000574/Boran pipelines in this repo).
+window already used by the sibling 000574 pipelines in this repo).
 
 Methodologically this mirrors the 000469 spine exactly: a multiclass
 discriminant direction fit only on outer-training trials, leave-one-out
@@ -68,17 +68,16 @@ from spike_pipeline import (  # noqa: E402
     low_rate_unit_mask,
     resolve_unit_regions,
 )
+from corpus_sessions import MAINT_ONSET_S, MAINT_WIN  # noqa: E402
+from corpus_sessions import MIN_TRIALS, RULE_HASH, patient_level_means  # noqa: E402
+from statistics import bootstrap_mean  # noqa: E402
 
 BIN_MS = 100
-MAINT_ONSET_S = 3.0
-MAINT_WIN = 3.0
 N_COMPONENTS = 8
 N_SPLITS = 5
-MIN_UNITS = 8  # Boran microwire yield is lower than the Rutishauser bundles (000469 uses 15)
-MIN_TRIALS = 20
+MIN_UNITS = 8  # DANDI 000574 microwire yield is lower than the human single-unit DANDI bundles (000469 uses 15)
 LABEL_CONVENTION = "nwb_boran_brainnetome_hybrid"
 RULE_PATH = ROOT / "preregistration" / "rotation_drift_decision_rule.json"
-RULE_HASH = "c9505c80aed6b6c82494e472991a519c46a60a00bd8bfab7e6375f0706dc0ecd"
 
 
 def data_directory() -> Path:
@@ -354,26 +353,8 @@ def analyze_session(path: Path, seed: int, region: str = "pooled") -> dict:
     }
 
 
-def bootstrap_mean(values: np.ndarray, rng: np.random.Generator, n_boot: int = 5000) -> list[float]:
-    draws = np.mean(values[rng.integers(0, len(values), size=(n_boot, len(values)))], axis=1)
-    return list(map(float, np.percentile(draws, [2.5, 97.5])))
 
 
-def patient_level_means(sessions: dict, metric_names: tuple[str, ...]) -> dict[str, dict[str, float]]:
-    """Average each metric within patient before any cross-patient inference (advisor N4/10.4)."""
-    by_patient: dict[str, list[dict]] = {}
-    for key, row in sessions.items():
-        if row["status"] != "complete":
-            continue
-        patient = key.split("_ses-")[0]
-        by_patient.setdefault(patient, []).append(row)
-    patient_metrics: dict[str, dict[str, float]] = {}
-    for patient, rows in by_patient.items():
-        patient_metrics[patient] = {}
-        for name in metric_names:
-            values = [row["summary"][name] for row in rows if row["summary"][name] is not None]
-            patient_metrics[patient][name] = float(np.mean(values)) if values else None
-    return patient_metrics
 
 
 METRIC_NAMES = (
@@ -462,7 +443,7 @@ def write_pooled_artifact(sessions: dict, patient_metrics: dict, group: dict) ->
     complete = {key: row for key, row in sessions.items() if row["status"] == "complete"}
     output = {
         "schema_version": "1.0.0", "analysis_id": "human_drift_spine_dandi000574",
-        "dataset": "DANDI 000574 (Boran verbal Sternberg)",
+        "dataset": "DANDI 000574 (verbal Sternberg)",
         "canonical_role": "replication of the confinement/diffusion spine at scale",
         "item_identity_available": False,
         "item_identity_reason": (
@@ -490,7 +471,7 @@ def write_pooled_artifact(sessions: dict, patient_metrics: dict, group: dict) ->
             "(the anatomical census, results/anatomical_census.json, resolves all of these as "
             "distinct structures in this corpus). That is the chimeric-pool N10 violation this project's "
             "own anatomical-pooling prohibition flags. Superseded by "
-            "results/region_stratified_drift_000574.json as of 2026-08-04: "
+            "results/region_stratified_drift_000574.json: "
             "the group.state_space_lambda_identified_mean.median reported in THIS file (including the "
             "3.67 s^-1 figure quoted in any manuscript draft referencing "
             "'the DANDI 000574 confinement rate') describes a mixture over multiple anatomical "
@@ -596,7 +577,7 @@ def run_region_stratified(directory: Path, pooled: tuple[dict, dict, dict] | Non
 
     output = {
         "schema_version": "1.0.0", "analysis_id": "region_stratified_drift_dandi000574",
-        "dataset": "DANDI 000574 (Boran verbal Sternberg)",
+        "dataset": "DANDI 000574 (verbal Sternberg)",
         "condition_used": "set_size (4/6/8 letters)",
         "code_commit": git_commit(ROOT), "decision_rule_hash": RULE_HASH,
         "source_hash": sha256_file(Path(__file__)),

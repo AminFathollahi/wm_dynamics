@@ -22,16 +22,16 @@ Datasets:
   - content and context: DANDI 000469 (load axis, load 1 versus load 3, as
     context; item identity within load 1, as content)
   - content only: CRCNS pfc-3 (nine-way spatial location)
-  - context only: Miller (0-back versus 2-back), Boran iEEG (set size 4 versus 8),
-    Boran units (set size 4 versus 8), DANDI 001187 and DANDI
+  - context only: ECoG n-back corpus (0-back versus 2-back), DANDI 000574 iEEG (set size 4 versus 8),
+    DANDI 000574 units (set size 4 versus 8), DANDI 001187 and DANDI
     000673 (load 1 versus load 3 — no repeated items in either,
-    so context-axis only, matching the DATASET_ANALYSIS_MATRIX.md exclusion that
-    keeps content-axis-rotation DANDI-000469-only, per the Fig-7 dissociation).
+    so context-axis only, matching the exclusion that
+    keeps content-axis-rotation DANDI-000469-only).
 
 Outputs: results/axis_rotation_{dataset}.json
 Updates: results/all_statistics.json — "axis_rotation_{dataset}" keys
 
-Run (after run_000469_pipeline.py, run_pfc3_content_ctg.py, Miller/Boran geometry,
+Run (after run_000469_pipeline.py, run_pfc3_content_ctg.py, ECoG n-back corpus/DANDI 000574 geometry,
 run_000574_units_pipeline.py, run_001187_pipeline.py, run_000673_pipeline.py):
     conda run -n wm_dynamics python scripts/run_axis_rotation_analysis.py
 """
@@ -153,8 +153,8 @@ BIN_DT_S = 0.1
 
 
 def run_boran_units() -> dict:
-    """Boran units (DANDI 000574): set-size 4 vs 8, same context contrast as
-    Boran iEEG, from the SAME subjects/trials — the within-subject spiking-vs-
+    """DANDI 000574 units: set-size 4 vs 8, same context contrast as
+    DANDI 000574 iEEG, from the SAME subjects/trials — the within-subject spiking-vs-
     LFP dynamics comparison needs this run at the matching contrast."""
     per_subject = {}
     for path in sorted(RESULTS.glob("dandi000574_units_geometry_sub-*.npz")):
@@ -214,20 +214,20 @@ def main():
         json.dump(_json_safe(pfc3), f, indent=2, allow_nan=False)
     stats["axis_rotation_pfc3"] = pfc3
 
-    print("Miller (context)...")
+    print("ECoG n-back corpus (context)...")
     miller = run_miller()
     with open(RESULTS / "axis_rotation_miller.json", "w") as f:
         json.dump(_json_safe(miller), f, indent=2, allow_nan=False)
     stats["axis_rotation_miller"] = miller
 
-    print("Boran iEEG (context)...")
+    print("DANDI 000574 iEEG (context)...")
     boran = run_boran()
     with open(RESULTS / "axis_rotation_boran.json", "w") as f:
         json.dump(_json_safe(boran), f, indent=2, allow_nan=False)
     stats["axis_rotation_boran"] = boran
 
     # Previously-uncovered cohorts (context-axis only; see module docstring)
-    print("Boran units (context)...")
+    print("DANDI 000574 units (context)...")
     boran_units = run_boran_units()
     with open(RESULTS / "axis_rotation_boran_units.json", "w") as f:
         json.dump(_json_safe(boran_units), f, indent=2, allow_nan=False)
@@ -286,10 +286,10 @@ def main():
               f"rho={corr_result['rho']:.3f}, p={corr_result['p_value']:.4f}")
     stats["axis_rotation_vs_dmd_frequency_dandi000469"] = corr_result
 
-    # Boran units vs Boran iEEG -- spiking-vs-LFP within-subject
+    # DANDI 000574 units vs DANDI 000574 iEEG -- spiking-vs-LFP within-subject
     # context-axis-rotation comparison (same subjects/trials, same set4v8 contrast).
-    # Boran units is keyed per-session (sub-XX_ses-YY); average sessions to one
-    # value per subject before pairing against Boran iEEG's per-subject values.
+    # DANDI 000574 units is keyed per-session (sub-XX_ses-YY); average sessions to one
+    # value per subject before pairing against DANDI 000574 iEEG's per-subject values.
     units_by_subj: dict[str, list] = {}
     for key, v in boran_units.items():
         subj = key.split("_ses-")[0]
@@ -307,7 +307,7 @@ def main():
         spiking_vs_lfp["subjects"] = shared_subjs
         spiking_vs_lfp["units_mean"] = float(units_vals.mean())
         spiking_vs_lfp["ieeg_mean"] = float(ieeg_vals.mean())
-        print(f"\nSpiking-vs-LFP (Boran units vs Boran iEEG, context ARI, "
+        print(f"\nSpiking-vs-LFP (DANDI 000574 units vs DANDI 000574 iEEG, context ARI, "
               f"N={len(shared_subjs)} shared subjects): units_mean={units_vals.mean():.4f} "
               f"ieeg_mean={ieeg_vals.mean():.4f} diff={res_k3['mean_diff']:+.4f} "
               f"[{res_k3['ci_lower']:.4f}, {res_k3['ci_upper']:.4f}] p={res_k3['p_value']:.4f} "

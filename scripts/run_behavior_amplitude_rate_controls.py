@@ -52,11 +52,13 @@ if _scripts_dir not in sys.path:
     sys.path.insert(0, _scripts_dir)
 
 from corpus_sessions import data_root  # noqa: E402
-from run_state_behavior_link import (  # noqa: E402
-    MIN_ERROR_TRIALS_FOR_REACHABILITY, _counts_from_spikes, _panichello_directory, trial_amplitude_covariates,
-)
+from state_persistence import trial_amplitude_covariates
+from statistics import MIN_ERROR_TRIALS_FOR_REACHABILITY
+from spike_pipeline import _counts_from_spikes
+from corpus_sessions import _panichello_directory
 from state_persistence import slope_across_sessions_test  # noqa: E402
 from statistics import partial_correlation_permutation_test, pearson_permutation_test  # noqa: E402
+from corpus_sessions import _reachable_sessions  # noqa: E402
 
 OUTPUT_PATH = Path(__file__).resolve().parents[1] / "results" / "behavior_amplitude_rate_controls.json"
 N_PERM = 10000
@@ -76,20 +78,6 @@ DECISION_RULE_DECLARED_BEFORE_FITTING = (
 )
 
 
-def _reachable_sessions(root: Path, limit: int | None = None) -> list[Path]:
-    directory = _panichello_directory(root)
-    if directory is None:
-        return []
-    paths = []
-    for path in sorted(glob.glob(str(directory / "*.mat"))):
-        raw = loadmat(path, simplify_cells=True)
-        is_corr = np.asarray(raw["isCorr"]).astype(bool).reshape(-1)
-        n_error = int((~is_corr).sum())
-        if n_error >= MIN_ERROR_TRIALS_FOR_REACHABILITY:
-            paths.append(Path(path))
-            if limit is not None and len(paths) >= limit:
-                break
-    return paths
 
 
 def _session_covariates(path: Path) -> dict | None:
@@ -174,7 +162,7 @@ def main() -> None:
     output = {
         "version": "2026-08-24",
         "scope": (
-            "Macaque lPFC only (Panichello et al. 2024): human trial-level accuracy is at ceiling and the "
+            "Macaque lPFC only (doi 10.1038/s41586-024-08139-9): human trial-level accuracy is at ceiling and the "
             "mouse ALM corpus has no comparable per-trial accuracy, so this control cannot be run in "
             "either corpus. The 11 sessions reaching the pre-declared matched-contrast reachability floor "
             "(at least 60 error trials, the same floor results/state_behavior_link.json uses), the same 11 "

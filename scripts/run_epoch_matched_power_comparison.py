@@ -82,7 +82,7 @@ _scripts_dir = str(Path(__file__).resolve().parents[1] / "scripts")
 if _scripts_dir not in sys.path:
     sys.path.insert(0, _scripts_dir)
 
-from project_config import data_root  # noqa: E402
+from project_config import data_root
 
 from state_persistence import (  # noqa: E402
     _d_series, lag_reachability_note, paired_vs_null_contrast,
@@ -93,7 +93,6 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 LAG_PATH = REPO_ROOT / "results" / "state_persistence_lag.json"
 OUTPUT_PATH = REPO_ROOT / "results" / "epoch_matched_power_comparison.json"
 TRUNCATED_DELAY_CHECKPOINT = REPO_ROOT / "results" / ".checkpoints" / "epoch_matched_power_truncated_delay.json"
-DATA_ROOT = data_root()
 
 DECIDING_WIDTH_BINS = 3
 BIN_WIDTH_S = 0.1
@@ -563,7 +562,10 @@ def refit_delay_at_bin_count(bin_count: int, width_bins: int, data_root: Path) -
             return cached
 
     from corpus_sessions import iter_all_corpora
-    from run_state_persistence import LAG_BIN_MS, _counts_from_spikes, _lag_run_row, _seed
+    from run_state_persistence import _counts_from_spikes
+    from state_persistence import _lag_run_row
+    from statistics import _seed
+    from state_persistence import LAG_BIN_MS
 
     rows, t0 = [], time.time()
     for index, meta in enumerate(iter_all_corpora(data_root)):
@@ -979,7 +981,7 @@ def main() -> None:
 
     print(f"matched window: re-fitting the delay epoch truncated to {encoding_bin_count} bins...",
           file=sys.stderr)
-    truncated = refit_delay_at_bin_count(encoding_bin_count, DECIDING_WIDTH_BINS, DATA_ROOT)
+    truncated = refit_delay_at_bin_count(encoding_bin_count, DECIDING_WIDTH_BINS, data_root())
     truncated_by_key = fitted_rows_by_key(truncated["rows"], "delay", DECIDING_WIDTH_BINS)
     truncated_keys, truncated_encoding_series, truncated_delay_series = paired_epoch_series(
         encoding_by_key, truncated_by_key)

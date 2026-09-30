@@ -106,7 +106,7 @@ def test_incomplete_corpus_admission_refuses_artifact_replacement():
         _require_complete_corpus_admission({"boran_ieeg": {"beta": 0.01}})
 
 
-# ── Defect one: bias-only arm needs a between-subject, not within-subject, null ────────────────
+# ── Error one: bias-only arm needs a between-subject, not within-subject, null ────────────────
 
 def test_within_subject_shuffle_is_exactly_invariant_for_subject_constant_predictor():
     """The numeric proof behind BIAS_ONLY_NULL_REASON: a within-subject shuffle can never change
@@ -157,7 +157,7 @@ def test_between_subject_shuffle_is_not_invariant_and_detects_the_planted_effect
     assert result["beta_between_subject"] > 0  # planted slope was positive
 
 
-# ── Defect two: within-subject beta is arithmetically identical to native beta ─────────────────
+# ── Error two: within-subject beta is arithmetically identical to native beta ─────────────────
 
 def test_within_subject_beta_identical_to_native_and_disclosed():
     drift, rt, subj = _synthetic_drift_rt(true_beta=0.8, rng=np.random.default_rng(10))
@@ -168,7 +168,7 @@ def test_within_subject_beta_identical_to_native_and_disclosed():
     assert within["beta"] == pytest.approx(native["beta"], rel=1e-3)
 
 
-# ── Defect (leading arm): nuisance-partialled verdict is powered-null-or-inconclusive ──────────
+# ── Error (leading arm): nuisance-partialled verdict is powered-null-or-inconclusive ──────────
 
 def test_nuisance_partialled_verdict_powered_null_below_reference():
     arm = {"beta": 0.001, "p_value": 0.90, "mdc_80_r": REFERENCE_R_UNITS - 0.05,
@@ -224,7 +224,7 @@ def test_subject_adjusted_r_removes_pure_between_subject_association():
     assert abs(within_r) < 0.1
 
 
-# ── Defect: pooled bias-only arm silently dropped its own detection bound ──────────────────────
+# ── Error: pooled bias-only arm silently dropped its own detection bound ──────────────────────
 
 def test_pool_arm_bias_only_populates_mdc_80_r_on_between_subject_scale():
     """The bias-only arm has no within-subject variation to bootstrap (its predictor is
@@ -283,7 +283,7 @@ def test_main_uses_canonical_independent_pool_and_current_helper_contract(
             "run_dandi000469", "run_dandi001187", "run_dandi000673", "run_boran"))):
         monkeypatch.setattr(
             graded, function_name,
-            lambda beta=0.01 * (index + 1): corpus_result(beta),
+            lambda data_root_dir, beta=0.01 * (index + 1): corpus_result(beta),
         )
 
     def fake_controls(trials, seed_prefix, native):

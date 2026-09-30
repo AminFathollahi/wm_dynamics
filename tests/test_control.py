@@ -215,7 +215,7 @@ class TestAverageModalControllability:
         return W
 
     def test_average_controllability_matches_truncated_gramian_trace(self, rng):
-        # Gu et al. 2015's closed form is the infinite-horizon limit of
+        # The network-controllability closed form is the infinite-horizon limit of
         # Tr(Wc) for single-node input B=e_i on the normalized (symmetric)
         # adjacency; a long-but-finite-horizon Gramian should converge to it.
         W = self._small_network(rng)

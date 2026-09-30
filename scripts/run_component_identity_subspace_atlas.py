@@ -39,7 +39,7 @@ run_state_space_estimation_admissibility.py already uses for these same three co
 
 CANDIDATE SUBSPACES, per corpus, are built ONLY where that corpus's own data supports them; absence
 is recorded with a reason rather than fabricated (see CANDIDATE_SUPPORT_MATRIX below, filled in as
-each corpus is analysed). Two multi-item task corpora (Watters, and the multi-object cardinality
+each corpus is analysed). Two multi-item task corpora (macaque multi-object working-memory corpus (doi:10.64898/2026.01.27.702062), and the multi-object cardinality
 inside it) use the project's own trial-count-weighted combination across item-count levels
 (_trial_count_weighted, run_component_effect_size_and_anatomy.py, imported unchanged) exactly as
 results/deviation_axis_structure.json does for this corpus; no other corpus in this atlas has more
@@ -73,11 +73,11 @@ outcomes where they exist in this project's registry: watters_2026 (reaction_tim
 and inagaki_alm5 (First_lick minus Cue_start, in the corpus's own raw behaviour struct, not exposed
 by src/corpus_sessions.py's iter_alm). The ALM RT number is NOT reported here: this corpus's raw
 response code (Trial_types_of_response_vector) needs a verified mapping to a binary correct/error
-label before it can serve as the accuracy control the mandate requires alongside spike count, and
+label before it can serve as the accuracy control this analysis requires alongside spike count, and
 that mapping was not verified against the original publication within this task's scope. Reporting
 an RT number without a checked accuracy control would be silently substituting a weaker analysis for
 the one asked for, so ALM's RT cell is 'not_computed' with this reason stated, not a fabricated
-number. Neither Panichello (no timestamp field: its raw .mat carries only cueAng, cueAngIdx, isCorr,
+number. Neither macaque prefrontal spatial working-memory corpus (Dryad doi:10.5061/dryad.kkwh70sct) (no timestamp field: its raw .mat carries only cueAng, cueAngIdx, isCorr,
 spks, tc) nor any of the three human corpora (no response-time field in the trial tables
 src/corpus_sessions.py already reads) can ask this question at all.
 
@@ -138,44 +138,40 @@ from statistics import (  # noqa: E402
     stable_seed,
 )
 from preprocessing import load_boran_nwb  # noqa: E402
-from run_behavior_amplitude_rate_controls import _reachable_sessions  # noqa: E402
-from run_component_effect_size_and_anatomy import _trial_count_weighted  # noqa: E402
-from run_deviation_axis_structure import (  # noqa: E402
-    _cv_pca_rank, _class_mean_subspace_basis, _empirical_two_sided, _regression_subspace_basis,
-    _residual_rows, _unit_residual_matrix, _weighted_combine_draws, leading_eigenvector,
-)
-from run_deviation_subspace_decomposition import (  # noqa: E402
-    _leave_one_out_unit_directions, residual_decomposition_and_identity_check,
-)
-from run_dissociation_cross_preparation_test import MIN_TRIALS_WITH_DEFINED_DIRECTION  # noqa: E402
-from run_rate_free_state_geometry_behavior_link import (  # noqa: E402
-    rate_free_state_deviation, _session_arrays as _panichello_reproduction_gate_session_arrays,
-)
-from run_state_behavior_link import _counts_from_spikes, _panichello_directory  # noqa: E402
-from run_state_content_link import BIN_MS, MIN_CLASSES, MIN_TRIALS_PER_CLASS, delay_counts, usable_label  # noqa: E402
-from run_state_space_estimation_admissibility import (  # noqa: E402
-    FIELD_BAND_HI_HZ, FIELD_BAND_LO_HZ, FIELD_MAINTENANCE_WINDOW_S, _boran_field_potential_session,
-)
+from corpus_sessions import _reachable_sessions
+from statistics import _trial_count_weighted
+from subspace_identity import _class_mean_subspace_basis, _regression_subspace_basis
+from info_decoding import _residual_rows
+from info_decoding import _cv_pca_rank, _empirical_two_sided, _unit_residual_matrix, _weighted_combine_draws
+from subspace_identity import leading_eigenvector
+from info_decoding import _leave_one_out_unit_directions, residual_decomposition_and_identity_check
+from statistics import MIN_TRIALS_WITH_DEFINED_DIRECTION
+from corpus_sessions import _session_arrays as _panichello_reproduction_gate_session_arrays
+from stimulation_response_estimator import rate_free_state_deviation
+from spike_pipeline import _counts_from_spikes
+from corpus_sessions import _panichello_directory
+from run_state_content_link import MIN_TRIALS_PER_CLASS, usable_label
+from spike_pipeline import BIN_MS
+from info_decoding import MIN_CLASSES
+from spike_pipeline import delay_counts
+from info_decoding import FIELD_MAINTENANCE_WINDOW_S
+from corpus_sessions import _boran_field_potential_session
+from info_decoding import FIELD_BAND_HI_HZ, FIELD_BAND_LO_HZ
+from info_decoding import CANDIDATE_KEYS, CANDIDATE_SUPPORT_MATRIX, MAX_SESSIONS_ENV_VAR, N_BOOT_SESSION_CLUSTER, _previous_label  # noqa: E402
+from info_decoding import _session_core  # noqa: E402
+from corpus_sessions import _session_limit, _panichello_session_inputs  # noqa: E402
 
 OUTPUT_PATH = ROOT / "results" / "component_identity_subspace_atlas.json"
 CHECKPOINT_DIR = ROOT / "results" / ".checkpoints" / "run_component_identity_subspace_atlas"
 ANALYSIS_VERSION = "2026-09-05"
-MAX_SESSIONS_ENV_VAR = "COMPONENT_IDENTITY_ATLAS_MAX_SESSIONS"
 
 N_RANDOM_SUBSPACE_DRAWS = 1000
 N_PERM = 2000
-N_BOOT_SESSION_CLUSTER = 2000
 FDR_ALPHA = 0.05
 
 CORPORA = (
     "panichello_2024_macaque_lPFC", "watters_2026_macaque_multi_object", "inagaki_alm5_mouse_ALM",
     "dandi_000469_human", "dandi_001187_human", "dandi_000574_human",
-)
-CANDIDATE_KEYS = (
-    "memorandum_content", "upcoming_response", "gain_total_spike_count", "time_in_trial_within_delay",
-    "previous_trial_content", "field_potential_low_frequency_band_power_ieeg",
-    "field_potential_low_frequency_band_power_eeg", "field_potential_aperiodic_slope_ieeg",
-    "field_potential_aperiodic_slope_eeg",
 )
 
 RATE_FREE_STATE_DEVIATION_SOURCE_QUOTE = (
@@ -250,7 +246,7 @@ BIAS_ONLY_ALGORITHM_SOURCE_QUOTE = (
 
 DECISION_RULE_DECLARED_BEFORE_FITTING = (
     "0. Reproduction gate: reproduce results/rate_free_state_geometry_behavior_link.json's own pooled "
-    "raw_outcome_vs_deviation.mean_value on the identical 11 reachable Panichello sessions, to tolerance "
+    "raw_outcome_vs_deviation.mean_value on the identical 11 reachable macaque spatial working-memory corpus sessions, to tolerance "
     "1e-06, using rate_free_state_deviation unchanged. Failure -> branch "
     "'void_reproduction_gate_failed', no further number read.\n"
     "1. A candidate identity is ALIGNED in a given corpus if its pooled (session-level sign-flip test "
@@ -331,42 +327,12 @@ def _flush(output: dict) -> None:
     os.replace(scratch, OUTPUT_PATH)
 
 
-def _session_limit() -> int | None:
-    raw = os.environ.get(MAX_SESSIONS_ENV_VAR)
-    if not raw:
-        return None
-    try:
-        n = int(raw)
-    except ValueError:
-        return None
-    return n if n > 0 else None
 
 
 # ============================================================================================
 # Core session geometry: axis recovery (step 1) + occupied-space basis + the ONE new null.
 # ============================================================================================
 
-def _session_core(activity_by_unit: np.ndarray) -> dict | None:
-    """Recovers this session's deviation scalar, axis, and kept-trial unit-direction matrix, using
-    only imported, unmodified project functions (see DEVIATION_AXIS_SOURCE_QUOTE)."""
-    rows = _residual_rows(activity_by_unit)
-    if rows["n_kept"] < MIN_TRIALS_WITH_DEFINED_DIRECTION:
-        return None
-    R, idx = _unit_residual_matrix(rows)
-    if R.shape[1] < 2:
-        return None
-    axis = leading_eigenvector(R)
-    directions = _leave_one_out_unit_directions(activity_by_unit)
-    U = directions["unit_vectors"][idx]
-    deviation = rate_free_state_deviation(activity_by_unit)
-    spike_count = np.nansum(activity_by_unit, axis=1)
-    return {
-        "idx": idx, "R": R, "axis": axis, "U": U, "deviation": deviation, "spike_count": spike_count,
-        "identity_passed": bool(rows["identity"]["identity_passed"]),
-        "identity_max_abs_diff": rows["identity"]["identity_max_abs_diff"],
-        "n_kept": int(rows["n_kept"]), "n_trials_total": int(activity_by_unit.shape[0]),
-        "n_units": int(activity_by_unit.shape[1]),
-    }
 
 
 def _occupied_basis(U: np.ndarray, seed_tag: str) -> tuple[np.ndarray | None, dict]:
@@ -417,7 +383,7 @@ def _combine_levels_by_trial_count(level_cells: list[tuple[int, dict]]) -> dict:
     trial-count weighting, exactly the convention run_deviation_axis_structure.py's own
     _weighted_combine_draws / _trial_count_weighted apply to this same corpus's other per-level
     statistics -- both imported unchanged and used here, not re-derived. Used only for the
-    multi-object corpus (Watters), the only corpus in this atlas with more than one memorandum
+    multi-object corpus (macaque multi-object corpus), the only corpus in this atlas with more than one memorandum
     cardinality."""
     usable = [(n, c) for n, c in level_cells if c is not None and c.get("status") == "computed"]
     if not usable:
@@ -524,7 +490,7 @@ FIELD_APERIODIC_FIT_RANGES_HZ = ((20.0, 45.0), (55.0, 95.0))
 FIELD_APERIODIC_FIT_RANGES_RATIONALE = (
     "Two flanking windows, chosen to exclude the canonical oscillatory peaks this project's own "
     "field-potential band analysis already targets (FIELD_BAND_LO_HZ=1, FIELD_BAND_HI_HZ=40 Hz -- "
-    "theta/alpha/beta) and the 50 Hz mains line (Boran et al. is a European recording; load_boran_nwb's "
+    "theta/alpha/beta) and the 50 Hz mains line (the DANDI 000574 corpus, doi 10.1038/s41597-020-0364-3, is a European recording; load_boran_nwb's "
     "own default mains_hz=50.0) plus its first harmonic region, while keeping two contiguous decades of "
     "bandwidth-per-window for a robust slope: 20-45 Hz (upper beta/low gamma, below line noise) and "
     "55-95 Hz (gamma, above line noise, below where amplifier/anti-alias roll-off typically starts "
@@ -639,18 +605,6 @@ def _alm_session_arrays(path: Path, window_s: float, bin_ms: float) -> dict | No
 # Generic helpers shared by every corpus's candidate assembly.
 # ============================================================================================
 
-def _previous_label(full_labels: np.ndarray) -> np.ndarray:
-    """Positional shift by one row over this session's OWN trial order (before any kept-trial
-    subsetting) -- trial i's 'previous-trial content' is trial (i-1)'s own label. For every human
-    corpus and the mouse ALM corpus this is the previous ADMITTED trial (the corpus's own admission
-    mask may have already excluded some trials), not necessarily the literal preceding trial number;
-    stated once here rather than at every call site."""
-    full_labels = np.asarray(full_labels, dtype=float)
-    prev = np.full_like(full_labels, np.nan)
-    if len(full_labels) > 1:
-        prev[1:] = full_labels[:-1]
-    return prev
-
 
 def _time_in_trial_basis(counts_tensor_kept: np.ndarray) -> np.ndarray | None:
     """Direction along which trial-averaged per-unit activity ramps across the delay's own bins --
@@ -725,38 +679,6 @@ def _assemble_record(session_id: str, core: dict, cvr: dict, cells: dict, suppor
     return record
 
 
-CANDIDATE_SUPPORT_MATRIX = {
-    "panichello_2024_macaque_lPFC": {
-        "memorandum_content": ("present", "cueAngIdx, the discretised cued-position label, native to this corpus's raw session file"),
-        "upcoming_response": ("absent", "single-item delayed-saccade task: the response target IS the remembered location (cueAngIdx), already tested as memorandum_content; no separable response label exists"),
-        "gain_total_spike_count": ("present", None), "time_in_trial_within_delay": ("present", None),
-        "previous_trial_content": ("present", "positional shift of cueAngIdx"),
-        "field_potential_low_frequency_band_power_ieeg": ("absent", "this corpus ships single-unit spikes only, no co-registered field potential"),
-        "field_potential_low_frequency_band_power_eeg": ("absent", "this corpus ships single-unit spikes only, no co-registered field potential"),
-        "field_potential_aperiodic_slope_ieeg": ("absent", "this corpus ships single-unit spikes only, no co-registered field potential"),
-        "field_potential_aperiodic_slope_eeg": ("absent", "this corpus ships single-unit spikes only, no co-registered field potential"),
-    },
-    "watters_2026_macaque_multi_object": {
-        "memorandum_content": ("present", "cued_theta [cos, sin], the continuous cued position, native to this corpus"),
-        "upcoming_response": ("absent", "the report is a continuous saccade whose target is the memorandum itself by task design (same cued position determines both); no decision epoch separable from the delay-epoch tensor this atlas uses exists in the cached data"),
-        "gain_total_spike_count": ("present", None), "time_in_trial_within_delay": ("present", None),
-        "previous_trial_content": ("present", "positional shift of cued_theta"),
-        "field_potential_low_frequency_band_power_ieeg": ("absent", "this corpus ships single-unit and multi-unit spikes only, no co-registered field potential"),
-        "field_potential_low_frequency_band_power_eeg": ("absent", "this corpus ships single-unit and multi-unit spikes only, no co-registered field potential"),
-        "field_potential_aperiodic_slope_ieeg": ("absent", "this corpus ships single-unit and multi-unit spikes only, no co-registered field potential"),
-        "field_potential_aperiodic_slope_eeg": ("absent", "this corpus ships single-unit and multi-unit spikes only, no co-registered field potential"),
-    },
-    "inagaki_alm5_mouse_ALM": {
-        "memorandum_content": ("absent", "motor-planning task: the instructed lick direction IS the memorandum (no stimulus identity distinct from the planned response), so this candidate would be a byte-for-byte duplicate of upcoming_response; reported once, under upcoming_response, per the mandate naming this corpus's response subspace specifically"),
-        "upcoming_response": ("present", "the trial's instructed lick direction (0=left/1=right), native condition label this project's own iter_alm already carries"),
-        "gain_total_spike_count": ("present", None), "time_in_trial_within_delay": ("present", None),
-        "previous_trial_content": ("present", "positional shift of the instructed lick direction, over the control-trial sequence only"),
-        "field_potential_low_frequency_band_power_ieeg": ("absent", "this corpus ships single-unit spikes only, no co-registered field potential"),
-        "field_potential_low_frequency_band_power_eeg": ("absent", "this corpus ships single-unit spikes only, no co-registered field potential"),
-        "field_potential_aperiodic_slope_ieeg": ("absent", "this corpus ships single-unit spikes only, no co-registered field potential"),
-        "field_potential_aperiodic_slope_eeg": ("absent", "this corpus ships single-unit spikes only, no co-registered field potential"),
-    },
-}
 for _human_key in ("dandi_000469_human", "dandi_001187_human"):
     CANDIDATE_SUPPORT_MATRIX[_human_key] = {
         "memorandum_content": ("present", "the encoded picture identity (item_ids), native to this corpus's trial table"),
@@ -817,33 +739,6 @@ for _dandi_000004_key in ("dandi_000004_human_hippocampus", "dandi_000004_human_
 # Per-corpus session loops.
 # ============================================================================================
 
-def _panichello_session_inputs(root: Path):
-    """Yields (session_id, reason_or_None, core_or_None, categorical_spec, continuous_spec,
-    counts_all_or_None) for every Panichello session this corpus's own data admits -- factored out
-    of run_panichello so the rule-3 mutual-orthogonalisation recomputation (only triggered if two or
-    more of this corpus's own candidates align, see _orthogonalized_alignment_for_corpus) can rebuild
-    the identical per-session inputs without duplicating this loading logic."""
-    directory = _panichello_directory(root)
-    paths = sorted(glob.glob(str(directory / "*.mat"))) if directory else []
-    limit = _session_limit()
-    if limit:
-        paths = paths[:limit]
-    for path in paths:
-        session_id = Path(path).stem
-        raw = loadmat(path, simplify_cells=True)
-        spikes = np.asarray(raw["spks"], dtype=float)
-        time_ms = np.asarray(raw["tc"], dtype=float).reshape(-1)
-        cue_idx = np.asarray(raw["cueAngIdx"], dtype=float).reshape(-1)
-        counts_all = _counts_from_spikes(spikes, time_ms)
-        activity_by_unit = counts_all.sum(axis=2)
-        core = _session_core(activity_by_unit)
-        if core is None:
-            yield (session_id, "fewer than the trial floor have a defined leave-one-out direction",
-                   None, {}, {}, None)
-            continue
-        categorical = {"memorandum_content": cue_idx, "previous_trial_content": _previous_label(cue_idx)}
-        continuous = {"gain_total_spike_count": core["spike_count"]}
-        yield session_id, None, core, categorical, continuous, counts_all
 
 
 def run_panichello(root: Path) -> list[dict]:
@@ -879,7 +774,7 @@ def run_watters(root: Path) -> list[dict]:
 
 
 def _watters_session_record(root: Path, behaviour, animal: str, session_date: str, variant: str, session_id: str) -> dict:
-    """One Watters session's checkpointed candidate-cell record -- the body run_watters used to run
+    """One macaque multi-object corpus session's checkpointed candidate-cell record -- the body run_watters used to run
     inline per session, factored out only so it can be wrapped in _run_checkpointed (rule: checkpoint
     per session) without touching any of its own computation."""
     session = load_watters_session(root, animal, session_date, behaviour)
@@ -1070,7 +965,7 @@ def run_human_corpus(root: Path, iterator, corpus_key: str) -> list[dict]:
 
 # ============================================================================================
 # Rule 0 -- reproduction gate. Reproduces results/rate_free_state_geometry_behavior_link.json's
-# own pooled raw_outcome_vs_deviation.mean_value on the identical 11 reachable Panichello sessions,
+# own pooled raw_outcome_vs_deviation.mean_value on the identical 11 reachable macaque spatial working-memory corpus sessions,
 # to tolerance 1e-06, using rate_free_state_deviation unchanged (via the imported, unmodified
 # _panichello_reproduction_gate_session_arrays). That pooled mean_value is
 # state_persistence.slope_across_sessions_test's mean_diff over the per-session DETERMINISTIC
@@ -1201,13 +1096,12 @@ def _reaction_time_branch(session_records: list[dict], seed_tag: str) -> dict:
 
 
 def run_watters_reaction_time(root: Path) -> list[dict]:
-    """Per Watters session: whole-session (every item-count level pooled together) rate-free
+    """Per macaque multi-object corpus session: whole-session (every item-count level pooled together) rate-free
     deviation vs the corpus's native reaction_time_ms column, zero-control Pearson correlation
     (partial_correlation_permutation_test). Pooled across item-count levels rather than combined by
     level as the candidate-subspace cells above are -- reaction time is a single per-trial scalar
     outcome, not a level-conditioned subspace fit, so there is no shared-basis reason to keep levels
-    separate here; a disclosed simplification relative to the per-level candidate machinery (see
-    logs/report_entry_component_identity_subspace_atlas.md for this deviation, stated explicitly)."""
+    separate here; a disclosed simplification relative to the per-level candidate machinery."""
     behaviour = watters_behaviour(root)
     dates = watters_session_dates(root)
     limit = _session_limit()

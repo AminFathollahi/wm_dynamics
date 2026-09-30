@@ -14,7 +14,7 @@ NWB trial-timing fields each corpus's existing pipeline already uses:
     timestamps_FixationCross, timestamps_Encoding1, timestamps_Maintenance,
     timestamps_Probe are all present in both releases' trial tables
     (verified directly against the NWB files, not assumed from 000469 alone).
-  - DANDI 000574 (Boran): no named per-epoch timestamp fields exist in its
+  - DANDI 000574: no named per-epoch timestamp fields exist in its
     trial table; run_human_drift_spine_000574.py's own docstring documents
     the task's fixed relative structure (fixation [-6,-5] s, encoding
     [-5,-3] s, maintenance [-3,0] s relative to the probe, i.e. maintenance

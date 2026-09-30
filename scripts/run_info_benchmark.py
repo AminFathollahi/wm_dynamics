@@ -37,26 +37,27 @@ for _subdir in ("src", "scripts"):
 from corpus_sessions import data_root, iter_watters  # noqa: E402
 from provenance import (  # noqa: E402
     canonical_json,
+    checkpoint_load,
     checkpoint_safe,
+    checkpoint_store,
     git_commit,
     restore_checkpoint,
     sha256_file,
 )
 from statistics import stable_seed  # noqa: E402
-from run_deviation_axis_structure import (  # noqa: E402
-    CORPORA,
-    _macaque_bundles,
-    _watters_bundles,
-)
-from run_behavior_amplitude_rate_controls import _reachable_sessions  # noqa: E402
-from run_deviation_serial_dependence_and_temporal_locus import (  # noqa: E402
-    _macaque_session_bundle,
-)
-from run_dissociation_replication_and_counting_noise import _observable_arrays  # noqa: E402
-from run_dissociation_cross_preparation_test import BIN_MS  # noqa: E402
+from run_deviation_axis_structure import _macaque_bundles
+from corpus_sessions import _watters_bundles
+from info_decoding import CORPORA
+from corpus_sessions import _reachable_sessions
+from corpus_sessions import _macaque_session_bundle
+from corpus_sessions import _observable_arrays
+from spike_pipeline import BIN_MS
 import run_state_space_estimation_admissibility as estimation  # noqa: E402
-from run_state_space_dimensionality_sweep import CTG_STEP  # noqa: E402
-from run_state_space_estimation_robustness import OPERATING_RANK  # noqa: E402
+from info_decoding import CTG_STEP
+from info_decoding import OPERATING_RANK
+from info_decoding import _decoder_api, _seeded_folds, CANDIDATES, DECODERS, atomic_write, fold_signature  # noqa: E402
+from info_decoding import score_null_draw, score_observed, summarize_scores  # noqa: E402
+from info_decoding import render_summary  # noqa: E402
 
 RESULTS = ROOT / "results"
 OUTPUT_PATH = RESULTS / "info_benchmark.json"
@@ -77,51 +78,31 @@ IMPLEMENTATION_PATHS = (
     ROOT / "config" / "project.json",
 )
 
-CANDIDATES = (
-    "native_full_rank",
-    "principal_components",
-    "factor_analysis",
-    "gaussian_process_factor_analysis",
-    "time_contrastive_embedding",
-    "temporal_diffusion_embedding",
-    "sequential_autoencoder",
-)
-DECODERS = ("linear", "nonlinear")
 SINGLE_ITEM_CORPUS, MULTI_OBJECT_CORPUS = CORPORA
 REPRESENTATION_FITS = estimation.CANDIDATES
 
 
-def _decoder_api() -> SimpleNamespace:
-    from info_decoding import _stratified_permutation, make_folds, split_auc
-
-    return SimpleNamespace(
-        make_folds=make_folds,
-        split_auc=split_auc,
-        stratified_permutation=_stratified_permutation,
-    )
 
 
 def _safe_name(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]", "_", value)
 
 
-def _checkpoint_path(key: str) -> Path:
+def _checkpoint_path(key: str, checkpoint_dir: Path | None = None) -> Path:
+    checkpoint_dir = CHECKPOINT_DIR if checkpoint_dir is None else checkpoint_dir
     stem = _safe_name(key)[:80]
     digest = hashlib.sha256(key.encode()).hexdigest()[:20]
-    return CHECKPOINT_DIR / f"{stem}_{digest}.json"
+    return checkpoint_dir / f"{stem}_{digest}.json"
 
 
-def load_checkpoint(key: str, identity: dict | None = None) -> dict | None:
-    path = _checkpoint_path(key)
-    if not path.exists():
+def load_checkpoint(key: str, identity: dict | None = None,
+                     checkpoint_dir: Path | None = None, schema: str | None = None) -> dict | None:
+    schema = CHECKPOINT_SCHEMA if schema is None else schema
+    path = _checkpoint_path(key, checkpoint_dir)
+    payload = checkpoint_load(path)
+    if payload is None:
         return None
-    try:
-        payload = json.loads(path.read_text())
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-        return None
-    if not isinstance(payload, dict):
-        return None
-    if payload.get("schema") != CHECKPOINT_SCHEMA or payload.get("complete") is not True:
+    if payload.get("schema") != schema or payload.get("complete") is not True:
         return None
     if payload.get("identity") != identity:
         return None
@@ -130,32 +111,28 @@ def load_checkpoint(key: str, identity: dict | None = None) -> dict | None:
     return restore_checkpoint(payload["record"])
 
 
-def save_checkpoint(key: str, record: dict, identity: dict | None = None) -> None:
-    CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
-    path = _checkpoint_path(key)
+def save_checkpoint(key: str, record: dict, identity: dict | None = None,
+                     checkpoint_dir: Path | None = None, schema: str | None = None) -> None:
+    checkpoint_dir = CHECKPOINT_DIR if checkpoint_dir is None else checkpoint_dir
+    schema = CHECKPOINT_SCHEMA if schema is None else schema
+    path = _checkpoint_path(key, checkpoint_dir)
     payload = {
-        "schema": CHECKPOINT_SCHEMA,
+        "schema": schema,
         "complete": True,
         "identity": identity,
         "record": checkpoint_safe(record),
     }
-    fd, tmp_name = tempfile.mkstemp(dir=CHECKPOINT_DIR, prefix=".tmp_")
-    try:
-        with os.fdopen(fd, "w") as handle:
-            handle.write(canonical_json(payload))
-        os.replace(tmp_name, path)
-    finally:
-        if os.path.exists(tmp_name):
-            os.remove(tmp_name)
+    checkpoint_store(path, payload)
 
 
-def run_checkpointed(key: str, fn, identity: dict | None = None) -> tuple[dict, bool]:
-    cached = load_checkpoint(key, identity)
+def run_checkpointed(key: str, fn, identity: dict | None = None,
+                      checkpoint_dir: Path | None = None, schema: str | None = None) -> tuple[dict, bool]:
+    cached = load_checkpoint(key, identity, checkpoint_dir, schema)
     if cached is not None:
         return cached, True
     record = fn()
     if record.get("status") in {"fitted", "computed"}:
-        save_checkpoint(key, record, identity)
+        save_checkpoint(key, record, identity, checkpoint_dir, schema)
     return record, False
 
 
@@ -262,16 +239,6 @@ def block_identity(
     }
 
 
-def atomic_write(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
-    try:
-        with os.fdopen(fd, "w") as handle:
-            handle.write(text)
-        os.replace(tmp_name, path)
-    finally:
-        if os.path.exists(tmp_name):
-            os.remove(tmp_name)
 
 
 def load_single(root: Path, limit: int | None) -> list[dict]:
@@ -306,107 +273,14 @@ def load_multi(root: Path, limit: int | None) -> tuple[list[dict], dict]:
     return _watters_bundles(arrays), arrays
 
 
-def _mean(values: np.ndarray) -> float | None:
-    finite = np.asarray(values, dtype=float)
-    finite = finite[np.isfinite(finite)]
-    return float(finite.mean()) if finite.size else None
 
 
-def _metric(observed: np.ndarray, null: np.ndarray, mask: np.ndarray | None = None) -> dict:
-    observed = np.asarray(observed, dtype=float)
-    null = np.asarray(null, dtype=float)
-    if mask is not None:
-        observed = observed[mask]
-        null = null[:, mask]
-    score = _mean(observed)
-    null_scores = np.asarray([_mean(draw) for draw in null], dtype=object)
-    null_scores = np.asarray([value for value in null_scores if value is not None], dtype=float)
-    if score is None or not null_scores.size:
-        return {"status": "not_computable"}
-    null_mean = float(null_scores.mean())
-    p_value = float((1 + np.sum(null_scores >= score)) / (null_scores.size + 1))
-    return {
-        "status": "computed",
-        "auc": score,
-        "null_auc": null_mean,
-        "auc_above_null": float(score - null_mean),
-        "p_value": p_value,
-        "n_permutations": int(null_scores.size),
-    }
 
 
-def score_observed(
-    fits: list[dict],
-    labels: np.ndarray,
-    decoder: str,
-    folds,
-    seed: int,
-    time_step: int = 1,
-) -> dict:
-    api = _decoder_api()
-    temporal_folds = []
-    for fold_id, (train, test) in enumerate(folds):
-        fit = fits[fold_id]
-        latent_train = np.asarray(fit["latent_train"], dtype=float)[:, ::time_step]
-        latent_test = np.asarray(fit["latent_test"], dtype=float)[:, ::time_step]
-        temporal_folds.append(
-            api.split_auc(
-                latent_train,
-                labels[train],
-                latent_test,
-                labels[test],
-                decoder=decoder,
-                seed=seed + fold_id,
-            )
-        )
-    return {"status": "computed", "temporal_auc": np.nanmean(temporal_folds, axis=0)}
 
 
-def score_null_draw(
-    fits: list[dict],
-    labels: np.ndarray,
-    decoder: str,
-    folds,
-    shuffle_seed: int,
-    decoder_seed: int,
-    time_step: int = 1,
-) -> dict:
-    api = _decoder_api()
-    shuffled = api.stratified_permutation(
-        labels, folds, np.random.default_rng(shuffle_seed)
-    )
-    fold_scores = []
-    for fold_id, (train, test) in enumerate(folds):
-        fit = fits[fold_id]
-        fold_scores.append(
-            api.split_auc(
-                np.asarray(fit["latent_train"], dtype=float)[:, ::time_step],
-                shuffled[train],
-                np.asarray(fit["latent_test"], dtype=float)[:, ::time_step],
-                shuffled[test],
-                decoder=decoder,
-                seed=decoder_seed + fold_id,
-            )
-        )
-    return {"status": "computed", "temporal_auc": np.nanmean(fold_scores, axis=0)}
 
 
-def summarize_scores(temporal: np.ndarray, temporal_null: np.ndarray, decoder: str) -> dict:
-    temporal = np.asarray(temporal, dtype=float)
-    temporal_null = np.asarray(temporal_null, dtype=float)
-    same_time = np.diag(temporal)
-    same_time_null = np.diagonal(temporal_null, axis1=1, axis2=2)
-    off_diag = ~np.eye(temporal.shape[0], dtype=bool)
-    return {
-        "status": "computed",
-        "decoder": decoder,
-        "same_time": _metric(same_time, same_time_null),
-        "cross_temporal": _metric(temporal, temporal_null, off_diag),
-        "same_time_auc": np.asarray(same_time),
-        "temporal_auc": np.asarray(temporal),
-        "same_time_null_mean": np.nanmean(same_time_null, axis=0),
-        "temporal_null_mean": np.nanmean(temporal_null, axis=0),
-    }
 
 
 def fit_candidate(
@@ -453,21 +327,8 @@ def fit_candidate(
     }
 
 
-def _folds(labels: np.ndarray, n_splits: int, seed: int):
-    labels = np.asarray(labels)
-    _, counts = np.unique(labels, return_counts=True)
-    usable = min(n_splits, int(counts.min())) if counts.size else 0
-    if usable < 2:
-        return None
-    return _decoder_api().make_folds(labels, n_splits=usable, seed=seed)
 
 
-def fold_signature(folds) -> str:
-    values = [
-        [np.asarray(train, dtype=int).tolist(), np.asarray(test, dtype=int).tolist()]
-        for train, test in folds
-    ]
-    return hashlib.sha256(canonical_json(values).encode()).hexdigest()[:12]
 
 
 def evaluate_block(
@@ -484,10 +345,12 @@ def evaluate_block(
     progress,
     implementation: dict | None = None,
     seed: int = 0,
+    checkpoint_dir: Path | None = None,
+    schema: str | None = None,
 ) -> list[dict]:
     seed_tag = f"seed{seed}"
     fold_seed = stable_seed(f"info_benchmark|{seed_tag}|{corpus}|{session}|{level}|folds")
-    folds = _folds(labels, n_splits, fold_seed)
+    folds = _seeded_folds(labels, n_splits, fold_seed)
     if folds is None:
         return [{
             "status": "excluded",
@@ -524,7 +387,7 @@ def evaluate_block(
                     c,
                     stable_seed(f"info_benchmark|{base}|fold{i}|representation"),
                 ),
-                identity,
+                identity, checkpoint_dir, schema,
             )
             fits.append(rep)
             fit_hits.append(hit)
@@ -569,7 +432,7 @@ def evaluate_block(
                     return {"status": "failed_to_score", "reason": str(exc)}
 
             observed, observed_hit = run_checkpointed(
-                f"{score_base}|observed", _observed, identity
+                f"{score_base}|observed", _observed, identity, checkpoint_dir, schema
             )
             if observed.get("status") != "computed":
                 record = {
@@ -611,7 +474,7 @@ def evaluate_block(
                         return {"status": "failed_to_score", "reason": str(exc)}
 
                 null, hit = run_checkpointed(
-                    f"{score_base}|null|{draw}", _null, identity
+                    f"{score_base}|null|{draw}", _null, identity, checkpoint_dir, schema
                 )
                 if null.get("status") != "computed":
                     failed = null
@@ -668,54 +531,6 @@ def evaluate_block(
     return records
 
 
-def render_summary(
-    records: list[dict],
-    complete: bool,
-    time_step: int = CTG_STEP,
-    failed: bool = False,
-) -> str:
-    status = "failed" if failed else "complete" if complete else "running"
-    lines = [
-        "# Matched information benchmark",
-        "",
-        f"Status: {status}",
-        "",
-        "All decoder cells use the same stratified folds within each session and item-count level. "
-        "Representations are fit on training trials at full temporal resolution. Each score is "
-        "compared with label permutations evaluated on the same held-out folds.",
-        f"Decoder temporal grids use every {time_step} time bin(s).",
-        "",
-        "| Corpus | Session | Level | Representation | Decoder | Status | Same-time AUC | Same-time null | Same-time ΔAUC | Same-time p | Cross-time AUC | Cross-time null | Cross-time ΔAUC | Cross-time p |",
-        "|---|---|---:|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|",
-    ]
-    for record in records:
-        same = record.get("same_time", {}).get("auc_above_null")
-        cross = record.get("cross_temporal", {}).get("auc_above_null")
-        same_auc = record.get("same_time", {}).get("auc")
-        cross_auc = record.get("cross_temporal", {}).get("auc")
-        same_null = record.get("same_time", {}).get("null_auc")
-        cross_null = record.get("cross_temporal", {}).get("null_auc")
-        same_p = record.get("same_time", {}).get("p_value")
-        cross_p = record.get("cross_temporal", {}).get("p_value")
-        lines.append(
-            "| {corpus} | {session} | {level} | {candidate} | {decoder} | {status} | {same_auc} | {same_null} | {same} | {same_p} | {cross_auc} | {cross_null} | {cross} | {cross_p} |".format(
-                corpus=record.get("corpus", ""),
-                session=record.get("session", ""),
-                level=record.get("level", ""),
-                candidate=record.get("candidate", ""),
-                decoder=record.get("decoder", ""),
-                status=record.get("status", ""),
-                same_auc="" if same_auc is None else f"{same_auc:.3f}",
-                same_null="" if same_null is None else f"{same_null:.3f}",
-                same="" if same is None else f"{same:.3f}",
-                same_p="" if same_p is None else f"{same_p:.3g}",
-                cross_auc="" if cross_auc is None else f"{cross_auc:.3f}",
-                cross_null="" if cross_null is None else f"{cross_null:.3f}",
-                cross="" if cross is None else f"{cross:.3f}",
-                cross_p="" if cross_p is None else f"{cross_p:.3g}",
-            )
-        )
-    return "\n".join(lines) + "\n"
 
 
 def _parser() -> argparse.ArgumentParser:

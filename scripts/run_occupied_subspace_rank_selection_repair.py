@@ -82,15 +82,18 @@ for _sub in ("src", "scripts"):
 
 from corpus_sessions import data_root, iter_watters  # noqa: E402
 from provenance import _json_safe, git_commit  # noqa: E402
-from run_behavior_amplitude_rate_controls import _reachable_sessions  # noqa: E402
-from run_component_effect_size_and_anatomy import N_CV_FOLDS, _contiguous_folds  # noqa: E402
-from run_component_identity_subspace_atlas import N_BOOT_SESSION_CLUSTER, Z_80_POWER  # noqa: E402
-from run_deviation_axis_structure import (  # noqa: E402
-    CORPORA, MIN_FOLD_TRIALS, N_RANDOM_AXIS_DRAWS, _cv_pca_rank, _macaque_bundles, _watters_bundles,
-    _collect_axis_entries, _panichello_directory, classify_occupied_space_branch, leading_eigenvector,
-    _occupied_space_decomposition, _trial_count_weighted, _weighted_combine_draws,
-    pooled_off_fraction_against_matched_null,
-)
+from corpus_sessions import _reachable_sessions
+from subspace_identity import N_CV_FOLDS, _contiguous_folds
+from info_decoding import N_BOOT_SESSION_CLUSTER
+from statistics import Z_80_POWER
+from run_deviation_axis_structure import _macaque_bundles
+from info_decoding import _collect_axis_entries
+from info_decoding import _cv_pca_rank, classify_occupied_space_branch, _occupied_space_decomposition, _weighted_combine_draws, pooled_off_fraction_against_matched_null
+from corpus_sessions import _watters_bundles
+from subspace_identity import leading_eigenvector
+from info_decoding import CORPORA, MIN_FOLD_TRIALS, N_RANDOM_AXIS_DRAWS
+from corpus_sessions import _panichello_directory
+from run_multi_object_interference_and_locus_within_item_count import _trial_count_weighted
 from run_deviation_serial_dependence_and_temporal_locus import full_reproduction_gate  # noqa: E402
 from state_persistence import slope_across_sessions_test  # noqa: E402
 from statistics import stable_seed  # noqa: E402
@@ -102,7 +105,7 @@ ANALYSIS_VERSION = "2026-09-05"
 SELECTORS = ("original", "corrected")
 
 DECISION_RULE_DECLARED_BEFORE_FITTING = (
-    "THE DEFECT MECHANISM (from first principles, self-contained): `_cv_pca_rank` selects an occupied-"
+    "THE ERROR MECHANISM (from first principles, self-contained): `_cv_pca_rank` selects an occupied-"
     "subspace rank k by 5-fold cross-validated PCA reconstruction error over candidate k = 1..max_k, "
     "max_k = min(ambient_unit_count_p, n_trials - 1). After mean-centring, a training fold's SVD returns "
     "min(n_train, p) right-singular vectors; whenever a fold has n_train >= p, taking all p of them is a "
@@ -464,7 +467,7 @@ def _run_corpus(bundles: list[dict], corpus_key: str) -> dict:
             ),
         }
 
-    # Tautology census under the ORIGINAL selector (step 1 of the brief), computed live here rather than
+    # Tautology census under the ORIGINAL selector, computed live here rather than
     # only read from the delivered artifact, so this artifact stands alone.
     all_level_cells = [lvl for sess in per_session if sess.get("status") == "computed" for lvl in sess["levels"]]
     n_cells = len(all_level_cells)

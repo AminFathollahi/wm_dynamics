@@ -30,8 +30,8 @@ import h5py
 from geometry import ctg_content_permutation_null, temporal_stability_tau
 from statistics import stable_seed, stouffer_combine
 from io_utils import locked_json_update
+from corpus_sessions import DATA_DIR, ITEM_FIELDS  # noqa: E402
 
-DATA_DIR = dataset_path("dandi_000469")
 RESULTS = ROOT / "results"
 N_PC = 8
 CTG_STEP = 3
@@ -39,7 +39,6 @@ N_SPLITS = 3
 N_PERM = 200
 MIN_TRIALS_PER_CLASS = 6
 
-ITEM_FIELDS = {"item1": "loadsEnc1_PicIDs", "item2": "loadsEnc2_PicIDs", "item3": "loadsEnc3_PicIDs"}
 
 
 def _class_counts_ok(labels: np.ndarray) -> bool:

@@ -22,9 +22,9 @@ behavioural association separately in each sub-window. A sub-window that
 fails its own gate is reported void, never coerced into a number.
 
 Scope is set by an existing precondition, not chosen here: only the
-single-item macaque lateral prefrontal cortex corpus (Panichello et al.
-2024) and the multi-object macaque corpus (Watters, Gabel, Tenenbaum and
-Jazayeri; DANDI 000620) have a rate-free deviation that passes its own
+single-item macaque lateral prefrontal cortex corpus (doi
+10.1038/s41586-024-08139-9) and the multi-object macaque corpus (doi
+10.64898/2026.01.27.702062; DANDI 000620) have a rate-free deviation that passes its own
 orthogonality gate. The mouse and both human corpora fail that gate and are
 excluded on that measured precondition, not left pending.
 
@@ -71,23 +71,27 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from corpus_sessions import data_root, iter_watters  # noqa: E402
 from provenance import _json_safe, checkpoint_safe, restore_checkpoint  # noqa: E402
-from run_behavior_amplitude_rate_controls import _reachable_sessions  # noqa: E402
-from run_dissociation_cross_preparation_test import (  # noqa: E402
-    MIN_TRIALS_WITH_DEFINED_DIRECTION, reproduction_gate,
-)
-from run_dissociation_replication_and_counting_noise import (  # noqa: E402
-    _observable_arrays, _pool_cell, _session_observable_arm,
-)
-from run_rate_free_state_geometry_behavior_link import rate_free_state_deviation  # noqa: E402
-from run_state_behavior_link import _counts_from_spikes, _panichello_directory  # noqa: E402
+from corpus_sessions import _reachable_sessions
+from run_dissociation_cross_preparation_test import reproduction_gate
+from statistics import MIN_TRIALS_WITH_DEFINED_DIRECTION
+from run_dissociation_replication_and_counting_noise import _session_observable_arm
+from state_persistence import _pool_cell
+from corpus_sessions import _observable_arrays
+from stimulation_response_estimator import rate_free_state_deviation
+from spike_pipeline import _counts_from_spikes
+from corpus_sessions import _panichello_directory
 from run_state_content_link import usable_label  # noqa: E402
 from statistics import (  # noqa: E402
     minimum_detectable_paired_difference, partial_correlation_permutation_test, permutation_pvalue, stable_seed,
 )
 from state_persistence import slope_across_sessions_test  # noqa: E402
+from statistics import CONTENT_LABEL_K_CLASSES  # noqa: E402
+from corpus_sessions import _watters_session_bundle  # noqa: E402
+from statistics import CONTENT_SPECIFIC_SERIAL_PULL_OPERATIONALISATION, DETREND_WINDOWS_TRIALS, MIN_TRIALS_FOR_LAG_PROFILE, PRIMARY_SPLIT, SHARP_TEST_MIN_CLASSES, SHARP_TEST_MIN_PER_CLASS, SHARP_TEST_MIN_QUALIFYING_TRIALS, SIGN_TO_WORSE_BEHAVIOUR, SUB_WINDOW_SPLITS, _cosine_at_lag, _detrend, _sub_window_bins, unit_direction_vectors  # noqa: E402
+from corpus_sessions import _macaque_session_bundle  # noqa: E402
 
 OUTPUT_PATH = ROOT / "results" / "deviation_serial_dependence_and_temporal_locus.json"
-CHECKPOINT_PATH = ROOT / "results" / ".checkpoints" / "deviation_serial_dependence_and_temporal_locus_checkpoint.json"
+CHECKPOINT_PATH = ROOT / "results" / ".checkpoints" / "deviation_serial_dependence_and_temporal_locus_checkpoint_v2.json"
 ANALYSIS_VERSION = "2026-08-15"
 
 N_PERM = 10000
@@ -107,26 +111,14 @@ WATTERS_DEVIATION_RAW_P = 0.00029997000299970003
 
 # Sign multiplier applied once, at the point each behavioural-correlation result is packaged, so every
 # reported coefficient in this artifact is against WORSE behaviour regardless of corpus.
-SIGN_TO_WORSE_BEHAVIOUR = {
-    "panichello_2024_macaque_lPFC_single_item": -1.0,   # native outcome is is_corr (1=correct)
-    "watters_2026_macaque_multi_object": 1.0,           # native outcome is report error already
-}
 
 # Serial dependence test -- declared before any fit runs.
-DETREND_WINDOWS_TRIALS = (51, 101)  # centred moving-average width in trials; both odd, both >> the 15-trial lag range
 N_SHUFFLES_PER_SESSION = 1000
 LAG_RANGE = tuple(range(1, 16))
 BACKGROUND_LAGS = tuple(range(10, 16))
-MIN_TRIALS_FOR_LAG_PROFILE = 40  # gives >=25 trial pairs at the widest lag (15) even before any exclusion
-SHARP_TEST_MIN_CLASSES = 3
-SHARP_TEST_MIN_PER_CLASS = 4
-SHARP_TEST_MIN_QUALIFYING_TRIALS = 8
-CONTENT_LABEL_K_CLASSES = 8  # matches the discretisation results/dissociation_replication_and_counting_noise.json's
                              # content_fractional_rank_third_point already uses for this corpus
 
 # Temporal locus test -- declared before any fit runs.
-SUB_WINDOW_SPLITS = {"halves": 2, "thirds": 3}
-PRIMARY_SPLIT = "halves"
 
 SERIAL_DEPENDENCE_DECISION_RULE_DECLARED_BEFORE_FITTING = (
     "Per corpus, at the declared primary detrending window (the first of DETREND_WINDOWS_TRIALS): (1) the "
@@ -143,8 +135,8 @@ SERIAL_DEPENDENCE_DECISION_RULE_DECLARED_BEFORE_FITTING = (
     "'accuracy_predicting_component_is_not_interference_from_the_preceding_trial', with the minimum adjacency "
     "effect the shuffle test could detect at 80% power reported beside it.\n"
     "  - adjacency absent, behaviour link does not survive -> "
-    "'partial_control_removes_variance_the_adjacency_statistic_does_not_explain', reported as a defect in this "
-    "design, not a finding.\n"
+    "'partial_control_removes_variance_the_adjacency_statistic_does_not_explain', reported as a design error, "
+    "not a finding.\n"
     "  - adjacency present, behaviour link does not survive -> "
     "'accuracy_predicting_component_is_interference_from_the_preceding_trial', with the raw and partial "
     "coefficients reported side by side.\n"
@@ -178,18 +170,6 @@ TEMPORAL_LOCUS_DECISION_RULE_DECLARED_BEFORE_FITTING = (
     "'block_b_outcome_not_covered_by_the_pre_declared_rule' with every sub-window's own numbers, not forced "
     "onto a listed branch. The halves split alone decides the branch; the thirds split is reported beside it as "
     "a sensitivity check and does not override the halves verdict."
-)
-
-CONTENT_SPECIFIC_SERIAL_PULL_OPERATIONALISATION = (
-    "A disclosed reading of an underspecified secondary instruction. For trials t where trial t's own "
-    "memorandum class differs from trial t-1's (so the comparison cannot be explained by t simply sharing its "
-    "own class with its predecessor), pull_previous(t) is the cosine of trial t's direction to the leave-in "
-    "mean direction of every OTHER trial carrying trial t-1's class, and pull_other_classes(t) is the mean of "
-    "that same cosine to every class that is neither t's own class nor t-1's. The per-trial difference "
-    "pull_previous(t) - pull_other_classes(t) is pooled per session then across sessions by the paired "
-    "sign-flip test; a reliably positive pooled difference is content-specific serial pull toward what was "
-    "shown on the immediately preceding trial, over and above ordinary attraction to trial t's own class "
-    "(excluded from the comparison set by construction)."
 )
 
 
@@ -325,77 +305,11 @@ def full_reproduction_gate(root: Path, watters_loaded: list[dict]) -> dict:
 # Session bundles -- the (trials, units[, bins]) arrays both blocks share, in acquisition order
 # =======================================================================================================
 
-def _macaque_session_bundle(path: Path) -> dict | None:
-    raw = loadmat(str(path), simplify_cells=True)
-    spikes = np.asarray(raw["spks"], dtype=float)
-    time_ms = np.asarray(raw["tc"], dtype=float).reshape(-1)
-    is_corr = np.asarray(raw["isCorr"]).astype(bool).reshape(-1)
-    cue_idx = np.asarray(raw["cueAngIdx"]).reshape(-1).astype(float)
-    counts_all = _counts_from_spikes(spikes, time_ms)
-    if counts_all.shape[0] < 16:
-        return None
-    activity_by_unit = counts_all.sum(axis=2)
-    deviation = rate_free_state_deviation(activity_by_unit)
-    finite = np.isfinite(deviation)
-    if int(finite.sum()) < MIN_TRIALS_WITH_DEFINED_DIRECTION:
-        return None
-    return {
-        "session": path.stem, "corpus": "panichello_2024_macaque_lPFC_single_item",
-        "activity_by_unit": activity_by_unit[finite], "deviation": deviation[finite],
-        "outcome_raw": is_corr[finite].astype(float), "spike_count": activity_by_unit.sum(axis=1)[finite],
-        "trial_index": np.arange(counts_all.shape[0], dtype=float)[finite],
-        "memorandum_label": cue_idx[finite], "counts": counts_all[finite],
-        "n_trials_total": int(counts_all.shape[0]), "n_trials_with_defined_direction": int(finite.sum()),
-    }
-
-
-def _watters_session_bundle(session: dict, arrays: dict, usable: np.ndarray) -> dict:
-    counts = session["counts"]
-    activity_by_unit = counts.sum(axis=2)[usable]
-    theta = np.mod(np.asarray(session["cued_theta"], dtype=float)[usable], 2.0 * np.pi)
-    label = (np.floor(theta / (2.0 * np.pi / CONTENT_LABEL_K_CLASSES)).astype(int)) % CONTENT_LABEL_K_CLASSES
-    return {
-        "session": session["session"], "corpus": "watters_2026_macaque_multi_object",
-        "activity_by_unit": activity_by_unit, "deviation": arrays["deviation"],
-        "outcome_raw": arrays["report_error"], "spike_count": arrays["spike_count"],
-        "trial_index": arrays["trial_index"], "memorandum_label": label.astype(float), "counts": counts[usable],
-        "n_trials_total": int(counts.shape[0]), "n_trials_with_defined_direction": int(usable.sum()),
-    }
 
 
 # =======================================================================================================
 # BLOCK A -- serial dependence
 # =======================================================================================================
-
-def unit_direction_vectors(activity_by_unit: np.ndarray) -> np.ndarray:
-    """The same per-trial L2-normalised direction vectors rate_free_state_deviation computes internally,
-    exposed here because that estimator returns only the scalar deviation. Every trial handed in already
-    has a defined direction (pre-filtered by the caller), so this never produces a NaN row in practice;
-    the guard is kept for safety, not because it is expected to fire."""
-    activity = np.asarray(activity_by_unit, dtype=float)
-    norms = np.linalg.norm(activity, axis=1, keepdims=True)
-    with np.errstate(invalid="ignore", divide="ignore"):
-        return np.where(norms > 0, activity / np.where(norms > 0, norms, 1.0), np.nan)
-
-
-def _detrend(vectors: np.ndarray, window: int) -> np.ndarray:
-    """Centred moving-average detrend per unit-vector component. Edge trials use a truncated window
-    (scipy's 'nearest' boundary mode), a disclosed engineering choice: it does not invent data beyond the
-    session's own ends, at the cost of a slightly under-smoothed trend estimate at the two edges."""
-    trend = uniform_filter1d(vectors, size=window, axis=0, mode="nearest")
-    return vectors - trend
-
-
-def _cosine_at_lag(vectors: np.ndarray, lag: int) -> np.ndarray:
-    if vectors.shape[0] <= lag:
-        return np.zeros(0)
-    a, b = vectors[:-lag], vectors[lag:]
-    norm_a, norm_b = np.linalg.norm(a, axis=1), np.linalg.norm(b, axis=1)
-    valid = (norm_a > 1e-12) & (norm_b > 1e-12)
-    out = np.full(a.shape[0], np.nan)
-    dots = np.einsum("ij,ij->i", a[valid], b[valid])
-    out[valid] = dots / (norm_a[valid] * norm_b[valid])
-    return out
 
 
 def _lag_profile(vectors: np.ndarray, lags: tuple[int, ...]) -> dict[str, float | None]:
@@ -709,9 +623,6 @@ def run_serial_dependence(bundles: list[dict], sign: float, corpus_key: str, see
 # BLOCK B -- temporal locus
 # =======================================================================================================
 
-def _sub_window_bins(n_bins: int, n_windows: int) -> list[np.ndarray]:
-    return np.array_split(np.arange(n_bins), n_windows)
-
 
 def _session_subwindow(bundle: dict, bin_indices: np.ndarray, sign: float, seed_prefix: str) -> dict:
     counts = bundle["counts"][:, :, bin_indices]
@@ -840,8 +751,8 @@ def main() -> None:
         "scope": (
             "Run only on the two corpora whose rate-free deviation observable passes its own orthogonality "
             "gate against total spike count: the single-item macaque lateral prefrontal cortex corpus "
-            "(Panichello et al. 2024) and the multi-object macaque corpus (Watters, Gabel, Tenenbaum and "
-            "Jazayeri; DANDI 000620). The mouse anterior lateral motor cortex corpus and both human corpora "
+            "(doi 10.1038/s41586-024-08139-9) and the multi-object macaque corpus (doi "
+            "10.64898/2026.01.27.702062; DANDI 000620). The mouse anterior lateral motor cortex corpus and both human corpora "
             "are excluded here on that already-measured precondition, not left pending."
         ),
         "sign_map": SIGN_TO_WORSE_BEHAVIOUR,

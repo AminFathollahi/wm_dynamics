@@ -13,7 +13,7 @@ match, etc.) -- since the feasibility question is about label diversity in
 the raw BIDS metadata, independent of downstream analysis-quality exclusions.
 
 Run:
-    /home/amin/miniconda3/envs/wm_dynamics/bin/python scripts/run_ram_within_subject_feasibility.py
+    python scripts/run_ram_within_subject_feasibility.py
 """
 from __future__ import annotations
 
@@ -28,7 +28,6 @@ sys.path.insert(0, str(ROOT / "src"))
 from project_config import dataset_path
 
 RESULTS = ROOT / "results"
-DATA = dataset_path("ram_ds005489_openloop")
 MIN_MULTISITE_SUBJECTS = 8
 
 
@@ -38,7 +37,8 @@ def _load_events(events_tsv: Path) -> list[dict]:
 
 
 def main() -> None:
-    ieeg_jsons = sorted(DATA.glob("sub-*/ses-*/ieeg/*_acq-bipolar_ieeg.json"))
+    data = dataset_path("ram_ds005489_openloop")
+    ieeg_jsons = sorted(data.glob("sub-*/ses-*/ieeg/*_acq-bipolar_ieeg.json"))
     print(f"Found {len(ieeg_jsons)} candidate bipolar+stim session JSONs")
 
     subject_sites = defaultdict(set)
@@ -66,7 +66,7 @@ def main() -> None:
         n_sessions_with_stim += 1
         subject_sites[subj].add(site)
         subject_sessions[subj].append({
-            "session": str(ieeg_json.relative_to(DATA)), "anode": anode, "cathode": cathode,
+            "session": str(ieeg_json.relative_to(data)), "anode": anode, "cathode": cathode,
         })
 
     multisite_subjects = {s: sites for s, sites in subject_sites.items() if len(sites) >= 2}

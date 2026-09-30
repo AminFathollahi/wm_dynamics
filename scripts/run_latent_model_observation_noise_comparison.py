@@ -61,17 +61,15 @@ from geometry import participation_ratio  # noqa: E402
 from io_utils import locked_json_update  # noqa: E402
 from observability import _leading_latent_projection, _leading_latent_projection_via_factor_analysis  # noqa: E402
 from provenance import canonical_json, git_commit  # noqa: E402
-from run_boran_modality_consistency import (  # noqa: E402
-    BAD_CHANNEL_MAD_THRESHOLD, BORAN_MAINS_HZ, MAINT_WIN, MIN_BIPOLAR_CHANNELS,
-    MIN_TRIALS as BORAN_MIN_TRIALS, lfp_maintenance_tensor, registry_sessions,
-)
-from run_latent_model_comparison import (  # noqa: E402
-    EPOCH_WINDOWS_BY_DATASET, LATENT_DIM, MIN_TEST_TRIALS, MIN_TRIALS, anscombe_counts,
-    raw_counts_from_entry, split_trials,
-)
+from run_boran_modality_consistency import registry_sessions
+from preprocessing import MIN_BIPOLAR_CHANNELS, MIN_TRIALS as BORAN_MIN_TRIALS, lfp_maintenance_tensor
+from preprocessing import BAD_CHANNEL_MAD_THRESHOLD, BORAN_MAINS_HZ, MAINT_WIN
+from corpus_sessions import EPOCH_WINDOWS_BY_DATASET, raw_counts_from_entry
+from info_decoding import LATENT_DIM, MIN_TEST_TRIALS, MIN_TRIALS, anscombe_counts, split_trials
 from preprocessing import load_boran_nwb  # noqa: E402
 from state_persistence import _ols_slope, per_unit_permutation_null_r_lag_profile, r_lag_profile  # noqa: E402
 from statistics import paired_sign_flip_test, stable_seed  # noqa: E402
+from info_decoding import dimensionality_and_noise_term  # noqa: E402
 
 SEED = 20260921
 CENSUS_PATH = ROOT / "results" / "observability_and_power_census.json"
@@ -216,62 +214,6 @@ def census_nugget_fraction_for_cell(census_rows: list[dict], dataset: str, struc
     return {"status": "fitted", "n_sessions": len(values), "median_nugget_fraction": float(np.median(values))}
 
 
-def dimensionality_and_noise_term(counts: np.ndarray, is_point_process: bool = True) -> dict:
-    """Participation ratio of the full population covariance spectrum
-    (PCA arm: no noise correction) versus the same spectrum with the
-    factor model's own estimated diagonal observation-noise variance
-    subtracted before the eigendecomposition (factor-analysis arm), plus
-    the factor model's own noise-variance share of total variance -- the
-    quantity compared against the census's nugget fraction below. Computed
-    on every available trial (a covariance property, not a held-out
-    predictive one). ``is_point_process`` selects the preprocessing this
-    project already uses for the two physically different measurements it
-    feeds through this same estimator: Anscombe-variance-stabilized spike
-    counts (scripts/run_latent_model_comparison.py's convention) for a
-    point-process grain, or plain mean-centering with no count-specific
-    transform for a continuous grain (e.g. bipolar-referenced LFP high-
-    gamma power, which is not a count and for which the Anscombe transform
-    has no justification)."""
-    from sklearn.decomposition import FactorAnalysis
-    from sklearn.exceptions import ConvergenceWarning
-    import warnings
-
-    n_units = counts.shape[1]
-    x = anscombe_counts(counts) if is_point_process else counts
-    flat = x.transpose(0, 2, 1).reshape(-1, n_units)
-    flat = flat - flat.mean(axis=0, keepdims=True)
-    cov = np.cov(flat, rowvar=False)
-    pca_eigenvalues = np.linalg.eigvalsh(cov)
-    pca_pr = float(participation_ratio(pca_eigenvalues))
-
-    k = max(1, min(LATENT_DIM, n_units - 1))
-    try:
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", ConvergenceWarning)
-            model = FactorAnalysis(n_components=k, random_state=0, max_iter=1000)
-            model.fit(flat)
-    except (ConvergenceWarning, ValueError, np.linalg.LinAlgError):
-        return {
-            "pca": {"participation_ratio": pca_pr, "k_used_for_noise_estimate": k},
-            "factor_analysis": {"status": "factor_model_did_not_converge_or_degenerate"},
-        }
-    noise_variance = model.noise_variance_
-    if not np.all(np.isfinite(noise_variance)) or np.sum(noise_variance) <= 0:
-        return {
-            "pca": {"participation_ratio": pca_pr, "k_used_for_noise_estimate": k},
-            "factor_analysis": {"status": "factor_model_did_not_converge_or_degenerate"},
-        }
-    denoised_cov = cov - np.diag(noise_variance)
-    denoised_eigenvalues = np.clip(np.linalg.eigvalsh(denoised_cov), 0.0, None)
-    fa_pr = float(participation_ratio(denoised_eigenvalues))
-    noise_variance_fraction = float(np.sum(noise_variance) / np.trace(cov))
-    return {
-        "pca": {"participation_ratio": pca_pr, "k_used_for_noise_estimate": k},
-        "factor_analysis": {
-            "status": "fitted", "participation_ratio": fa_pr, "k_used": k,
-            "observation_noise_variance_fraction": noise_variance_fraction,
-        },
-    }
 
 
 def _d_perm_level_and_slope(observed: dict, null: dict, bin_width_s: float) -> dict | None:
@@ -385,7 +327,7 @@ def _build_dandi_000574_lfp_sessions(root: Path, target_keys: set[tuple]) -> lis
     sits at them. Reuses scripts/run_boran_modality_consistency.py's
     session registry and LFP-tensor construction exactly as
     scripts/run_observability_and_power_census.py's boran_lfp_rows does,
-    rather than re-deriving Boran NWB loading a third time."""
+    rather than re-deriving DANDI 000574 NWB loading a third time."""
     sessions = []
     for reg_row in registry_sessions(root):
         session_key = reg_row["session"]

@@ -43,7 +43,7 @@ import pandas as pd
 warnings.filterwarnings("ignore")
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
-from project_config import data_root  # noqa: E402
+from project_config import data_root
 
 import h5py  # noqa: E402
 from scipy.io import loadmat  # noqa: E402
@@ -60,23 +60,19 @@ from subject_independence import resolve_group, count_independent_groups  # noqa
 from data_integrity import missing_files, CANONICAL_RECORDING_REGISTRY_PATH  # noqa: E402
 from io_utils import locked_json_update  # noqa: E402
 from provenance import _json_safe  # noqa: E402
-from run_human_drift_spine_001187_000673 import canonical_sessions, _trial_group  # noqa: E402
+from run_human_drift_spine_001187_000673 import canonical_sessions
+from corpus_sessions import _trial_group
 from corpus_sessions import (  # noqa: E402
     EPOCH_WINDOWS_S, BORAN_EPOCH_WINDOWS_S, region_filtered_units, alm_data_directory,
     _alm_trial_condition, _alm_build_counts, ALM_MIN_UNITS, ALM_MIN_UNIT_RATE_HZ,
     ALM_MIN_TRIALS_PER_ARM, PFC4_MIN_UNITS, PFC4_MIN_UNIT_RATE_HZ, SCALP_EEG_DELAY_BINS,
 )
+from info_decoding import MIN_TRIALS_PER_CLASS, MIN_TRIALS_PER_CLASS_COMPARISON  # noqa: E402
+from statistics import CLEARING_RULE_STATUS, FDR_ALPHA, N_BOOT, N_PERM_SIGN_FLIP  # noqa: E402
+from statistics import STIMULATION_ARM_DEFINITION_SUFFIX, _choose_n_splits, _standardize_train_test, cell_status, subject_cluster_bootstrap_paired  # noqa: E402
 
 RESULTS = ROOT / "results"
 MIN_DIAG_AUC = 0.55
-N_BOOT = 2000
-N_PERM_SIGN_FLIP = 10000
-FDR_ALPHA = 0.05
-CLEARING_RULE_STATUS = (
-    "this rule is not applied. It is retained as the record of what was declared in advance. No "
-    "cell carries a clearance label. A cell's result is its estimate, its interval, its minimum "
-    "detectable difference, and its q value as a number."
-)
 BIN_MS = 100.0
 SMOOTH_MS = 200.0
 N_PC = 8
@@ -85,8 +81,6 @@ N_PC = 8
 # project (run_000469_pipeline.py, run_000574_units_pipeline.py, ...). A second,
 # stricter count (15) is also reported per corpus for comparison, never used to
 # gate admission.
-MIN_TRIALS_PER_CLASS = 5
-MIN_TRIALS_PER_CLASS_COMPARISON = 15
 
 TIERS = {
     "dandi_000469": "human_primary", "dandi_001187": "human_primary",
@@ -215,7 +209,7 @@ EXCLUSIONS = {
     "panichello_2024": {
         "property_lacking": "unused capability for the window split, but the encoding/delay boundary is not itself stored",
         "loader_gap_classification": "a",
-        "check": "loadmat on a raw session file (e.g. Panichello_2024/210921.mat) shows spks shaped "
+        "check": "loadmat on a raw session file (e.g. one of the deposited session .mat files) shows spks shaped "
                  "(496 trials, 1950 timepoints, 135 neurons) against a shared per-trial time axis "
                  "`tc` running -499.5 to +1449.5 ms in 1 ms steps -- the full window this project's "
                  "existing pipeline already treats as a single delay period is present in the file "
@@ -225,33 +219,6 @@ EXCLUSIONS = {
                  "duration has not been looked up/verified in this pass, so no split was made.",
     },
 }
-
-
-def _standardize_train_test(X_tr, X_te, n_a, joint):
-    """Fit firing-rate standardisation on training-fold trials only.
-
-    joint=False: one scaler per window (encoding, maintenance), each fit on
-    that window's own training-fold bins -- the primary arm.
-    joint=True: one scaler fit across both windows' training-fold bins
-    pooled together -- the sensitivity arm.
-    """
-    def _fit(x):
-        mu = x.mean(axis=(0, 2), keepdims=True)
-        sd = x.std(axis=(0, 2), keepdims=True)
-        sd = np.where(sd > 1e-8, sd, 1.0)
-        return mu, sd
-
-    if joint:
-        mu, sd = _fit(X_tr)
-        return (X_tr - mu) / sd, (X_te - mu) / sd
-
-    X_tr_a, X_tr_b = X_tr[:, :, :n_a], X_tr[:, :, n_a:]
-    X_te_a, X_te_b = X_te[:, :, :n_a], X_te[:, :, n_a:]
-    mu_a, sd_a = _fit(X_tr_a)
-    mu_b, sd_b = _fit(X_tr_b)
-    Z_tr = np.concatenate([(X_tr_a - mu_a) / sd_a, (X_tr_b - mu_b) / sd_b], axis=2)
-    Z_te = np.concatenate([(X_te_a - mu_a) / sd_a, (X_te_b - mu_b) / sd_b], axis=2)
-    return Z_tr, Z_te
 
 
 def _joint_fold_loop(psth_a, psth_b, y, n_components, n_splits, rng, joint_scaler, groups, score_fold, score_extra):
@@ -324,62 +291,6 @@ def subject_cluster_bootstrap(values, n_boot=N_BOOT, rng=None):
         "ci_upper": float(np.percentile(draws, 97.5)),
         "mdd": float(Z_80_POWER * draws.std()),
     }
-
-
-def subject_cluster_bootstrap_paired(offdiag_values, diag_values, n_boot=N_BOOT, rng=None):
-    """Paired percentile bootstrap: the SAME subject resample index is drawn
-    for the estimand (offdiag_values) and the train-window diagonal
-    (diag_values) on every draw, so a per-draw transfer_ratio = offdiag /
-    (diag - 0.5) is a valid statement about the same bootstrap universe.
-    transfer_ratio is null when the diagonal sits within its own bootstrap
-    standard error of 0.5: the ratio's denominator is then not distinguishable
-    from zero, so the point estimate and interval are not reported as measured
-    numbers."""
-    if rng is None:
-        rng = np.random.default_rng(0)
-    offdiag_values = np.asarray(offdiag_values, dtype=float)
-    diag_values = np.asarray(diag_values, dtype=float)
-    n = len(offdiag_values)
-    offdiag_draws = np.empty(n_boot)
-    diag_draws = np.empty(n_boot)
-    for i in range(n_boot):
-        idx = rng.integers(0, n, size=n)
-        offdiag_draws[i] = offdiag_values[idx].mean()
-        diag_draws[i] = diag_values[idx].mean()
-    ratio_draws = offdiag_draws / (diag_draws - 0.5)
-    diag_point = float(diag_values.mean())
-    diag_se = float(diag_draws.std())
-    diag_distinguishable_from_half = abs(diag_point - 0.5) > diag_se
-    if diag_distinguishable_from_half:
-        ratio_point = float(offdiag_values.mean() / (diag_point - 0.5))
-        ratio_ci_lower = float(np.percentile(ratio_draws, 2.5))
-        ratio_ci_upper = float(np.percentile(ratio_draws, 97.5))
-    else:
-        ratio_point = ratio_ci_lower = ratio_ci_upper = None
-    return {
-        "offdiag_observed": float(offdiag_values.mean()),
-        "offdiag_ci_lower": float(np.percentile(offdiag_draws, 2.5)),
-        "offdiag_ci_upper": float(np.percentile(offdiag_draws, 97.5)),
-        "offdiag_mdd": float(Z_80_POWER * offdiag_draws.std()),
-        "diag_observed": diag_point,
-        "diag_ci_lower": float(np.percentile(diag_draws, 2.5)),
-        "diag_ci_upper": float(np.percentile(diag_draws, 97.5)),
-        "diag_bootstrap_se": diag_se,
-        "diag_distinguishable_from_half": diag_distinguishable_from_half,
-        "transfer_ratio": ratio_point,
-        "transfer_ratio_ci_lower": ratio_ci_lower,
-        "transfer_ratio_ci_upper": ratio_ci_upper,
-    }
-
-
-def cell_status(is_nan):
-    return "failure_nan" if is_nan else "estimated"
-
-
-def _choose_n_splits(y, preferred=5):
-    _, counts = np.unique(np.asarray(y), return_counts=True)
-    min_class = int(counts.min())
-    return max(2, min(preferred, min_class // 2))
 
 
 # ── Corpus loaders. Each yields one dict per admitted session:
@@ -700,7 +611,7 @@ def iter_dandi_000004_sessions(root):
     against the NWB trial table, entirely before its own delay1/delay2
     maintenance period -- a genuine single-trial encode-then-maintain design,
     not a study/test split across separate trials."""
-    from run_dandi_000004_recognition_generalization import recognition_correct
+    from corpus_sessions import recognition_correct
 
     directory = root / "000004"
     required_columns = ("stim_phase", "new_old_labels_recog", "response_value", "response_time",
@@ -818,7 +729,7 @@ def iter_ds005034_sessions(root):
     (stimulation_session) so _process_corpus can fit them as separate arms
     rather than averaging a stimulated and an unstimulated brain state
     together before resampling."""
-    from run_ds005034_tacs_aftereffect import load_events
+    from preprocessing import load_events
     from corpus_sessions import _scalp_delay_bin_power
 
     directory = root / "ds005034"
@@ -1093,15 +1004,6 @@ def _label_arm_record(per_session, dataset_key, label_name, definition_suffix=""
         if cell is not None:
             cells.append(cell)
     return record, cells
-
-
-STIMULATION_ARM_DEFINITION_SUFFIX = {
-    "sham": " (sham/no-stimulation sessions only)",
-    "verum": " (active-stimulation sessions only)",
-    "pooled": " -- POOLED across sham and verum sessions of the same subjects; the sham and verum arms "
-              "above are the primary result, this line is reported only as their unweighted pool and is "
-              "not a third independent estimate.",
-}
 
 
 def _process_corpus(dataset_key, root):

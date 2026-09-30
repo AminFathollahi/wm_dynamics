@@ -77,20 +77,14 @@ from statistics import (  # noqa: E402
     paired_sign_flip_test,
     stable_seed,
 )
-from run_ram_openloop_pipeline import _derive_word_stimulation, _load_events  # noqa: E402
+from stimulation_events import _derive_word_stimulation, _load_events
+from stimulation_events import MORLET_FREQS_HZ, MORLET_WAVENUMBER, LINE_NOISE_BANDSTOP_HZ, MIRROR_BUFFER_S, N_BINS, ENCODING_WINDOW_S, _find_stim_sessions, build_session_trajectory  # noqa: E402
 
 RESULTS = ROOT / "results"
 
 # ── Author-defined feature bank (ds005557 README, "Classifier Details") ────────
-MORLET_FREQS_HZ = np.array([3.0, 5.4, 9.7, 17.4, 31.1, 55.9, 100.3, 180.0])
-MORLET_WAVENUMBER = 5.0
-LINE_NOISE_BANDSTOP_HZ = (58.0, 62.0)
-ENCODING_WINDOW_S = 1.366
-MIRROR_BUFFER_S = 1.365
 BIN_S = 0.1                # non-overlapping, unsmoothed bins (drift_dynamics.py's contract)
-N_BINS = 13                 # floor(1.366 / 0.1); the trailing 66 ms is dropped, not smoothed over
 N_PC = 8
-MIN_WORDS = 80
 
 LIMITATIONS = [
     "Stimulation in both ds005489 and ds005557 is delivered during episodic ENCODING, not "
@@ -110,13 +104,6 @@ LIMITATIONS = [
 ]
 
 
-def _safe_int(value, default: int = -1) -> int:
-    try:
-        if value in (None, "", "n/a"):
-            return default
-        return int(value)
-    except (TypeError, ValueError):
-        return default
 
 
 def configured_data_path(dataset_key: str) -> Path:
@@ -136,147 +123,10 @@ def configured_data_path(dataset_key: str) -> Path:
 
 # ── Author-defined spectral feature bank ────────────────────────────────────────
 
-def morlet_log_power_bank(
-    raw_epochs: np.ndarray,
-    srate: float,
-    freqs: np.ndarray = MORLET_FREQS_HZ,
-    n_cycles: float = MORLET_WAVENUMBER,
-    buffer_s: float = MIRROR_BUFFER_S,
-    bandstop_hz: tuple[float, float] = LINE_NOISE_BANDSTOP_HZ,
-    n_bins: int = N_BINS,
-    n_jobs: int = 1,
-) -> np.ndarray:
-    """Reproduce ds005557's classifier feature bank, kept time-resolved.
-
-    Pipeline (README order): mirror-pad -> Butterworth band-stop -> Morlet
-    wavelet transform -> log power -> remove the mirrored buffer -> bin.
-    z-transform is deliberately NOT applied here; callers must fit mean/sd
-    on training-fold (here: unperturbed-trial) statistics only.
-
-    Parameters
-    ----------
-    raw_epochs : (n_epochs, n_channels, n_times) raw voltage, the 0..window_s
-        segment at native sampling rate, no buffer yet.
-
-    Returns
-    -------
-    (n_epochs, n_channels, n_freqs, n_bins) log power, buffer removed.
-    """
-    from mne.time_frequency import tfr_array_morlet
-
-    n_epochs, n_channels, n_times = raw_epochs.shape
-    buffer_samples = int(round(buffer_s * srate))
-    padded = np.pad(raw_epochs, ((0, 0), (0, 0), (buffer_samples, buffer_samples)), mode="reflect")
-
-    # Band-stop applies along the time axis; reshape to (T, epochs*channels) to
-    # reuse the existing (T, C)-shaped filter helper instead of writing a new one.
-    n_times_padded = padded.shape[2]
-    flat = padded.transpose(2, 0, 1).reshape(n_times_padded, -1)
-    flat = butterworth_bandstop(flat, bandstop_hz[0], bandstop_hz[1], srate)
-    padded = flat.reshape(n_times_padded, n_epochs, n_channels).transpose(1, 2, 0).astype(np.float32)
-
-    n_samp_bin = n_times // n_bins
-    if n_samp_bin < 1:
-        raise ValueError("encoding window too short for the requested number of bins")
-
-    n_freq = len(freqs)
-    # ponytail: fixed byte-budget batching, not a tuned scheduler -- if a
-    # dataset ships far more channels this still works, just in more batches.
-    target_bytes = 3e8
-    per_epoch_bytes = n_channels * n_freq * n_times_padded * 8
-    batch = int(np.clip(target_bytes // max(per_epoch_bytes, 1), 1, n_epochs))
-
-    binned = np.empty((n_epochs, n_channels, n_freq, n_bins), dtype=np.float32)
-    for start in range(0, n_epochs, batch):
-        stop = min(start + batch, n_epochs)
-        power = tfr_array_morlet(
-            padded[start:stop], sfreq=srate, freqs=freqs, n_cycles=n_cycles,
-            output="power", zero_mean=True, n_jobs=n_jobs, verbose=False,
-        )
-        log_power = np.log(power + 1e-20)
-        cropped = log_power[..., buffer_samples: buffer_samples + n_times]
-        trimmed = cropped[..., : n_samp_bin * n_bins]
-        binned[start:stop] = trimmed.reshape(
-            stop - start, n_channels, n_freq, n_bins, n_samp_bin,
-        ).mean(axis=-1).astype(np.float32)
-    return binned
 
 
 # ── BIDS loading (bipolar montage; reuses ds005489 pipeline's event helpers) ───
 
-def build_session_trajectory(
-    ieeg_json: Path, data_root: Path, derive_stim_from_stim_on: bool, n_jobs: int = 1,
-) -> dict | None:
-    """Build the per-word Morlet feature trajectory for one session.
-
-    Returns None for files outside this analysis's scope (no stimulation
-    channel); returns a status dict with an explicit reason for sessions
-    that were in scope but unusable, so nothing is silently dropped.
-    """
-    import mne
-
-    with open(ieeg_json) as f:
-        meta = json.load(f)
-    if not meta.get("ElectricalStimulation", False):
-        return None
-
-    stem = str(ieeg_json).replace("_ieeg.json", "")
-    events_tsv = Path(stem.replace("_acq-bipolar", "") + "_events.tsv")
-    edf_path = Path(stem + "_ieeg.edf")
-    session_name = str(edf_path.relative_to(data_root)) if edf_path.exists() else str(ieeg_json)
-    if not events_tsv.exists() or not edf_path.exists():
-        return {"status": "excluded", "reason": "missing events.tsv or edf", "session": session_name}
-
-    events = _load_events(events_tsv)
-    words = [e for e in events if e["trial_type"] == "WORD"]
-    if len(words) < MIN_WORDS:
-        return {"status": "excluded", "reason": f"only {len(words)} WORD events (< {MIN_WORDS})",
-                "session": session_name}
-
-    if derive_stim_from_stim_on:
-        stim_on = [e for e in events if e["trial_type"] == "STIM_ON"]
-        stim_off = [e for e in events if e["trial_type"] == "STIM_OFF"]
-        _derive_word_stimulation(words, stim_on, stim_off)
-
-    raw = mne.io.read_raw_edf(str(edf_path), preload=False, verbose="ERROR")
-    srate = raw.info["sfreq"]
-    n_ch = len(raw.ch_names)
-    rec_dur = raw.times[-1]
-    window_samples = int(round(ENCODING_WINDOW_S * srate))
-
-    segments, kept_words = [], []
-    for w in words:
-        onset_s = float(w["onset"])
-        if onset_s < 0 or onset_s + ENCODING_WINDOW_S > rec_dur:
-            continue
-        i0 = int(round(onset_s * srate))
-        seg = raw.get_data(start=i0, stop=i0 + window_samples)
-        if seg.shape[1] != window_samples or not np.all(np.isfinite(seg)):
-            continue
-        segments.append(seg)
-        kept_words.append(w)
-    if len(segments) < MIN_WORDS:
-        return {"status": "excluded",
-                "reason": f"only {len(segments)} usable epochs after edge-of-recording exclusion (< {MIN_WORDS})",
-                "session": session_name}
-
-    raw_epochs = np.stack(segments, axis=0)
-    features = morlet_log_power_bank(raw_epochs, srate, n_jobs=n_jobs)
-    n_words, n_ch2, n_freq, n_bins = features.shape
-    features_flat = features.transpose(0, 3, 1, 2).reshape(n_words, n_bins, n_ch2 * n_freq)
-
-    return {
-        "status": "complete",
-        "session": session_name,
-        "subject": edf_path.parts[-4],
-        "srate": float(srate), "n_channels": int(n_ch2), "n_words": int(n_words),
-        "features": features_flat,
-        "stim": np.array([_safe_int(w.get("stimulation"), 0) for w in kept_words], dtype=int),
-        "stim_list": np.array([_safe_int(w.get("stim_list")) for w in kept_words], dtype=int),
-        "list": np.array([_safe_int(w.get("list")) for w in kept_words], dtype=int),
-        "serialpos": np.array([_safe_int(w.get("serialpos")) for w in kept_words], dtype=int),
-        "recalled": np.array([_safe_int(w.get("recalled")) for w in kept_words], dtype=int),
-    }
 
 
 # ── Confined-drift plant + displacement ─────────────────────────────────────────
@@ -431,11 +281,9 @@ def closedloop_session_analysis(session: dict, seed: int) -> dict:
 
 # ── Aggregation ──────────────────────────────────────────────────────────────
 
-def _find_stim_sessions(data_root: Path) -> list[Path]:
-    return sorted(data_root.glob("sub-*/ses-*/ieeg/*_acq-bipolar_ieeg.json"))
 
 
-def _process_dataset(data_root: Path, max_subjects: int, derive_stim: bool, n_jobs: int,
+def _process_dataset(data_root: Path, max_subjects: int, derive_stim: bool, n_workers: int,
                       analyze_fn, label: str) -> dict:
     sessions = _find_stim_sessions(data_root)
     print(f"[{label}] {len(sessions)} candidate bipolar+stim sessions on disk", flush=True)
@@ -447,7 +295,7 @@ def _process_dataset(data_root: Path, max_subjects: int, derive_stim: bool, n_jo
         t0 = time.time()
         session_fallback_id = str(ieeg_json.relative_to(data_root))
         try:
-            session = build_session_trajectory(ieeg_json, data_root, derive_stim, n_jobs=n_jobs)
+            session = build_session_trajectory(ieeg_json, data_root, derive_stim, n_workers=n_workers)
         except Exception as exc:
             # zero-drop: a processing failure is recorded with a reason, not silently skipped.
             results[session_fallback_id] = {
@@ -576,19 +424,19 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--openloop-max-subjects", type=int, default=38)
     parser.add_argument("--closedloop-max-subjects", type=int, default=35)
-    parser.add_argument("--n-jobs", type=int, default=min(8, os.cpu_count() or 1))
+    parser.add_argument("--workers", type=int, default=min(8, os.cpu_count() or 1))
     args = parser.parse_args()
 
     t_start = time.time()
     openloop_results = _process_dataset(
         configured_data_path("ram_ds005489_openloop"), args.openloop_max_subjects,
-        derive_stim=False, n_jobs=args.n_jobs,
+        derive_stim=False, n_workers=args.workers,
         analyze_fn=openloop_causal_rows, label="ds005489 open-loop",
     )
     t_openloop = time.time()
     closedloop_results = _process_dataset(
         configured_data_path("ram_ds005557_closedloop"), args.closedloop_max_subjects,
-        derive_stim=True, n_jobs=args.n_jobs,
+        derive_stim=True, n_workers=args.workers,
         analyze_fn=closedloop_session_analysis, label="ds005557 closed-loop",
     )
     t_closedloop = time.time()

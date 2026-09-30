@@ -18,14 +18,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from run_state_space_estimation_robustness import (  # noqa: E402
-    RUNG_THREE_MAX_SESSIONS, RUNG_THREE_Z_FACTOR, control_cell_verdict_key, decide_claim_standing,
-    dynamics_vote_resolvability, effect_cell_verdict_key, fit_representation,
-    require_linear_representation, restated_claim_cell, rung_three_sample_size,
-)
-from run_state_space_dimensionality_sweep import (  # noqa: E402
-    cross_validated_predictable_fraction, in_sample_linear_fraction,
-)
+from run_state_space_estimation_robustness import RUNG_THREE_MAX_SESSIONS, RUNG_THREE_Z_FACTOR, control_cell_verdict_key, dynamics_vote_resolvability, effect_cell_verdict_key, fit_representation, require_linear_representation, rung_three_sample_size
+from info_decoding import restated_claim_cell
+from info_decoding import decide_claim_standing
+from info_decoding import cross_validated_predictable_fraction, in_sample_linear_fraction
 
 
 RNG = np.random.default_rng(20260826)
@@ -112,7 +108,7 @@ def test_restated_claim_cell_separates_true_class_structure_from_its_permutation
                              for c in range(3)])
     y = latent @ rng.standard_normal(k)  # driven by the same class structure
     coords = np.linalg.svd(latent[labels == 0].mean(axis=0)[None, :], full_matrices=True)[2][:1].T
-    from run_state_space_estimation_robustness import class_mean_coordinates
+    from info_decoding import class_mean_coordinates
     coords = class_mean_coordinates(latent, labels)
     cell = restated_claim_cell(y, coords, labels, latent, "label_permutation", rng, n_perm=40)
     assert cell["status"] == "computed"
@@ -160,7 +156,7 @@ def test_opposite_signed_unresolvable_means_produce_the_same_verdict_key_and_do_
     """Two estimators that both fail majority-significance AND both fail to clear their own paired
     minimum detectable difference must collapse to the same 'no_majority_effect' key even though
     their mean effects sit on opposite sides of zero -- reproducing the exact shape of the delivered
-    defect (e.g. cross_temporal_generalization's -0.00561/mdd 0.02915 against +0.0146/some larger
+    error (e.g. cross_temporal_generalization's -0.00561/mdd 0.02915 against +0.0146/some larger
     mdd): neither mean is distinguishable from zero, so the sign is not part of either verdict."""
     agg_a = {"status": "computed", "fraction_significant_p_below_0p05": 0.2,
              "mean_effect_size": -0.0056, "minimum_detectable_difference": {"status": "computed",
@@ -199,7 +195,7 @@ def test_genuine_majority_significant_disagreement_still_escalates():
 
 
 def test_control_cell_opposite_signed_excesses_below_their_own_floor_do_not_escalate():
-    """Reproduces the delivered control-cell defect shape: excesses of differing sign that never
+    """Reproduces the delivered control-cell error shape: excesses of differing sign that never
     had any resolvability test applied to them at all. Below each cell's own paired detection floor
     they must collapse to the same unresolved key."""
     agg_a = {"alignment_excess_over_random": -0.11989,

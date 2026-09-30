@@ -54,7 +54,7 @@ what the literal-equality check returned) and does NOT modify
 scripts/run_target_transfer.py or scripts/run_macaque_pfc_microstimulation_pipeline.py.
 
 Run:
-    /home/amin/miniconda3/envs/wm_dynamics/bin/python scripts/run_common_basis_target_transfer.py
+    python scripts/run_common_basis_target_transfer.py
 """
 from __future__ import annotations
 
@@ -89,7 +89,10 @@ from provenance import _json_safe, checkpoint_safe, restore_checkpoint  # noqa: 
 
 import run_macaque_pfc_microstimulation_pipeline as macaque_pfc_microstimulation  # noqa: E402
 import run_macaque_pfc_microstimulation_headline_robustness as headline  # noqa: E402
-from run_target_transfer import _cluster_bootstrap_over_sessions  # noqa: E402
+from statistics import _cluster_bootstrap_over_sessions
+from dynamics import DMD_RANK, N_PC
+from spike_pipeline import BIN_S, N_BINS
+from spike_pipeline import crop_trial
 
 RESULTS = ROOT / "results"
 CHECKPOINT_DIR = ROOT / "results" / ".checkpoints" / "run_common_basis_target_transfer"
@@ -97,7 +100,7 @@ WA_SESSIONS = [s for s in macaque_pfc_microstimulation.SESSIONS if s.startswith(
 
 MIN_INTERSECTION_CHANNELS = 30
 MIN_SESSIONS = 8
-MIN_CHANNELS_PER_SESSION_FIT = max(macaque_pfc_microstimulation.N_PC + 2, 10)
+MIN_CHANNELS_PER_SESSION_FIT = max(N_PC + 2, 10)
 MIN_SESSIONS_FOR_CLUSTER_BOOTSTRAP = 3
 N_YIELD_MATCHED_DRAWS = 25
 YIELD_FLOOR_FOR_CANDIDATE_POOL = 8  # same session-coverage floor as MIN_SESSIONS
@@ -176,7 +179,7 @@ def _epochs_for(cond_source: dict, cond: int, label_correct: int) -> list[tuple[
     for tr in cond_source["trials"]:
         if tr["stim_cond"] != cond:
             continue
-        cropped = macaque_pfc_microstimulation.crop_trial(tr["spikerate"])
+        cropped = crop_trial(tr["spikerate"])
         if cropped is not None:
             out.append((cropped, label_correct, tr["angle_idx"]))
     return out
@@ -209,7 +212,7 @@ def _fit_common_basis_session(prefix: str, canonical_ids: list[int]) -> dict | N
     for tr in corr["trials"]:
         if tr["stim_cond"] != control_idx:
             continue
-        cropped = macaque_pfc_microstimulation.crop_trial(tr["spikerate"][:, session_cols])
+        cropped = crop_trial(tr["spikerate"][:, session_cols])
         if cropped is not None:
             ctrl_epochs.append(cropped)
     if len(ctrl_epochs) < 10:
@@ -219,12 +222,12 @@ def _fit_common_basis_session(prefix: str, canonical_ids: list[int]) -> dict | N
     C_present = len(session_cols)
     X_flat = Z_ctrl.reshape(-1, C_present)
     channel_mean = X_flat.mean(0)
-    _, V_present, _ = pca_decompose(X_flat, macaque_pfc_microstimulation.N_PC)
+    _, V_present, _ = pca_decompose(X_flat, N_PC)
     k = V_present.shape[1]
     Z_ctrl_mean = ((X_flat - channel_mean) @ V_present).reshape(
-        Z_ctrl.shape[0], macaque_pfc_microstimulation.N_BINS, k).mean(0)
-    r_use = min(macaque_pfc_microstimulation.DMD_RANK, k, macaque_pfc_microstimulation.N_BINS - 2)
-    dmd = dmd_reconstruction_error(Z_ctrl_mean, r=r_use, dt=macaque_pfc_microstimulation.BIN_S)
+        Z_ctrl.shape[0], N_BINS, k).mean(0)
+    r_use = min(DMD_RANK, k, N_BINS - 2)
+    dmd = dmd_reconstruction_error(Z_ctrl_mean, r=r_use, dt=BIN_S)
     v_star = dominant_eigenmode(dmd["A"]).v_star
 
     V_canonical = np.zeros((len(canonical_ids), k))

@@ -60,7 +60,7 @@ Outputs:
   results/human_stimulation_component_response.json
 
 Run:
-    /home/amin/miniconda3/envs/wm_dynamics/bin/python \
+    python \
         scripts/run_human_stimulation_component_response.py [--smoke N]
 """
 from __future__ import annotations
@@ -87,7 +87,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from provenance import canonical_json, git_commit  # noqa: E402
+from provenance import canonical_json, checkpoint_store, git_commit  # noqa: E402
 from statistics import (  # noqa: E402
     Z_80_POWER,
     bootstrap_ci,
@@ -105,26 +105,25 @@ from statistics import (  # noqa: E402
 from causal import cate_vs_modifier_slope  # noqa: E402
 from corpus_sessions import data_root as macaque_data_root  # noqa: E402
 
-from run_ram_openloop_pipeline import DATA as OPENLOOP_DATA, build_session_features, _float_or_nan  # noqa: E402
-from run_ram_closedloop_pipeline import DATA as CLOSEDLOOP_DATA  # noqa: E402
-from run_rate_free_state_geometry_behavior_link import (  # noqa: E402
-    MEANINGFUL_EFFECT_THRESHOLD_R_UNITS,
-    _session_arrays as _macaque_session_arrays,
-    rate_free_state_deviation,
-)
-from run_state_behavior_link import _panichello_directory  # noqa: E402
+from run_ram_openloop_pipeline import build_session_features
+from corpus_sessions import DATA as OPENLOOP_DATA
+from stimulation_events import _float_or_nan
+from project_config import dataset_path  # noqa: E402
+from corpus_sessions import _session_arrays as _macaque_session_arrays
+from statistics import MEANINGFUL_EFFECT_THRESHOLD_R_UNITS
+from stimulation_response_estimator import rate_free_state_deviation
+from corpus_sessions import _panichello_directory
 from preprocessing import high_gamma_power, line_noise_notch  # noqa: E402
+from stimulation_events import ALPHA, N_PERM, _bin_averaged  # noqa: E402
+from corpus_sessions import _stimulation_displacement_session  # noqa: E402
+from stimulation_events import _reference_direction, _contact_shank, channel_condition_masks, _deviation_from_reference, compute_stimulation_displacement, N_BOOT, subject_aggregated_correlation, subject_clustered_mean_test  # noqa: E402
 
 RESULTS = ROOT / "results"
 OUTPUT_PATH = RESULTS / "human_stimulation_component_response.json"
 CHECKPOINT_DIR = RESULTS / ".checkpoints" / "run_human_stimulation_component_response"
 
-N_PERM = 10000
-N_BOOT = 5000
 N_ROTATION_NULL_DRAWS = 1000
 N_DOSE_SHUFFLE_DRAWS = 1000
-ALPHA = 0.05
-POWER = 0.80
 
 # Precondition thresholds -- pre-declared before any human session is loaded.
 SESSION_MEDIAN_DEGENERATE_ABS = 0.01
@@ -201,17 +200,8 @@ def save_checkpoint(unit: str, record: dict) -> None:
     ever written as part of the same atomic replace, after the fit that
     computed `record` has already returned, so a killed process never leaves
     a checkpoint that reads as complete but isn't."""
-    CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
     path = _checkpoint_path(unit)
-    payload = {"_complete": True, "record": record}
-    fd, tmp_name = tempfile.mkstemp(dir=str(CHECKPOINT_DIR), prefix="._tmp_")
-    try:
-        with os.fdopen(fd, "w") as f:
-            f.write(canonical_json(payload))
-        os.replace(tmp_name, path)
-    finally:
-        if os.path.exists(tmp_name):
-            os.remove(tmp_name)
+    checkpoint_store(path, {"_complete": True, "record": record})
 
 
 def run_checkpointed(unit: str, fit_fn):
@@ -264,105 +254,18 @@ def save_raw_features(unit: str, arrays: dict) -> None:
 
 # ── Channel identity / shank parsing ────────────────────────────────────────────
 
-def _contact_shank(contact_label: str) -> str:
-    """The alphabetic prefix of a depth/grid electrode contact label (e.g.
-    'LAH2' -> 'LAH') identifies the physical lead the contact sits on; RAM
-    contact labels are always an alphabetic lead name followed by a numeric
-    contact index."""
-    match = re.match(r"^[A-Za-z]+", contact_label)
-    return match.group(0) if match else contact_label
 
 
-def _bipolar_channel_shanks(channel_name: str) -> set[str]:
-    """A bipolar channel name is 'anode-cathode' (e.g. 'LAH1-LAH2'); returns
-    the set of one or two leads either contact belongs to."""
-    return {_contact_shank(p) for p in channel_name.split("-") if p}
 
 
-def channel_condition_masks(ch_names: list[str], anode: str, cathode: str, stim_ch: str) -> dict:
-    """The three channel sets the stimulation-displacement arm's mandatory artifact control compares:
-    every channel, every channel except the driven bipolar pair, and every
-    channel except the driven pair AND any channel sharing a lead with
-    either the anode or the cathode contact -- the mandatory control for a
-    large stimulation deflection contaminating nearby contacts, not only the
-    driven pair itself."""
-    stim_shanks = {_contact_shank(anode), _contact_shank(cathode)}
-    full = np.ones(len(ch_names), dtype=bool)
-    excl_pair = np.array([ch != stim_ch for ch in ch_names])
-    excl_shank = np.array([
-        ch != stim_ch and not (_bipolar_channel_shanks(ch) & stim_shanks) for ch in ch_names
-    ])
-    return {
-        "full_channel_set": full,
-        "excluding_stimulated_pair": excl_pair,
-        "excluding_stimulated_shank": excl_shank,
-    }
 
 
 # ── The estimator, transported: fixed-reference scoring for stimulated trials ──
 
-def _reference_direction(activity_by_unit: np.ndarray) -> np.ndarray:
-    """The renormalised mean unit direction of every trial in
-    `activity_by_unit`, with NO leave-one-out exclusion -- used to build a
-    single FIXED reference from the control-trial pool, which stimulated
-    trials (never members of that pool) are then scored against without
-    letting them define any part of their own comparison point. A trial with
-    zero total activity across channels has no defined direction and is
-    excluded from the mean, exactly as rate_free_state_deviation excludes it
-    from its own leave-one-out reference."""
-    activity = np.asarray(activity_by_unit, dtype=float)
-    norms = np.linalg.norm(activity, axis=1, keepdims=True)
-    with np.errstate(invalid="ignore", divide="ignore"):
-        unit_vectors = np.where(norms > 0, activity / np.where(norms > 0, norms, 1.0), np.nan)
-    valid = ~np.isnan(unit_vectors).any(axis=1)
-    total = np.nansum(unit_vectors[valid], axis=0)
-    n_valid = int(valid.sum())
-    if n_valid < 1:
-        return np.full(activity.shape[1], np.nan)
-    mean_dir = total / n_valid
-    norm = np.linalg.norm(mean_dir)
-    return mean_dir / norm if norm > 0 else np.full(activity.shape[1], np.nan)
 
 
-def _deviation_from_reference(activity_by_unit: np.ndarray, reference_direction: np.ndarray) -> np.ndarray:
-    """Per trial, 1 - cosine(unit_vector_i, reference_direction), scoring
-    each trial against a FIXED external direction rather than a leave-one-out
-    mean of its own group -- the counterpart to rate_free_state_deviation's
-    leave-one-out reference for trials that must never contribute to the
-    reference they are being compared against."""
-    activity = np.asarray(activity_by_unit, dtype=float)
-    norms = np.linalg.norm(activity, axis=1, keepdims=True)
-    with np.errstate(invalid="ignore", divide="ignore"):
-        unit_vectors = np.where(norms > 0, activity / np.where(norms > 0, norms, 1.0), np.nan)
-    if not np.all(np.isfinite(reference_direction)):
-        return np.full(activity.shape[0], np.nan)
-    deviation = np.full(activity.shape[0], np.nan)
-    valid = ~np.isnan(unit_vectors).any(axis=1)
-    deviation[valid] = 1.0 - unit_vectors[valid] @ reference_direction
-    return deviation
 
 
-def compute_stimulation_displacement(activity_by_unit: np.ndarray, stim_flag: np.ndarray) -> dict:
-    """The core stimulation-displacement computation for one session and one channel
-    condition: leave-one-out deviation among control trials only
-    (rate_free_state_deviation, unmodified, called on the control subset
-    alone so a stimulated trial can never enter any control trial's
-    reference), a single fixed reference direction built from that same
-    control pool, and stimulated trials scored against that fixed reference.
-    Nothing about a stimulated trial's own value can change the reference it
-    is compared against."""
-    activity = np.asarray(activity_by_unit, dtype=float)
-    stim = np.asarray(stim_flag).astype(bool)
-    ctrl_activity = activity[~stim]
-    stim_activity = activity[stim]
-    control_deviation = rate_free_state_deviation(ctrl_activity)
-    reference_direction = _reference_direction(ctrl_activity)
-    stim_deviation = _deviation_from_reference(stim_activity, reference_direction)
-    return {
-        "control_deviation": control_deviation,
-        "stim_deviation": stim_deviation,
-        "reference_direction": reference_direction,
-    }
 
 
 # ── Magnitude-matched rotation null (precondition, criterion 3) ────────────────
@@ -404,86 +307,10 @@ def rotation_null_variance_test(activity_by_unit: np.ndarray, n_draws: int, rng:
 
 # ── Subject-clustered inference helpers ─────────────────────────────────────────
 
-def subject_clustered_mean_test(session_values: np.ndarray, subject_ids: list, alternative: str = "two-sided") -> dict:
-    """Pools one scalar per session into a subject-clustered mean test: each
-    subject's own sessions are first collapsed to their unweighted mean, then
-    the collapsed subject-level values are tested against zero with the
-    paired sign-flip test -- subject is the unit both the permutation null
-    and the bootstrap CI resample, so a subject contributing many sessions
-    cannot silently outweigh one contributing few."""
-    session_values = np.asarray(session_values, dtype=float)
-    subject_ids = np.asarray(subject_ids)
-    finite = np.isfinite(session_values)
-    session_values, subject_ids = session_values[finite], subject_ids[finite]
-    unique_subjects = sorted(set(subject_ids.tolist()))
-    if len(unique_subjects) < 2:
-        return {"status": "not_computable", "n_sessions": int(finite.sum()), "n_subjects": len(unique_subjects)}
-    subject_values = np.array([session_values[subject_ids == s].mean() for s in unique_subjects])
-    rng = np.random.default_rng(stable_seed(f"subject_clustered|{tuple(unique_subjects)}|{finite.sum()}"))
-    test = paired_sign_flip_test(subject_values, np.zeros_like(subject_values), n_perm=N_PERM,
-                                  alternative=alternative, n_boot=N_BOOT, rng=rng)
-    mdd = minimum_detectable_paired_difference(subject_values, alpha=ALPHA, power=POWER)
-    return {
-        "status": "computed", "n_sessions": int(finite.sum()), "n_subjects": len(unique_subjects),
-        "mean_value": test["mean_diff"], "p_value": test["p_value"],
-        "ci_lower": test["ci_lower"], "ci_upper": test["ci_upper"],
-        "mdd": mdd,
-    }
 
 
-def minimum_detectable_correlation(n_subjects: int, alpha: float = ALPHA, power: float = POWER) -> dict:
-    """Smallest true Pearson correlation a two-sided test on n_subjects
-    independent units could detect at the given power, via the standard
-    Fisher z-transform normal approximation (Cohen 1988) -- the correlation
-    analogue of minimum_detectable_paired_difference, which is defined for a
-    paired mean difference, not a correlation coefficient."""
-    from scipy.stats import norm
-
-    if n_subjects < 4:
-        return {"status": "not_computable", "n_subjects": int(n_subjects),
-                "reason": "fewer than 4 subjects -- Fisher z approximation undefined"}
-    z_a = float(norm.ppf(1.0 - alpha / 2.0))
-    z_b = float(norm.ppf(power))
-    z_r = (z_a + z_b) / np.sqrt(n_subjects - 3)
-    return {"status": "computed", "n_subjects": int(n_subjects), "alpha": alpha, "power": power,
-            "mdd": float(np.tanh(z_r))}
 
 
-def subject_aggregated_correlation(x: np.ndarray, y: np.ndarray, subject_ids: list) -> dict:
-    """Collapses session-level (x, y) pairs to one point per subject (the
-    unweighted mean of that subject's own sessions) before correlating, so
-    the permutation null and the bootstrap CI both resample at the subject
-    level -- avoiding a subject with many sessions silently outweighing one
-    with few, and matching the reachable-sample-size regime
-    pearson_permutation_test and bootstrap_ci (both already used elsewhere in
-    this project) were built for."""
-    x = np.asarray(x, dtype=float)
-    y = np.asarray(y, dtype=float)
-    subject_ids = np.asarray(subject_ids)
-    finite = np.isfinite(x) & np.isfinite(y)
-    x, y, subject_ids = x[finite], y[finite], subject_ids[finite]
-    unique_subjects = sorted(set(subject_ids.tolist()))
-    if len(unique_subjects) < 4:
-        return {"status": "not_computable", "n_sessions": int(finite.sum()), "n_subjects": len(unique_subjects),
-                "reason": "fewer than 4 subjects"}
-    x_subj = np.array([x[subject_ids == s].mean() for s in unique_subjects])
-    y_subj = np.array([y[subject_ids == s].mean() for s in unique_subjects])
-    if np.std(x_subj) == 0 or np.std(y_subj) == 0:
-        return {"status": "not_computable", "n_sessions": int(finite.sum()), "n_subjects": len(unique_subjects),
-                "reason": "zero variance in a subject-aggregated variable"}
-    rng = np.random.default_rng(stable_seed(f"subject_aggregated_corr|{tuple(unique_subjects)}"))
-    corr = pearson_permutation_test(x_subj, y_subj, n_perm=N_PERM, rng=rng)
-    _, ci_lo, ci_hi = bootstrap_ci(
-        np.column_stack([x_subj, y_subj]),
-        lambda d: float(np.corrcoef(d[:, 0], d[:, 1])[0, 1]),
-        n_boot=N_BOOT, rng=rng,
-    )
-    mdd = minimum_detectable_correlation(len(unique_subjects))
-    return {
-        "status": "computed", "n_sessions": int(finite.sum()), "n_subjects": len(unique_subjects),
-        "r": corr["r"], "p_value": corr["p_value"], "ci_lower": float(ci_lo), "ci_upper": float(ci_hi),
-        "mdd": mdd,
-    }
 
 
 # ── Session enumeration and diagnostic-checkpointed feature loading ────────────
@@ -581,11 +408,6 @@ def load_session_features(corpus_name: str, session_key: str, ieeg_json: Path, d
     return {"status": "usable", "arrays": arrays}
 
 
-def _bin_averaged(arrays: dict, channel_mask: np.ndarray | None = None) -> np.ndarray:
-    epochs = arrays["epochs_log"]
-    if channel_mask is not None:
-        epochs = epochs[:, :, channel_mask]
-    return epochs.mean(axis=1).astype(float)  # (n_trials, n_channels_kept)
 
 
 # ── Precondition ─────────────────────────────────────────────────────────────
@@ -764,37 +586,6 @@ def run_component_recall_failure_link(session_records: list[dict]) -> dict:
 
 # ── Stimulation displacement ──────────────────────────────────────────────────
 
-def _stimulation_displacement_session(rec: dict) -> dict:
-    arrays = rec["arrays"]
-    ch_names = arrays["ch_names"].tolist()
-    anode, cathode, stim_ch = str(arrays["anode"]), str(arrays["cathode"]), str(arrays["stim_channel"])
-    masks = channel_condition_masks(ch_names, anode, cathode, stim_ch)
-    stim_flag = arrays["stim_flag"]
-    n_stim, n_ctrl = int(stim_flag.sum()), int((stim_flag == 0).sum())
-    conditions = {}
-    for name, mask in masks.items():
-        activity = _bin_averaged(arrays, mask)
-        out = compute_stimulation_displacement(activity, stim_flag)
-        ctrl_dev, stim_dev = out["control_deviation"], out["stim_deviation"]
-        finite_ctrl, finite_stim = np.isfinite(ctrl_dev), np.isfinite(stim_dev)
-        if finite_ctrl.sum() < 8 or finite_stim.sum() < 4:
-            conditions[name] = {"status": "too_few_trials", "n_channels": int(mask.sum())}
-            continue
-        displacement = float(np.nanmean(stim_dev[finite_stim]) - np.nanmean(ctrl_dev[finite_ctrl]))
-        spontaneous_sd = float(np.nanstd(ctrl_dev[finite_ctrl], ddof=1)) if finite_ctrl.sum() >= 2 else float("nan")
-        total_power = activity.sum(axis=1)
-        power_change = float(np.nanmean(total_power[stim_flag == 1][finite_stim])
-                             - np.nanmean(total_power[stim_flag == 0][finite_ctrl]))
-        conditions[name] = {
-            "status": "computed", "n_channels": int(mask.sum()),
-            "n_stim_trials": int(finite_stim.sum()), "n_control_trials": int(finite_ctrl.sum()),
-            "displacement": displacement,
-            "spontaneous_control_sd": spontaneous_sd,
-            "normalised_displacement": (displacement / spontaneous_sd) if spontaneous_sd and spontaneous_sd > 0 else None,
-            "total_power_change": power_change,
-        }
-    return {"status": "computed", "n_stim_trials_total": n_stim, "n_control_trials_total": n_ctrl,
-            "conditions": conditions, "stim_channel": stim_ch, "anode": anode, "cathode": cathode}
 
 
 def _classify_stimulation_displacement(pooled_by_condition: dict) -> str:
@@ -1251,7 +1042,7 @@ def run_cross_preparation_comparison_narrative(component_recall_failure_link: di
         macaque_pooled = non_human_a.get("pooled", {}).get("raw_outcome_vs_deviation", {})
         a_text += (
             "The nearest delivered non-human equivalent (results/rate_free_state_geometry_behavior_link.json, "
-            "macaque lPFC, non-stimulated, delay-period, Panichello et al. 2024 corpus) is a session-pooled "
+            "macaque lPFC, non-stimulated, delay-period, doi 10.1038/s41586-024-08139-9 corpus) is a session-pooled "
             f"correlation of the same estimator with trial outcome, r={macaque_pooled.get('mean_value')}, "
             f"p={macaque_pooled.get('p_value')}, n_sessions={non_human_a.get('n_sessions_reachable')}, "
             f"branch='{non_human_a.get('branch')}'. The non-human preparation establishes this link at "
@@ -1555,7 +1346,7 @@ def _classify_pretask_titration(pooled: dict, shuffle_p: float | None,
     return "underpowered_to_ask"
 
 
-def run_pretask_amplitude_titration(closedloop_corpus: dict, stimulation_displacement: dict) -> dict:
+def run_pretask_amplitude_titration(closedloop_corpus: dict, stimulation_displacement: dict, closedloop_data: Path) -> dict:
     usable_by_key = {r["session_key"]: r for r in closedloop_corpus["records"]}
     exclusions = closedloop_corpus["exclusions"]
 
@@ -1565,10 +1356,10 @@ def run_pretask_amplitude_titration(closedloop_corpus: dict, stimulation_displac
                 return f"session_excluded_from_word_epoch_loading: {reason}"
         return "session_excluded_from_word_epoch_loading: reason_unknown"
 
-    session_jsons = _find_session_jsons(CLOSEDLOOP_DATA)
+    session_jsons = _find_session_jsons(closedloop_data)
     per_series = {}
     for ieeg_json in session_jsons:
-        session_key = str(ieeg_json.relative_to(CLOSEDLOOP_DATA))
+        session_key = str(ieeg_json.relative_to(closedloop_data))
         subject_id = _subject_id(ieeg_json)
         for idx, series in enumerate(find_pretask_titration_series(ieeg_json)):
             series_key = f"{subject_id}__{session_key}__{series['anode']}-{series['cathode']}__{idx}"
@@ -2444,9 +2235,9 @@ def _ladder_rung(name: str, reason: str, seen: set, retained: set) -> dict:
 def compute_dose_variation_attrition_ladders(openloop_corpus: dict, closedloop_corpus: dict,
                                              all_records: list[dict], stimulation_displacement: dict,
                                              task_period_dose_response: dict,
-                                             pretask: dict) -> dict:
+                                             pretask: dict, closedloop_data: Path) -> dict:
     raw_open = _raw_stim_on_events(OPENLOOP_DATA)
-    raw_closed = _raw_stim_on_events(CLOSEDLOOP_DATA)
+    raw_closed = _raw_stim_on_events(closedloop_data)
 
     raw_by_corpus = {}
     raw_within_pair_all: set[str] = set()
@@ -2622,8 +2413,9 @@ def main() -> None:
     args = parser.parse_args()
 
     t0 = time.time()
+    closedloop_data = dataset_path("ram_ds005557_closedloop")
     openloop = load_corpus("open_loop_ds005489", OPENLOOP_DATA, derive_stim_from_stim_on=False, smoke=args.smoke)
-    closedloop = load_corpus("closed_loop_ds005557", CLOSEDLOOP_DATA, derive_stim_from_stim_on=True, smoke=args.smoke)
+    closedloop = load_corpus("closed_loop_ds005557", closedloop_data, derive_stim_from_stim_on=True, smoke=args.smoke)
     all_records = openloop["records"] + closedloop["records"]
 
     zero_drop = {
@@ -2676,10 +2468,10 @@ def main() -> None:
     output["block_e"] = run_pre_stimulation_component_moderation(closedloop["records"])
     output["block_f"] = run_displacement_alignment_correlation(all_records, output["block_b"])
     output["block_g"] = run_cross_preparation_comparison_narrative(output["block_a"], output["block_b"], output["block_c"])
-    output["pretask_amplitude_titration"] = run_pretask_amplitude_titration(closedloop, output["block_b"])
+    output["pretask_amplitude_titration"] = run_pretask_amplitude_titration(closedloop, output["block_b"], closedloop_data)
     output["dose_variation_attrition_ladders"] = compute_dose_variation_attrition_ladders(
         openloop, closedloop, all_records, output["block_b"], output["block_d"],
-        output["pretask_amplitude_titration"])
+        output["pretask_amplitude_titration"], closedloop_data)
     output["dose_scaling_two_arm_meta_analysis"] = run_dose_scaling_two_arm_meta_analysis(
         output["block_d"], output["pretask_amplitude_titration"], output["block_b"], closedloop["records"])
 

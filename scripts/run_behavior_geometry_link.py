@@ -2,7 +2,7 @@
 """Behavioral performance-predictability -> geometry link.
 
 Anchor dataset: DANDI 000469 (content + context + outcome from the same
-sessions). Add Boran iEEG (context + outcome; content is N/A -- no repeated
+sessions). Add DANDI 000574 iEEG (context + outcome; content is N/A -- no repeated
 items, same exclusion as axis-rotation content). Per session, computes the
 geometry metrics already defined elsewhere in the paper --
 content/context CTG temporal-stability tau (geometry.temporal_stability_tau,
@@ -60,8 +60,8 @@ from io_utils import locked_json_update
 RESULTS = ROOT / "results"
 MIN_SESSIONS = 4
 MIN_TRIALS_PER_OUTCOME = 8   # matches PR_MIN_TRIALS_PER_GROUP convention elsewhere
-DT = 0.1   # 100 ms bins, both 000469 and Boran iEEG geometry files share this via
-           # their own `times` arrays (Boran iEEG's is native-rate; see per-dataset code)
+DT = 0.1   # 100 ms bins, both 000469 and DANDI 000574 iEEG geometry files share this via
+           # their own `times` arrays (DANDI 000574 iEEG's is native-rate; see per-dataset code)
 DMD_RANK = 8   # module's full-latent-rank convention, matching run_divergence_analysis.py
 
 
@@ -149,7 +149,7 @@ def run_boran_ieeg() -> dict:
     except FileNotFoundError:
         axis_rot = {}
     # dandi000469_ctg's "tau"/pooled-tau is context-CTG derived from
-    # load_vs_load_ctg's tau_info; the direct Boran-iEEG analogue is boran_ctg's
+    # load_vs_load_ctg's tau_info; the direct DANDI 000574-iEEG analogue is boran_ctg's
     # own set4v8 tau, read from all_statistics.json once (not per session).
     with open(RESULTS / "all_statistics.json") as f:
         stats = json.load(f)
@@ -167,10 +167,10 @@ def run_boran_ieeg() -> dict:
         mask8 = set_sizes == 8
         if mask8.sum() < 5:
             continue
-        # Boran iEEG is native-rate (T~4194); a full-length exact_dmd at that many
+        # DANDI 000574 iEEG is native-rate (T~4194); a full-length exact_dmd at that many
         # samples is impractical here purely for cost reasons -- downsample the
         # mean trajectory the same ~0.2s stride run_axis_rotation_analysis/
-        # run_boran_pipeline already use for their own Boran CTG time axis.
+        # run_boran_pipeline already use for their own DANDI 000574 CTG time axis.
         step_native = 280
         Z_mean8 = Z[mask8].mean(0)[::step_native]
         dt_ds = dt * step_native
@@ -259,7 +259,7 @@ def main():
             print(f"  dmd_rot error-vs-correct (N={ce['n_sessions']}): "
                   f"diff={ce['mean_diff_error_minus_correct']:+.4f} p={ce['p_value']:.4f}")
 
-    print("\nBoran iEEG (context + outcome; content N/A)...")
+    print("\nDANDI 000574 iEEG (context + outcome; content N/A)...")
     boran = run_boran_ieeg()
     if boran["underpowered"]:
         print(f"  UNDERPOWERED: only {boran['n_sessions']} sessions (<{MIN_SESSIONS})")

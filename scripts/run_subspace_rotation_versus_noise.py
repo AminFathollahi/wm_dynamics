@@ -43,12 +43,13 @@ for part in ("src", "scripts"):
 from corpus_sessions import data_root, independent_unit  # noqa: E402
 from geometry import subspace_overlap  # noqa: E402
 from provenance import _json_safe, git_commit, restore_checkpoint  # noqa: E402
-from run_alignment_below_null_diagnostic import (  # noqa: E402
-    OUTPUT_PATH as DELIVERED_DIAGNOSTIC_OUTPUT_PATH,
-    REPRODUCTION_TOLERANCE, _pool_unit_scalars, _prepare_trials, _rotation,
-)
-from run_component_identity_subspace_atlas import MAX_SESSIONS_ENV_VAR  # noqa: E402
-from run_rank_free_component_identity import N_FOLDS, _standard_sessions  # noqa: E402
+from run_alignment_below_null_diagnostic import OUTPUT_PATH as DELIVERED_DIAGNOSTIC_OUTPUT_PATH, _pool_unit_scalars
+from info_decoding import _prepare_trials
+from info_decoding import _rotation
+from info_decoding import REPRODUCTION_TOLERANCE
+from info_decoding import MAX_SESSIONS_ENV_VAR
+from run_rank_free_component_identity import _standard_sessions
+from info_decoding import N_FOLDS
 from statistics import stable_seed  # noqa: E402
 from subspace_identity import block_folds, class_basis, regression_basis  # noqa: E402
 
@@ -64,7 +65,7 @@ def _hash() -> str:
     digest = hashlib.sha256()
     paths = (
         Path(__file__), ROOT / "src" / "subspace_identity.py", ROOT / "src" / "corpus_sessions.py",
-        ROOT / "src" / "statistics.py", ROOT / "src" / "geometry.py", ROOT / "src" / "provenance.py",
+        ROOT / "src" / "statistics.py", ROOT / "src" / "geometry.py", ROOT / "src" / "provenance.py", ROOT / "src" / "info_decoding.py",
         ROOT / "scripts" / "run_component_identity_subspace_atlas.py",
         ROOT / "scripts" / "run_rank_free_component_identity.py",
         ROOT / "scripts" / "run_alignment_below_null_diagnostic.py",

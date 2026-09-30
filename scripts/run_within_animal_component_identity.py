@@ -22,8 +22,10 @@ from corpus_sessions import (  # noqa: E402
     data_root, independent_unit, iter_pfc4, load_watters_session, watters_behaviour, watters_session_dates,
 )
 from provenance import _json_safe, git_commit  # noqa: E402
-from run_component_identity_subspace_atlas import MAX_SESSIONS_ENV_VAR, Z_80_POWER  # noqa: E402
-from run_rank_free_component_identity import _combine_levels, _finite, _standard_sessions  # noqa: E402
+from info_decoding import MAX_SESSIONS_ENV_VAR
+from statistics import Z_80_POWER
+from run_rank_free_component_identity import _standard_sessions
+from info_decoding import _combine_levels, _finite
 from statistics import fdr_bh, permutation_pvalue, stable_seed  # noqa: E402
 from subspace_identity import block_folds, class_basis, permutation_alignment, regression_basis  # noqa: E402
 
@@ -82,7 +84,7 @@ DECISION_RULE = (
     "classification. An animal with fewer than "
     f"{MIN_SESSIONS_PER_ANIMAL} sessions carrying a computed per-session cell for a candidate is "
     "NOT_COMPUTABLE for that candidate, reported with its own session count, never treated as a null. "
-    "Infeasibility is never a null. memorandum_content_many_class_diagnostic (Watters only: the same "
+    "Infeasibility is never a null. memorandum_content_many_class_diagnostic (macaque multi-object corpus only: the same "
     "content candidate built as a many-class subspace from the corpus's own native theta values instead "
     "of the two-column sine/cosine axis) is a primary cell in this rule's FDR family, reported beside "
     "the two-column construction with the same fields, including verdict and bound."
@@ -93,7 +95,7 @@ def _hash() -> str:
     digest = hashlib.sha256()
     paths = (
         Path(__file__), ROOT / "src" / "subspace_identity.py", ROOT / "src" / "corpus_sessions.py",
-        ROOT / "src" / "statistics.py", ROOT / "scripts" / "run_component_identity_subspace_atlas.py",
+        ROOT / "src" / "statistics.py", ROOT / "src" / "info_decoding.py", ROOT / "scripts" / "run_component_identity_subspace_atlas.py",
         ROOT / "scripts" / "run_rank_free_component_identity.py",
     )
     for path in paths:
@@ -336,13 +338,13 @@ CONTENT_CONSTRUCTION_NOTE = {
     ),
     PFC4_CORPUS: (
         "one-dimensional continuous axis: regression_basis fit directly on the trial's F1 value in Hz "
-        "(no sine/cosine pair, unlike the Watters angle, because frequency does not wrap), giving a "
+        "(no sine/cosine pair, unlike the multi-object corpus angle, because frequency does not wrap), giving a "
         "subspace dimension of min(1, n_units). The raw session files carry 19 distinct F1 values (6 to "
         "48 Hz, mostly 2 Hz steps), wider than the 6 values the deposited data description names, so the "
         "6-value description understates the corpus's own range. Chosen over a class-based construction "
         "because the task defines F1 as a magnitude the animal holds across the delay and compares "
         "against F2 as higher-or-lower to produce the trial's hit/miss outcome -- an ordinal, interval "
-        "quantity, not an arbitrary class identity like Panichello's discrete spatial locations"
+        "quantity, not an arbitrary class identity like the spatial working-memory corpus's discrete spatial locations"
     ),
 }
 

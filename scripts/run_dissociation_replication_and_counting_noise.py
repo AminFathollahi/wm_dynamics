@@ -2,13 +2,13 @@
 tests sharing one loading pass and one artifact.
 
 MULTI-OBJECT DISSOCIATION REPLICATION. The project's headline is a within-corpus dissociation measured in
-macaque lateral prefrontal cortex (Panichello et al. 2024) at its primary
+macaque lateral prefrontal cortex (doi 10.1038/s41586-024-08139-9) at its primary
 error floor (n=11 sessions): the dominant population latent's per-trial
 amplitude carries the LARGER raw association with trial outcome and loses
 all of it to a spike-count control, while a rate-free direction-deviation
 observable of the same population starts smaller and survives the same
-control unmoved. The multi-object macaque corpus (Watters, Gabel, Tenenbaum
-and Jazayeri; bioRxiv preprint, DOI 10.64898/2026.01.27.702062, DANDI 000620)
+control unmoved. The multi-object macaque corpus (bioRxiv preprint,
+doi 10.64898/2026.01.27.702062, DANDI 000620)
 is four times the session count and carries a continuous graded report, so no
 error-trial floor is needed at all. Its deviation half already replicates
 within item-count level (results/watters_load_decomposition.json,
@@ -86,34 +86,41 @@ from corpus_sessions import (  # noqa: E402
     alm_data_directory, data_root, iter_all_corpora, iter_watters, load_alm_raw_session,
 )
 from provenance import _json_safe, checkpoint_safe, restore_checkpoint  # noqa: E402
-from run_dissociation_cross_preparation_test import (  # noqa: E402
-    MACAQUE_AMPLITUDE_RAW_R, MACAQUE_DEVIATION_RAW_R, MIN_TRIALS_WITH_DEFINED_DIRECTION,
-    reproduction_gate,
-)
+from run_dissociation_cross_preparation_test import MACAQUE_AMPLITUDE_RAW_R, MACAQUE_DEVIATION_RAW_R, reproduction_gate
+from statistics import MIN_TRIALS_WITH_DEFINED_DIRECTION
 from run_human_drift_spine_001187_000673 import canonical_sessions  # noqa: E402
-from run_rate_free_state_geometry_behavior_link import rate_free_state_deviation  # noqa: E402
-from run_state_behavior_link import _counts_from_spikes, _panichello_directory, trial_amplitude_covariates  # noqa: E402
-from run_state_content_link import delay_counts, session_subtractive_test, usable_label  # noqa: E402
+from stimulation_response_estimator import rate_free_state_deviation
+from state_persistence import trial_amplitude_covariates
+from spike_pipeline import _counts_from_spikes
+from corpus_sessions import _panichello_directory
+from run_state_content_link import usable_label
+from info_decoding import session_subtractive_test
+from spike_pipeline import delay_counts
 from spike_pipeline import FrozenPSTHTransform  # noqa: E402
-from run_watters_load_decomposition import (  # noqa: E402
-    QUALITY_TIERS, _delivered_gate_lookup, _single_item_corpus_reference_magnitude, _subsets,
-)
-from run_watters_state_geometry import (  # noqa: E402
-    MATCHED_UNIT_COUNT, MIN_TRIALS_FOR_BEHAVIOURAL_CORRELATION, PRIMARY_QUALITY_TIER, WATTERS_MIN_UNITS,
-    _behaviour_observables, _corr as _watters_corr, _matched_unit_subset, _pool_values,
-)
-from run_state_content_link import _one_sample_sign_flip, _stable_seed  # noqa: E402
+from run_watters_load_decomposition import _delivered_gate_lookup, _single_item_corpus_reference_magnitude
+from corpus_sessions import QUALITY_TIERS, _subsets
+from run_watters_state_geometry import _corr as _watters_corr
+from corpus_sessions import _matched_unit_subset
+from state_persistence import _pool_values
+from corpus_sessions import MATCHED_UNIT_COUNT, MIN_TRIALS_FOR_BEHAVIOURAL_CORRELATION, PRIMARY_QUALITY_TIER, _behaviour_observables
+from corpus_sessions import WATTERS_MIN_UNITS
+from statistics import _one_sample_sign_flip, _stable_seed
 from statistics import (  # noqa: E402
     minimum_detectable_paired_difference, partial_correlation_permutation_test, stable_seed,
 )
+from corpus_sessions import _load_alm_for_counting_noise_census  # noqa: E402
+from statistics import HUMAN_CORPORA_FOR_THE_CENSUS  # noqa: E402
+from corpus_sessions import _load_panichello_for_counting_noise_census  # noqa: E402
+from corpus_sessions import _load_human_for_counting_noise_census  # noqa: E402
+from corpus_sessions import _observable_arrays  # noqa: E402
+from state_persistence import _pool_cell  # noqa: E402
 
 OUTPUT_PATH = ROOT / "results" / "dissociation_replication_and_counting_noise.json"
-CHECKPOINT_PATH = ROOT / "results" / ".checkpoints" / "dissociation_replication_and_counting_noise_checkpoint.json"
+CHECKPOINT_PATH = ROOT / "results" / ".checkpoints" / "dissociation_replication_and_counting_noise_checkpoint_v2.json"
 ANALYSIS_VERSION = "2026-08-15"
 
 N_SURROGATE_DRAWS = 200
 CONTENT_RANK_K_CLASSES = 8  # identical binning to run_deviation_subspace_decomposition.py's watters arm
-HUMAN_CORPORA_FOR_THE_CENSUS = ("dandi_000469", "dandi_001187")
 
 # ---------------------------------------------------------------------------------------------------
 # Decision rules -- declared before any fit runs, verbatim text carried into the artifact
@@ -217,27 +224,6 @@ def _flush(output: dict) -> None:
 # MULTI-OBJECT DISSOCIATION REPLICATION -- multi-object macaque corpus, amplitude and deviation, pooled and within-load
 # =======================================================================================================
 
-def _observable_arrays(counts: np.ndarray, session: dict) -> tuple[dict | None, dict, np.ndarray]:
-    """Every array the correlation family needs, restricted to trials with a
-    defined state direction, report and reaction time (_behaviour_
-    observables' own usable mask), with the amplitude covariate computed on
-    the FULL session (trial_amplitude_covariates fits its transform on every
-    trial passed in) and then subset by the identical mask -- the same
-    convention every other corpus's amplitude arm in this project uses."""
-    observables, excluded, usable = _behaviour_observables(counts, session)
-    if int(usable.sum()) < MIN_TRIALS_FOR_BEHAVIOURAL_CORRELATION:
-        return None, excluded, usable
-    covariates = trial_amplitude_covariates(counts)
-    if covariates["status"] != "computed":
-        return None, excluded, usable
-    amplitude_full = np.asarray(covariates["leading_component_score_gain"], dtype=float)
-    arrays = {
-        "amplitude": amplitude_full[usable], "deviation": observables["state_deviation"],
-        "report_error": observables["report_error"], "spike_count": observables["spike_count"],
-        "trial_index": observables["trial_index"], "reaction_time": observables["reaction_time"],
-        "item_count": observables["item_count"],
-    }
-    return arrays, excluded, usable
 
 
 STAT_KEYS = (
@@ -374,22 +360,6 @@ def _content_fractional_rank_arm(session: dict) -> dict:
     return result
 
 
-def _pool_cell(rows: list[dict], tier: str, observable: str, estimator: str, stat: str) -> dict:
-    values = []
-    for r in rows:
-        arm = r["by_tier"].get(tier, {})
-        if arm.get("status") != "computed":
-            continue
-        obs_arm = arm[observable]
-        if estimator == "pooled":
-            entry = obs_arm["pooled"][stat]
-            if entry.get("status") == "computed":
-                values.append(entry["r"])
-        else:
-            v = obs_arm["within_load_trial_count_weighted"][stat]
-            if v is not None:
-                values.append(v)
-    return _pool_values(values)
 
 
 def _build_cell(subset_rows: list[dict], tier: str, group: str, gate_lookup: dict) -> dict:
@@ -1060,41 +1030,10 @@ def _corpus_deviation_magnitude_diagnostic(sessions: list[dict], corpus_block: d
     }
 
 
-def _load_panichello_for_counting_noise_census(root: Path) -> list[dict]:
-    directory = _panichello_directory(root)
-    if directory is None:
-        return []
-    out = []
-    for path in sorted(glob.glob(str(directory / "*.mat"))):
-        raw = loadmat(path, simplify_cells=True)
-        spikes = np.asarray(raw["spks"], dtype=float)
-        time_ms = np.asarray(raw["tc"], dtype=float).reshape(-1)
-        counts_all = _counts_from_spikes(spikes, time_ms)
-        out.append({"session": Path(path).stem, "activity_by_unit": counts_all.sum(axis=2)})
-    return out
 
 
-def _load_alm_for_counting_noise_census(root: Path) -> list[dict]:
-    directory = alm_data_directory(root)
-    out = []
-    if not directory.is_dir():
-        return out
-    for path in sorted(directory.glob("*.mat")):
-        raw = load_alm_raw_session(path, bin_ms=100.0, window_s=1.2, require_both_arms=False)
-        if raw is None:
-            continue
-        out.append({"session": path.stem, "activity_by_unit": raw["control_counts"].sum(axis=2)})
-    return out
 
 
-def _load_human_for_counting_noise_census(root: Path, dataset: str) -> list[dict]:
-    out = []
-    for entry in iter_all_corpora(root):
-        if entry["dataset"] != dataset or entry.get("structure") != "pooled":
-            continue
-        counts = delay_counts(entry["spike_lists"], entry["epoch_onsets"]["delay"], entry["epoch_windows"]["delay"])
-        out.append({"session": f"{entry['patient']}|{entry['session']}", "activity_by_unit": counts.sum(axis=2)})
-    return out
 
 
 def _human_seen_denominator(root: Path, dataset: str) -> int:

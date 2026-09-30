@@ -46,9 +46,9 @@ N_PERM_PAIRWISE = 10000
 BAND_QUANTILES = (0.25, 0.75)
 FDR_ALPHA = 0.05
 
-# The previous round's per-structure existence numbers, quoted verbatim so the
+# The earlier per-structure existence numbers, quoted verbatim so the
 # withdrawal states the former value and the correction together.
-PRIOR_ROUND_STRUCTURE_EXISTENCE = {
+PRIOR_STRUCTURE_EXISTENCE = {
     "dacc": {"prior_mean_diff": 0.055, "prior_p_value": 0.036},
     "hippocampus": {"prior_mean_diff": 0.036, "prior_p_value": 0.0036},
     "amygdala": {"prior_mean_diff": 0.034, "prior_p_value": 0.006, "prior_gap_label": "gap 2"},
@@ -178,7 +178,7 @@ def structure_effect_conditioned_on_nugget_share(sessions: list[dict]) -> dict:
     out = {"raw_structure_effect_on_d_perm": raw, "partial_correlation_residualized_on_nugget_share": partial,
            "matched_nugget_share_band": matched_band, "verdict": verdict}
     if verdict == "recording_quality_explains_the_pattern":
-        out["statement"] = ("Rounds 20 through 23, the previous round's per-structure existence, and the "
+        out["statement"] = ("The earlier per-structure existence estimates and the "
                              "pooled d_perm-vs-white-share confound check are one result: a recording-quality "
                              "map read as anatomy.")
     return out
@@ -280,7 +280,7 @@ def withdrawals(lag_artifact: dict) -> dict:
     mucs = lag_artifact["per_structure_delay"]["matched_unit_count_subsample"]
     by_structure = mucs.get("by_structure", {})
     out = {}
-    for structure, prior in PRIOR_ROUND_STRUCTURE_EXISTENCE.items():
+    for structure, prior in PRIOR_STRUCTURE_EXISTENCE.items():
         current = by_structure.get(structure, {})
         out[structure] = {
             "prior_value_from_the_previous_round": prior,
@@ -336,8 +336,8 @@ def anatomical_stratification_closure(primary: dict, withdrawal: dict) -> dict:
             f"{len(tested)} of {len(pairs)} anatomical structure pairs had enough shared patients "
             f"(>= {MIN_PATIENTS_PER_PAIR}) to test at all; {len(fdr_significant)} survived FDR correction. "
             "This is the within-patient region-pair gate this project's anatomical-stratification line "
-            "asked for across several prior rounds and had never actually run before this artifact. The "
-            "line is CLOSED by this result, not merely unmet: a later round should not re-open the "
+            "asked for and had never actually run before this artifact. The "
+            "line is CLOSED by this result, not merely unmet: a later analysis should not re-open the "
             "cross-structure separation question in this corpus without a materially different design "
             "(more patients with multi-structure coverage, or a different pairing) rather than a rerun of "
             "this same test."

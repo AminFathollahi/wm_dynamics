@@ -12,7 +12,7 @@ structure by design, or anatomy dropped at staging get an explicit
 ``anatomy_status`` and reason instead of rows.
 
 Output: results/anatomical_census.json, plus the structure x dataset roll-up
-rendered into DATASET_ANALYSIS_MATRIX.md by
+rendered into a markdown matrix by
 scripts/render_anatomical_census_matrix.py.
 """
 from __future__ import annotations
@@ -92,7 +92,7 @@ def _site(raw, structure, hemisphere, coords, modality, n_units, is_stim, source
 
 # --------------------------------------------------------------------------
 # NWB corpora: DANDI 000469 / 001187 / 000673 (pure microwire single-unit,
-# ``{structure}_{left|right}`` labels) and 000574 / Boran (mixed scalp EEG +
+# ``{structure}_{left|right}`` labels) and 000574 (mixed scalp EEG +
 # depth macro/micro electrodes, Brainnetome-hybrid labels).
 # --------------------------------------------------------------------------
 
@@ -359,8 +359,8 @@ def _census_coordinates_only(dataset_key: str, local_path: Path) -> dict:
             }
         reason = (
             "Per-patient MNI electrode CSVs (id,x,y,z,label) with NO anatomical "
-            "label -- label is a channel name (e.g. 'RPS4'), not a structure. This "
-            "project's standing rule for this situation is to record coordinates_only "
+            "label -- label is a channel name (e.g. 'RPS4'), not a structure. The "
+            "policy for this situation is to record coordinates_only "
             "and defer rather than hand-assign or run a nearest-neighbour atlas "
             "lookup; no atlas lookup has been run, so every site here is 'other' with "
             "its raw channel name preserved, not a structure guess."
@@ -385,7 +385,7 @@ def _census_coordinates_only(dataset_key: str, local_path: Path) -> dict:
             }
         reason = (
             "40 ECoG electrode MNI coordinates per subject (locs/*_electrodes.mat), "
-            "NO structure labels. This project's standing rule for this situation is "
+            "NO structure labels. The policy for this situation is "
             "to record coordinates_only and defer rather than hand-assign; no atlas "
             "lookup has been run."
         )
@@ -395,7 +395,7 @@ def _census_coordinates_only(dataset_key: str, local_path: Path) -> dict:
 
 
 def _census_panichello_monkey_cluster(local_path: Path) -> dict:
-    """Panichello_2024 has no per-channel area label in any staged .mat file
+    """The macaque spatial working-memory corpus has no per-channel area label in any staged .mat file
     (verified by direct inspection); the finest anatomy this deposit
     supports is a per-session monkey/area cluster inferred from session-date
     grouping, sourced from results/corpus_staging_audit.json's own
@@ -422,7 +422,7 @@ def _census_panichello_monkey_cluster(local_path: Path) -> dict:
             )]
         patients[date] = {"sessions": {date: {"recording_sites": sites, "source_file": str(fp)}}}
     reason = (
-        "No area/channel field exists in any staged Panichello_2024 .mat file (verified by direct "
+        "No area/channel field exists in any staged macaque spatial working-memory corpus .mat file (verified by direct "
         "inspection: only spike rasters, timing, and behaviour are present). The finest anatomy this "
         "deposit supports is a per-session monkey/area cluster inferred from session-date grouping "
         "(results/corpus_staging_audit.json's panichello_2024 evidence), not per-channel anatomy -- a "
@@ -464,8 +464,8 @@ def _census_not_staged_panichello(local_path: Path) -> dict:
             f"Staged extract ({n_sessions} session .mat files) carries only spike "
             "rasters ('spks'), timing ('tc'), and behaviour ('cueAng', 'cueAngIdx', "
             "'isCorr') -- verified by direct inspection, no area/channel field is "
-            "present in any staged file, although the source study (Panichello, "
-            "Jonikaitis, Oh, Zhu, Trepka & Moore 2023/2024, lateral prefrontal "
+            "present in any staged file, although the source study (doi "
+            "10.1038/s41586-024-08139-9, lateral prefrontal "
             "cortex, macaque) recorded from multiple sub-areas. ACQUISITION ITEM: "
             "recovering area identity requires re-downloading "
             "from the source Dryad release (doi 10.5061/dryad.kkwh70sct) or a "
@@ -545,7 +545,7 @@ def build_census(config: dict) -> dict:
                 "inagaki_alm5": (
                     "Mouse anterior lateral motor cortex (ALM), silicon-probe "
                     "recordings, by experimental design (Janelia ALM5 release; "
-                    "Inagaki lab perturbation/recovery studies). Single structure "
+                    "published mouse ALM perturbation/recovery studies). Single structure "
                     "is a recorded fact verified against the source documentation, "
                     "not an unverified exemption."
                 ),
@@ -561,8 +561,7 @@ def build_census(config: dict) -> dict:
                 ),
                 "pfc3": (
                     "Macaque prefrontal cortex, four monkeys (ADR, BEN, ELV, SCR), "
-                    "by experimental design (CRCNS pfc-3; Meyer, Qi, Stanford & "
-                    "Constantinidis 2011; Qi et al. 2011 -- data description PDF "
+                    "by experimental design (CRCNS pfc-3 -- data description PDF "
                     "verified directly). The source papers distinguish dorsal vs "
                     "ventral PFC per-neuron in SummaryDatabase.xlsx; that finer "
                     "split has not yet been parsed and is flagged for follow-up, "
@@ -577,7 +576,7 @@ def build_census(config: dict) -> dict:
                     "literal string 'unknown' for every channel in every staged "
                     "spikesorting NWB file (verified by direct inspection, "
                     "sub-Perle). config/datasets.json's construct describes "
-                    "macaque frontal cortex, but this project's standing rule "
+                    "macaque frontal cortex, but policy "
                     "requires verifying single-structure identity against the "
                     "dataset's own documentation, not assuming it -- no anatomical label "
                     "is present in the staged metadata to verify against, so no "
@@ -601,9 +600,8 @@ def build_census(config: dict) -> dict:
     return {
         "schema_version": SCHEMA_VERSION,
         "scope_note": (
-            "Covers all 16 datasets registered in config/datasets.json as of "
-            "2026-08-04 (widened from 13 -- see config/datasets.json "
-            "'registry_note' -- to add wolff_eeg_impulse, kai_miller_nback and "
+            "Covers all 16 datasets registered in config/datasets.json "
+            "(including wolff_eeg_impulse, kai_miller_nback and "
             "pfc3, all three required census subjects for this project's data "
             "inventory). No dataset is silently excluded; every one has an "
             "anatomy_status below, including the ones with zero recording sites."

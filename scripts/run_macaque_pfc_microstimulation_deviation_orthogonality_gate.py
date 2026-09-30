@@ -36,7 +36,7 @@ to reproduce, only that one shared upstream number.
 
 Run:
     OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 \
-    /home/amin/miniconda3/envs/wm_dynamics/bin/python \
+    python \
     scripts/run_macaque_pfc_microstimulation_deviation_orthogonality_gate.py
 """
 from __future__ import annotations
@@ -62,13 +62,13 @@ from provenance import _json_safe, git_commit  # noqa: E402
 from statistics import (  # noqa: E402
     minimum_detectable_paired_difference, partial_correlation_permutation_test, stable_seed,
 )
-from run_macaque_pfc_microstimulation_pipeline import BIN_S, DATA, crop_trial, load_macaque_pfc_microstimulation_session  # noqa: E402
-from run_rate_free_state_geometry_behavior_link import rate_free_state_deviation  # noqa: E402
-from run_watters_state_geometry import _pool_values  # noqa: E402
-from run_dissociation_cross_preparation_test import MIN_TRIALS_WITH_DEFINED_DIRECTION  # noqa: E402
-from run_count_subsampling_ladder import (  # noqa: E402
-    FAILING_REFERENCE_EFFECT_ABS, FAILING_REFERENCE_EFFECT_SOURCE,
-)
+from run_macaque_pfc_microstimulation_pipeline import DATA, load_macaque_pfc_microstimulation_session
+from spike_pipeline import crop_trial
+from spike_pipeline import BIN_S
+from stimulation_response_estimator import rate_free_state_deviation
+from state_persistence import _pool_values
+from statistics import MIN_TRIALS_WITH_DEFINED_DIRECTION
+from statistics import FAILING_REFERENCE_EFFECT_ABS, FAILING_REFERENCE_EFFECT_SOURCE
 
 RESULTS = ROOT / "results"
 OUTPUT_PATH = RESULTS / "macaque_pfc_microstimulation_deviation_orthogonality_gate.json"

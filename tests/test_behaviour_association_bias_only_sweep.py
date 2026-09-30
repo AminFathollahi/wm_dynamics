@@ -200,7 +200,7 @@ def test_zero_drop_accounting_present_and_reconciles_for_headline(artifact):
 
 
 def test_summary_branch_names_headline_verdict_explicitly(artifact):
-    """Coordinator-authorised amendment: headline_dissociation_still_holds (a bare boolean asserting a
+    """headline_dissociation_still_holds (a bare boolean asserting a
     conclusion) and the old headline_verdict_statement were replaced because the boolean asserted
     'still holds' beside a branch that explicitly declined to conclude that (inconclusive_below_
     detection_floor). The replacement fields must state the branch's own content and nothing beyond it,

@@ -208,7 +208,7 @@ class TestNormalizeRegionLabelPerCorpusConventions:
     """One real raw label per corpus, plus one unmappable
     string per convention asserted to reach "other" with the raw text
     retained by the caller (normalize_region_label itself only returns the
-    structure/hemisphere tuple; retention is the caller's job)."""
+    structure/hemisphere tuple; retention is the caller's responsibility)."""
 
     def test_boran_000574_hippocampus(self):
         assert normalize_region_label(

@@ -2,7 +2,7 @@
 """Content-as-phase test: does the delay-period phase angle in the leading
 2-D plane encode item identity?
 
-Gated on the 25D rotation-gate result (results/agent_report.md): a rotating
+Gated on the rotation-gate result: a rotating
 leading DMD mode is absent in the primary cell for six of seven cohorts, but
 the phase of the trajectory's own leading 2-D projection is well-defined
 regardless of whether the underlying DMD fit is complex -- dynamics.

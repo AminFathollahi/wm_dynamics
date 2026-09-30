@@ -31,6 +31,7 @@ import sys
 
 import numpy as np
 from numpy.typing import NDArray
+from scipy.stats import pointbiserialr
 
 _src_dir = os.path.dirname(__file__)
 if _src_dir not in sys.path:
@@ -39,6 +40,9 @@ if _src_dir not in sys.path:
 from observability import _leading_latent_projection  # noqa: E402
 from spike_pipeline import FrozenPSTHTransform  # noqa: E402
 from statistics import fdr_bh, paired_sign_flip_test, permutation_pvalue, spearman_permutation_test  # noqa: E402
+from statistics import minimum_detectable_paired_difference
+from spike_pipeline import DECIDING_WIDTH_BINS
+from stimulation_response_estimator import rate_free_state_deviation
 
 N_WINDOWS_DEFAULT = 4
 N_SPLITS_DEFAULT = 12
@@ -642,7 +646,7 @@ def slope_across_sessions_test(values: list[float], alternative: str = "two-side
     ``significant_negative``/``significant_positive`` are always derived
     from the TWO-SIDED test and the sign of the mean, regardless of which
     ``alternative`` was requested for the headline p-value: a branch
-    condition gated on "alternative == 'less'" is exactly the defect this
+    condition gated on "alternative == 'less'" is exactly the error this
     module's decision rules were found to carry (a significantly positive
     slope satisfied "not significantly negative" and fell into a branch
     meant for a flat one). Every branch built on these two fields is
@@ -789,7 +793,7 @@ def classify_lag_profile(
     signature); then whether existence clears a majority of lags with no
     significant slope either way (a flat, non-decaying, above-floor state);
     anything else is reported off the branch list rather than forced onto
-    the nearest one, per this module's standing rule on predeclared tests.
+    the nearest one.
     """
     adjacency_lag = width_bins
     contrast_a, rotation, n_lags_tested, n_lags_clearing, a_clears_any, a_clears_majority = \
@@ -1562,7 +1566,7 @@ def classify_lag_profile_segmented(
     branches as :func:`classify_lag_profile` plus the off-list bucket, now
     decided on the SEGMENTED slopes at a declared breakpoint rather than a
     single whole-range slope, and with a two-sided condition on every
-    branch per this module's standing rule that no branch may be defined by
+    branch, so that no branch is defined by
     the absence of one sign -- a significantly POSITIVE early or late
     segment slope routes to the off-list bucket with its number rather than
     being absorbed into a flat branch.
@@ -2139,3 +2143,306 @@ def permutation_null_validation(seed: int = 200) -> dict:
             "shortest-lag step -- this is a completed deliverable, not a failure, and the round stops here"
         ),
     }
+
+
+def _extract_persistence_level_factor_analysis(session_dict: dict | None) -> float | None:
+    if session_dict is None:
+        return None
+    pc = session_dict.get("persistence_contrast", {}).get("factor_analysis", {})
+    return pc.get("level") if pc.get("status") == "fitted" else None
+
+
+def _pool_rotation_statistic(session_records: list[dict]) -> dict:
+    """Pools a real per-session scalar via the project's paired sign-flip test and separately pools each
+    session's own rotation-null draws (mean across sessions per draw index, the same construction
+    _pool_adjacency in run_deviation_serial_dependence_and_temporal_locus.py already uses), then reports a
+    two-sided empirical p-value of the real pooled mean against that pooled null distribution."""
+    observed = [r["observed"] for r in session_records if r.get("observed") is not None]
+    real_pooled = slope_across_sessions_test(observed, alternative="two-sided") if observed else {"status": "not_computed"}
+    mdd = minimum_detectable_paired_difference(observed) if len(observed) >= 2 else {"status": "not_computable", "n": len(observed)}
+    out = {
+        "n_sessions": len(observed), "real_pooled": real_pooled,
+        "minimum_detectable_difference_80pct_power": mdd,
+        "pooled_null_mean": None, "pooled_null_sd": None, "two_sided_empirical_p_value": None,
+        "significant": False, "below_null": None,
+    }
+    draws_list = [np.asarray(r["null_draws"], dtype=float) for r in session_records if r.get("null_draws") is not None]
+    if not draws_list or real_pooled.get("status") != "tested":
+        return out
+    pooled_null = np.nanmean(np.stack(draws_list), axis=0)
+    finite_null = pooled_null[np.isfinite(pooled_null)]
+    if finite_null.size < 10:
+        return out
+    null_center = float(np.mean(finite_null))
+    real_mean = real_pooled["mean_value"]
+    p = float(permutation_pvalue(np.abs(finite_null - null_center) >= abs(real_mean - null_center)))
+    out.update({
+        "pooled_null_mean": null_center, "pooled_null_sd": float(np.std(finite_null)),
+        "two_sided_empirical_p_value": p, "significant": bool(p <= 0.05), "below_null": bool(real_mean < null_center),
+    })
+    return out
+
+
+def _pool_correlations(per_session: list[dict], key: str) -> dict:
+    values = [s[key]["r"] for s in per_session if s[key].get("status") == "computed"]
+    return slope_across_sessions_test(values, alternative="two-sided") if values else {"status": "not_computed"}
+
+
+def _pool_group(per_session: dict, sessions: list[str], arm: str, field: str) -> dict:
+    records = []
+    for s in sessions:
+        cell = per_session.get(s, {})
+        arm_cell = cell.get("by_arm", {}).get(arm, {}) if cell.get("status") == "computed" else {}
+        target = arm_cell.get(field)
+        if target is None or target.get("draws") is None:
+            continue
+        records.append({"observed": target["observed_abs_cosine"], "null_draws": target["draws"]})
+    pooled = _pool_rotation_statistic(records)
+    return {"n_sessions_pooled": len(records), **pooled}
+
+
+def _pool(sessions: list[dict], key: str) -> dict:
+    values = [s["analysis"][key]["r"] for s in sessions if s["analysis"][key].get("status") == "computed"]
+    return slope_across_sessions_test(values, alternative="two-sided") if values else {"status": "not_computed"}
+
+
+MIN_PATIENTS_FOR_TEST = 5
+
+
+def _patient_clustered_test(per_patient_values: dict[str, float]) -> dict:
+    """The shared 'per-patient effect, sign-flip test across patients, with the bootstrap interval'
+    primitive the existence test, the behaviour-link test and the trial-wise regime of the
+    cross-tier-transfer test all use, built once here."""
+    values = [v for v in per_patient_values.values() if np.isfinite(v)]
+    if len(values) < MIN_PATIENTS_FOR_TEST:
+        return {"status": "underpowered_by_construction", "n_patients": len(values)}
+    result = slope_across_sessions_test(values, alternative="two-sided")
+    if result.get("status") != "tested":
+        return {"status": "underpowered_by_construction", "n_patients": len(values)}
+    mdd = minimum_detectable_paired_difference(values)
+    return {
+        "status": "tested", "n_patients": len(values), "mean_value": result["mean_value"],
+        "p_value": result["two_sided_p_value"], "ci_lower": result["ci_lower"], "ci_upper": result["ci_upper"],
+        "significant": result["significant"], "mdd": mdd.get("mdd") if mdd.get("status") == "computed" else None,
+    }
+
+
+def existence_tier(sessions: list[dict], reference_effect: float | None) -> dict:
+    """sessions: list of {patient, session_effect (signed observed-null variance), gate p_value, ...}."""
+    per_patient: dict[str, list[float]] = {}
+    for s in sessions:
+        if s["gate"].get("status") != "computed":
+            continue
+        per_patient.setdefault(s["patient"], []).append(s["gate"]["signed_effect"])
+    per_patient_mean = {p: float(np.mean(v)) for p, v in per_patient.items()}
+    pooled = _patient_clustered_test(per_patient_mean)
+
+    n_sessions_computed = sum(1 for s in sessions if s["gate"].get("status") == "computed")
+    n_sessions_refused = len(sessions) - n_sessions_computed
+    all_values = np.concatenate([s["deviation"][np.isfinite(s["deviation"])] for s in sessions
+                                  if s["gate"].get("status") == "computed"]) if n_sessions_computed else np.array([])
+
+    if pooled["status"] == "underpowered_by_construction":
+        branch = "underpowered_to_ask_at_this_tier"
+    elif pooled["significant"]:
+        branch = "component_is_present_at_this_recording_tier"
+    elif reference_effect is not None and pooled["mdd"] is not None and pooled["mdd"] < reference_effect:
+        branch = "component_is_not_distinguishable_from_a_magnitude_matched_rotation_null"
+    else:
+        branch = "underpowered_to_ask_at_this_tier"
+
+    return {
+        "branch": branch, "pooled_patient_test": pooled, "reference_effect_used": reference_effect,
+        "n_sessions_computed": n_sessions_computed, "n_sessions_refused": n_sessions_refused,
+        "n_patients_contributing": len(per_patient_mean),
+        "per_patient_effect": per_patient_mean,
+        "median_per_trial_value": float(np.median(all_values)) if all_values.size else None,
+        "iqr_per_trial_value": ([float(np.percentile(all_values, 25)), float(np.percentile(all_values, 75))]
+                                 if all_values.size else None),
+        "n_trials_pooled": int(all_values.size),
+    }
+
+
+def trial_amplitude_covariates(counts_all: np.ndarray) -> dict:
+    """The three per-trial covariates :func:`cheap_first_look` correlates
+    against trial outcome, computed once so a caller needing the raw
+    per-trial arrays (rather than only their correlation with outcome) does
+    not re-derive them: (a) the per-trial leading-component score of the
+    centred trial x window matrix -- the per-trial gain a rank-1
+    decomposition assigns, via rank1_gain_and_residual exactly as this
+    project's rank-1 gain audit does -- (b) total per-trial spike count in
+    the delay epoch, and (c) trial index within the session. Fit in-sample
+    on the same trials, the same convention macaque_specific_fields uses in
+    scripts/run_state_latent_identity.py."""
+    if counts_all.shape[0] < 16:
+        return {"status": "not_computable", "reason": "fewer than 16 trials"}
+    transform = FrozenPSTHTransform().fit(counts_all)
+    z = transform.transform(counts_all)
+    latent = _leading_latent_projection(z, z)
+    window_means = _window_means_at_width(latent, DECIDING_WIDTH_BINS)
+    if window_means is None or window_means.shape[1] < 2:
+        return {"status": "not_computable", "reason": "fewer than 2 windows at the deciding width"}
+    gain, _h_profile, _residual = rank1_gain_and_residual(window_means)
+    total_spike_count = counts_all.sum(axis=(1, 2))
+    trial_index = np.arange(counts_all.shape[0], dtype=float)
+    return {
+        "status": "computed", "leading_component_score_gain": gain,
+        "total_spike_count": total_spike_count, "trial_index": trial_index,
+    }
+
+
+def cheap_first_look(counts_all: np.ndarray, is_corr: np.ndarray) -> dict:
+    """The cheap first look this project's gain-correlates field should have
+    contained: point-biserial correlation between trial outcome and each of
+    :func:`trial_amplitude_covariates`'s three per-trial covariates.
+    Answers a different question from the matched d_perm contrast: whether
+    the trial's overall amplitude or coherence predicts the outcome, as
+    opposed to whether the cross-unit state's persistence across time does
+    -- report both, one is not a substitute for the other."""
+    covariates = trial_amplitude_covariates(counts_all)
+    if covariates["status"] != "computed":
+        return covariates
+    is_corr_float = is_corr.astype(float)
+
+    def _pointbiserial(x: np.ndarray) -> dict:
+        if np.std(x) == 0.0 or np.std(is_corr_float) == 0.0:
+            return {"status": "not_computable", "reason": "zero variance in outcome or covariate"}
+        result = pointbiserialr(is_corr_float, x)
+        return {"status": "computed", "r": float(result.statistic), "p_value": float(result.pvalue)}
+
+    return {
+        "status": "computed",
+        "leading_component_score_gain": _pointbiserial(covariates["leading_component_score_gain"]),
+        "total_spike_count": _pointbiserial(covariates["total_spike_count"]),
+        "trial_index": _pointbiserial(covariates["trial_index"]),
+    }
+
+
+PRIMARY_HISTORY_LAG = 1
+
+
+def history_labels(labels_all: np.ndarray, lag: int) -> tuple[np.ndarray, np.ndarray]:
+    """Relabel every trial by the item presented ``lag`` trials earlier in
+    the session's recorded order, returning (labels, defined_mask).
+
+    Trial i takes ``labels_all[i - lag]``. The predecessor is the trial that
+    physically preceded it, whether the animal got that trial right or wrong,
+    so this must be applied to the session's FULL trial sequence and any
+    correct-trial restriction applied afterwards -- restricting first and
+    shifting second would silently label each trial with the previous
+    CORRECT trial's item, skipping over the errors in between, which is a
+    different quantity.
+
+    The first ``lag`` trials of a session have no predecessor inside the
+    session and are excluded by the returned mask; sessions are separate
+    recording days and no trial pair may straddle two of them. The masked-out
+    positions are filled with the first label purely to keep the array
+    dtype-clean and are never read.
+    """
+    labels_all = np.asarray(labels_all)
+    n = len(labels_all)
+    if lag < 1:
+        raise ValueError(f"history lag must be at least 1 trial, got {lag}")
+    shifted = np.empty(n, dtype=labels_all.dtype)
+    shifted[lag:] = labels_all[: n - lag]
+    shifted[:lag] = labels_all[0] if n else 0
+    return shifted, np.arange(n) >= lag
+
+
+def _behaviour_session_arrays(session: dict) -> dict | None:
+    """The rate-free deviation observable, the leading latent's per-trial
+    amplitude, and the two covariates both are gated against, for one
+    session. Trials with no defined state direction (zero total activity)
+    are dropped from every series together so all of them stay aligned."""
+    counts = session["counts"]
+    if counts.shape[0] < 16:
+        return None
+    activity_by_unit = counts.sum(axis=2)
+    deviation = rate_free_state_deviation(activity_by_unit)
+    covariates = trial_amplitude_covariates(counts)
+    if covariates["status"] != "computed":
+        return None
+    finite = np.isfinite(deviation)
+    if finite.sum() < 16:
+        return None
+    # The previous trial's cue angle enters as its sine and cosine so that a circular quantity is
+    # controlled for without imposing an arbitrary cut point on the circle. It is shifted on the
+    # session's full trial sequence first and masked second, for the reason history_labels documents.
+    previous_angle, has_predecessor = history_labels(session["cue_ang"], PRIMARY_HISTORY_LAG)
+    return {
+        "is_corr": session["is_corr"][finite].astype(float),
+        "deviation": deviation[finite],
+        "amplitude": np.asarray(covariates["leading_component_score_gain"])[finite],
+        "spike_count": activity_by_unit.sum(axis=1)[finite],
+        "trial_index": np.arange(counts.shape[0], dtype=float)[finite],
+        "previous_item_sin": np.sin(previous_angle)[finite],
+        "previous_item_cos": np.cos(previous_angle)[finite],
+        "has_predecessor": has_predecessor[finite],
+        "n_trials_total": int(counts.shape[0]),
+        "n_trials_with_defined_direction": int(finite.sum()),
+    }
+
+
+LAG_BIN_MS = 100.0
+
+
+LAG_NULL_SPLITS_PER_REPLICATE = 6
+
+
+LAG_N_NULL_REPLICATES = 20
+
+
+LAG_N_SPLITS = 12
+
+
+def _lag_run_row(counts: np.ndarray, width_bins: int, seed: int,
+                  n_splits: int = LAG_N_SPLITS, n_null_replicates: int = LAG_N_NULL_REPLICATES) -> dict:
+    """A session/width row at fixed window width, both nulls -- never a
+    silent omission: a session that cannot support this width gets a status,
+    not a missing row. ``width_exceeds_epoch`` is the fixed-width analogue
+    of the window-count profile's bins-per-window floor -- the shortest
+    reachable lag is the width itself, so at least 2 * width bins are
+    required for even one lag to exist."""
+    n_trials, n_units, n_bins = counts.shape
+    base = {"n_trials": int(n_trials), "n_units": int(n_units), "n_bins": int(n_bins), "width_bins": int(width_bins)}
+    if n_trials < 8:
+        return {**base, "profile": {"status": "fewer_than_eight_trials"}, "null_poisson": None, "null_permutation": None}
+    if n_bins < 2 * width_bins:
+        return {**base, "profile": {"status": "width_exceeds_epoch"}, "null_poisson": None, "null_permutation": None}
+    profile = r_lag_profile(counts, width_bins, n_splits=n_splits, rng=np.random.default_rng(seed))
+    if profile["status"] != "fitted":
+        return {**base, "profile": profile, "null_poisson": None, "null_permutation": None}
+    null_poisson = poisson_null_r_lag_profile(
+        counts, width_bins, n_replicates=n_null_replicates, n_splits_per_replicate=LAG_NULL_SPLITS_PER_REPLICATE,
+        rng=np.random.default_rng(seed + 1))
+    null_permutation = per_unit_permutation_null_r_lag_profile(
+        counts, width_bins, n_replicates=n_null_replicates, n_splits_per_replicate=LAG_NULL_SPLITS_PER_REPLICATE,
+        rng=np.random.default_rng(seed + 2))
+    return {**base, "profile": profile, "null_poisson": null_poisson, "null_permutation": null_permutation}
+
+
+def _pool_values(values: list[float]) -> dict:
+    if len(values) < 2:
+        return {"status": "not_computable", "n_sessions": len(values)}
+    pooled = slope_across_sessions_test(values, alternative="two-sided")
+    pooled["minimum_detectable_paired_difference_at_80pct_power"] = minimum_detectable_paired_difference(values)
+    pooled["median_value"] = float(np.median(values))
+    return pooled
+
+
+def _pool_cell(rows: list[dict], tier: str, observable: str, estimator: str, stat: str) -> dict:
+    values = []
+    for r in rows:
+        arm = r["by_tier"].get(tier, {})
+        if arm.get("status") != "computed":
+            continue
+        obs_arm = arm[observable]
+        if estimator == "pooled":
+            entry = obs_arm["pooled"][stat]
+            if entry.get("status") == "computed":
+                values.append(entry["r"])
+        else:
+            v = obs_arm["within_load_trial_count_weighted"][stat]
+            if v is not None:
+                values.append(v)
+    return _pool_values(values)

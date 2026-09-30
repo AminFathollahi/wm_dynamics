@@ -43,7 +43,7 @@ any tier-three number exists; a sample larger than this pass's budget cap is rep
 a human budget decision rather than silently truncated.
 
 Run:
-    /home/amin/miniconda3/envs/wm_dynamics/bin/python \
+    python \
         scripts/run_state_space_estimation_robustness.py \
         [--phase all|human|microstim] [--candidates ...] [--sessions-limit N] \
         [--n-perm-ctg N] [--n-perm-restatement N] [--run-rung-three]
@@ -79,18 +79,16 @@ from statistics import (  # noqa: E402
     minimum_detectable_paired_difference, permutation_pvalue, stable_seed,
 )
 from provenance import canonical_json, git_commit  # noqa: E402
-from run_state_space_dimensionality_sweep import (  # noqa: E402
-    CAUSAL_MICROSTIM_BIN_S, CAUSAL_MICROSTIM_GRAMIAN_HORIZON, CTG_N_SPLITS, CTG_STEP,
-    DELIVERED_RANK, HUMAN_BIN_MS,
-    claim_memorandum_subspace, claim_occupied_manifold,
-    cross_validated_predictable_fraction, in_sample_linear_fraction,
-    leave_one_out_cosine_deviation, component_direction,
-    load_causal_microstim_dynamics_inputs, load_human_session_arrays,
-    restatement_reduction_synthetic_check,
-)
-from run_state_space_estimation_admissibility import CANDIDATES, _flatten  # noqa: E402
-from run_latent_model_comparison import anscombe_counts, counts_to_spiketrains  # noqa: E402
+from info_decoding import DELIVERED_RANK, HUMAN_BIN_MS, claim_memorandum_subspace, claim_occupied_manifold, cross_validated_predictable_fraction, in_sample_linear_fraction, leave_one_out_cosine_deviation, component_direction, load_causal_microstim_dynamics_inputs, restatement_reduction_synthetic_check
+from corpus_sessions import load_human_session_arrays
+from info_decoding import CAUSAL_MICROSTIM_GRAMIAN_HORIZON, CTG_N_SPLITS, CTG_STEP
+from spike_pipeline import BIN_S as CAUSAL_MICROSTIM_BIN_S
+from run_state_space_estimation_admissibility import CANDIDATES
+from info_decoding import _flatten
+from info_decoding import anscombe_counts, counts_to_spiketrains
 from run_macaque_pfc_microstimulation_pipeline import SESSIONS as CAUSAL_MICROSTIM_SESSIONS  # noqa: E402
+from info_decoding import MAJORITY_SIGNIFICANCE_THRESHOLD, MICROSTIM_CANDIDATES, OPERATING_RANK, STATUS_VOCABULARY, class_mean_coordinates, decide_claim_standing, interval_agreement  # noqa: E402
+from info_decoding import restated_claim_cell  # noqa: E402
 
 RESULTS = ROOT / "results"
 OUTPUT_PATH = RESULTS / "state_space_estimation_robustness.json"
@@ -101,13 +99,11 @@ RUNG_THREE_CACHE_DIR = CHECKPOINT_DIR / "rung_three_latents"
 # Operating point of every reduced candidate. The rank dimension of the question was settled by
 # the dimensionality sweep; this leg holds rank at the project's delivered convention so the only
 # thing varying across cells is the estimation choice itself.
-OPERATING_RANK = DELIVERED_RANK
 
 CTG_N_PERM_DEFAULT = 100
 RESTATEMENT_N_PERM_DEFAULT = 100
 SUBSPACE_COMPANION_N_PERM = 50
 
-MAJORITY_SIGNIFICANCE_THRESHOLD = 0.5
 
 RUNG_THREE_Z_FACTOR = 2.8016015201700604  # z(0.975) + z(0.8), the project's MDD convention
 # Resource guard expressed in sessions, not a rationing cap: at the measured per-fit median below,
@@ -125,42 +121,10 @@ LINEAR_KINDS = {"native_full_rank", "principal_components", "factor_analysis",
 NO_TIME_AXIS_CANDIDATES = {"trial_level_variational_autoencoder"}
 NONLINEAR_EMBEDDINGS = {"temporal_diffusion_embedding", "time_contrastive_embedding"}
 
-STATUS_VOCABULARY = {
-    "settled_robust": "verdict agreed across every admissible estimator run; the claim stands "
-                      "robust to the estimation choice, with the range of effect sizes stated",
-    "escalated": "verdict disagreed across estimators and the claim completed its escalation run "
-                 "under the pre-declared session budget",
-    "requires_refit_budget_decision": "verdict disagreed and the sizing rule's required sample "
-                                      "exceeds this pass's session budget cap; a human decides "
-                                      "whether to raise the cap and spend it",
-    "pending_cached_fit_reuse": "waiting on a cached fit covering the needed split (none existed "
-                                "on this leg: admissibility caches hold scores, not latents)",
-    "inconclusive_below_detection_floor": "an escalation sample whose minimum detectable "
-                                          "difference exceeds the effect it audits; both numbers "
-                                          "reported, never read as agreement or disagreement",
-    "escalation_attempt_failed_resource_limit": "the escalation run was triggered and started but "
-                                                "its fits did not complete on this machine; "
-                                                "recorded as a resource limit, never as a "
-                                                "statement about the sessions",
-    "escalation_undefined_for_claim_quantity": "the claim's quantity has no definition under the "
-                                               "tier-three estimator's representation, for every "
-                                               "session; no sample size is computed and no budget "
-                                               "cap, however large, would make this claim's "
-                                               "escalation computable",
-    "escalation_exceeds_available_sessions": "the sizing rule's required sample size is within "
-                                             "this pass's session budget cap but exceeds the "
-                                             "number of sessions in the corpus that have a "
-                                             "computable native reference cell to draw from; no "
-                                             "larger sample without replacement is possible, so "
-                                             "raising the cap further would not help",
-}
 
 HUMAN_CANDIDATES = ("native_full_rank", "principal_components", "factor_analysis",
                     "gaussian_process_factor_analysis", "trial_level_variational_autoencoder",
                     "temporal_diffusion_embedding", "time_contrastive_embedding")
-MICROSTIM_CANDIDATES = ("native_full_rank", "principal_components", "factor_analysis",
-                        "gaussian_process_factor_analysis", "temporal_diffusion_embedding",
-                        "time_contrastive_embedding")
 
 
 # ── Guards ────────────────────────────────────────────────────────────────────────
@@ -244,66 +208,8 @@ def ctg_content_permutation_null_on_latents(latent: np.ndarray, labels: np.ndarr
             "n_perm": int(n_perm), "n_trials": int(n_trials)}
 
 
-def class_mean_coordinates(latent_trial: np.ndarray, labels: np.ndarray) -> np.ndarray | None:
-    """Orthonormal basis of the centred between-class mean structure inside any representation's
-    coordinate space -- the coding-subspace structure expressed as regression coordinates rather
-    than an ambient-angle projector, so one definition serves a linear projection and a nonlinear
-    embedding alike."""
-    classes = np.unique(labels)
-    if len(classes) < 2:
-        return None
-    means = np.stack([latent_trial[labels == c].mean(axis=0) for c in classes])
-    means_c = means - means.mean(axis=0)
-    _, s, vt = np.linalg.svd(means_c, full_matrices=False)
-    rank = int(np.sum(s > 1e-10))
-    if rank < 1:
-        return None
-    return vt[:rank].T
 
 
-def restated_claim_cell(y: np.ndarray, coords: np.ndarray | None, labels: np.ndarray,
-                        latent_trial: np.ndarray, null_kind: str,
-                        rng: np.random.Generator, n_perm: int) -> dict:
-    """Estimator-invariant restatement cell for one linear-geometry claim: the cross-validated
-    predictable fraction of the deviation component's variance from ``latent_trial @ coords``.
-
-    ``null_kind='label_permutation'`` mirrors the coding-subspace claim's delivered null: the
-    class-mean coordinate structure is rebuilt under permuted item labels while the deviation
-    target stays fixed. ``null_kind='y_shuffle'`` mirrors the occupied-manifold claim's
-    random-direction baseline: the trial-to-state correspondence is broken while the
-    representation stays fixed."""
-    if coords is None or coords.shape[1] < 1:
-        return {"status": "not_computable", "reason": "no usable coordinate structure"}
-    base_z = latent_trial @ coords
-    observed = cross_validated_predictable_fraction(y, base_z, rng=rng)
-    if observed.get("status") != "computed":
-        return {"status": observed.get("status", "not_computable"),
-                "reason": observed.get("reason")}
-    null_vals = []
-    for _ in range(n_perm):
-        if null_kind == "label_permutation":
-            null_coords = class_mean_coordinates(latent_trial, rng.permutation(labels))
-            if null_coords is None:
-                continue
-            null_z, null_y = latent_trial @ null_coords, y
-        elif null_kind == "y_shuffle":
-            null_z, null_y = base_z, rng.permutation(y)
-        else:
-            raise ValueError(f"unknown null_kind {null_kind!r}")
-        entry = cross_validated_predictable_fraction(null_y, null_z, rng=rng)
-        if entry.get("status") == "computed":
-            null_vals.append(entry["predictable_fraction"])
-    if not null_vals:
-        return {"status": "not_computable", "reason": "empty null"}
-    frac = observed["predictable_fraction"]
-    null_mean = float(np.mean(null_vals))
-    return {"status": "computed", "predictable_fraction": frac, "null_mean": null_mean,
-            "effect_size": float(frac - null_mean),
-            "p_value": permutation_pvalue(np.asarray(null_vals) >= frac),
-            "null_kind": null_kind, "n_null": len(null_vals),
-            "null_values": [float(v) for v in null_vals],  # raw draws, for cross-level pooling only
-            "n_dims": int(coords.shape[1]), "n_trials": int(len(y)),
-            "in_sample_linear_beside": in_sample_linear_fraction(y, base_z)}
 
 
 def subspace_angle_companion(X: np.ndarray, y_deviation: np.ndarray, w: np.ndarray,
@@ -616,9 +522,8 @@ def claim_control_model_delivered(fit: dict, cond_info: dict, rng: np.random.Gen
     """The delivered control-model scoring (controllability, stimulation-input alignment excess
     over random directions, energy-accuracy trade-off), imported unchanged from the sweep module
     and handed the audited estimator's operator and input-direction images."""
-    from run_state_space_dimensionality_sweep import (
-        CAUSAL_MICROSTIM_ENERGY_ACCURACY_Q, CAUSAL_MICROSTIM_GRAMIAN_HORIZON, claim_control_model,
-    )
+    from info_decoding import claim_control_model
+    from info_decoding import CAUSAL_MICROSTIM_ENERGY_ACCURACY_Q, CAUSAL_MICROSTIM_GRAMIAN_HORIZON
     return claim_control_model(fit, cond_info, rng)
 
 
@@ -745,7 +650,7 @@ def control_cell_verdict_key(aggregate: dict) -> str:
 
 
 def _pre_repair_effect_cell_verdict_key_for_audit_only(aggregate: dict) -> str:
-    """Reproduces the verdict key this leg computed before the sign-of-an-unresolved-mean defect
+    """Reproduces the verdict key this leg computed before the sign-of-an-unresolved-mean error
     was repaired -- an unconditional sign suffix on every ``no_majority_effect`` cell. Used only to
     build the before/after audit trail recorded in the artifact; the live decision path never calls
     this function."""
@@ -780,7 +685,7 @@ def verdict_key_repair_audit(cell_key: str, estimator_cells: dict[str, dict],
     if cell_key == "fitted_dynamics":
         return {"applicable": False,
                 "reason": "the dynamics cell's key is a classification vote, not a sign split; "
-                          "the defect this audit tracks never touched it"}
+                          "the error this audit tracks never touched it"}
     pre_fn = (_pre_repair_control_cell_verdict_key_for_audit_only if cell_key == "control_model"
               else _pre_repair_effect_cell_verdict_key_for_audit_only)
     pre_keys = {name: pre_fn(agg) for name, agg in estimator_cells.items()}
@@ -793,25 +698,6 @@ def verdict_key_repair_audit(cell_key: str, estimator_cells: dict[str, dict],
             "branch_changed_by_repair": pre_decision["branch"] != repaired_branch}
 
 
-def decide_claim_standing(verdict_keys: dict[str, str]) -> dict:
-    """Pre-declared escalation trigger: a claim whose verdict is stable across every admissible
-    estimator is settled and is not escalated; a claim whose verdict differs between estimators
-    escalates, that claim alone. Every disagreement names the estimators on each side, and each
-    estimator cell carries its own effect size beside its verdict."""
-    computable = {name: key for name, key in verdict_keys.items()
-                  if key not in (None, "not_applicable", "not_computable")}
-    if not computable:
-        return {"branch": "no_computable_estimator_cells", "unique_verdict_keys": [],
-                "estimators_by_side": {}}
-    unique = sorted(set(computable.values()))
-    if len(unique) == 1:
-        return {"branch": "verdict_confirmed_across_estimators",
-                "unique_verdict_keys": unique, "estimators_by_side": {}}
-    sides: dict[str, list[str]] = {}
-    for name, key in sorted(computable.items()):
-        sides.setdefault(key, []).append(name)
-    return {"branch": "estimation_dependent_rung_three_escalation",
-            "unique_verdict_keys": unique, "estimators_by_side": sides}
 
 
 def rung_three_sample_size(sd: float, effect: float) -> dict:
@@ -929,36 +815,8 @@ def aggregate_claim(records: list[dict], cell_key: str, candidate: str = "") -> 
     return agg, effect_cell_verdict_key(agg)
 
 
-def _interval_sign(interval: list[float]) -> str:
-    lo, hi = interval
-    if lo > 0.0:
-        return "positive"
-    if hi < 0.0:
-        return "negative"
-    return "spans_zero"
 
 
-def interval_agreement(estimators: dict[str, dict]) -> dict:
-    """Cross-estimator agreement read off each estimator's own pooled-effect session-cluster
-    interval, never off its verdict key: whether every computed interval shares a sign, and the
-    pairwise overlap between every pair of estimator intervals."""
-    intervals = {
-        name: agg["pooled_effect_session_cluster_interval_95pct"]["interval_95pct"]
-        for name, agg in estimators.items()
-        if agg.get("pooled_effect_session_cluster_interval_95pct", {}).get("status") == "computed"
-    }
-    if len(intervals) < 2:
-        return {"status": "not_computable", "n_estimators_with_interval": len(intervals)}
-    signs = {name: _interval_sign(iv) for name, iv in intervals.items()}
-    all_share_a_sign = len(set(signs.values())) == 1 and next(iter(signs.values())) != "spans_zero"
-    names = sorted(intervals)
-    pairwise_overlap = {}
-    for i in range(len(names)):
-        for j in range(i + 1, len(names)):
-            a, b = intervals[names[i]], intervals[names[j]]
-            pairwise_overlap[f"{names[i]}__{names[j]}"] = bool(max(a[0], b[0]) <= min(a[1], b[1]))
-    return {"status": "computed", "n_estimators_with_interval": len(intervals), "signs": signs,
-            "all_intervals_share_a_sign": all_share_a_sign, "pairwise_interval_overlap": pairwise_overlap}
 
 
 def build_claim_block(records_by_candidate: dict[str, list[dict]], cell_key: str,
@@ -1392,7 +1250,7 @@ def main() -> None:
                                             "representations, so no latent-level reuse is "
                                             "possible at these tiers; nothing was refit "
                                             "unnecessarily because nothing could be reused"),
-                "temporal_diffusion_embedding_cost": ("an earlier round carried an estimate near "
+                "temporal_diffusion_embedding_cost": ("an earlier version carried an estimate near "
                                                       "94 percent of a 57-minute-per-session fit "
                                                       "for this candidate; the measured median "
                                                       "across the seven-corporum admissibility "

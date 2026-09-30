@@ -9,6 +9,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 import run_within_trial_time_component_identity as analysis  # noqa: E402
 import run_rank_free_component_identity as rank_free  # noqa: E402
+from info_decoding import MIN_INDEPENDENT_UNITS
 
 
 def _planted_time_counts(rng, n_trials=30, n_units=10, n_bins=8, effect=3.0, base_rate=3.0):
@@ -87,7 +88,7 @@ def test_null_is_calibrated_on_time_independent_synthetic_activity():
 
 
 def test_pool_requires_the_same_independent_unit_floor_as_the_delivered_run():
-    assert analysis.MIN_INDEPENDENT_UNITS == rank_free.MIN_INDEPENDENT_UNITS
+    assert analysis.MIN_INDEPENDENT_UNITS == MIN_INDEPENDENT_UNITS
 
     def record(session, unit, status="not_computable"):
         return {"session": session, "independent_unit": unit, "status": status}

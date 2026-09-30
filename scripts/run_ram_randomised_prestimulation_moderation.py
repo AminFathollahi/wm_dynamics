@@ -82,7 +82,7 @@ asserted at the session, subject and word level.
 
 Run:
     OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 \\
-    /home/amin/miniconda3/envs/wm_dynamics/bin/python \\
+    python \\
     scripts/run_ram_randomised_prestimulation_moderation.py
 """
 from __future__ import annotations
@@ -116,7 +116,8 @@ from statistics import (  # noqa: E402
     bootstrap_ci, linear_mixed_effects_test, minimum_detectable_paired_difference,
     partial_correlation_permutation_test, permutation_pvalue, stable_seed,
 )
-from run_ram_openloop_pipeline import DATA, build_session_features  # noqa: E402
+from run_ram_openloop_pipeline import build_session_features
+from corpus_sessions import DATA
 
 RESULTS = ROOT / "results"
 OUTPUT_PATH = RESULTS / "randomised_prestimulation_moderation_open_loop.json"

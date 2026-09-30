@@ -17,10 +17,8 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from run_cross_window_code_generalisation import (  # noqa: E402
-    cross_window_ctg, cross_window_ctg_multiclass, quadrant_stats, subject_cluster_bootstrap,
-    subject_cluster_bootstrap_paired, cell_status, MIN_DIAG_AUC,
-)
+from run_cross_window_code_generalisation import cross_window_ctg, cross_window_ctg_multiclass, quadrant_stats, subject_cluster_bootstrap, MIN_DIAG_AUC
+from statistics import subject_cluster_bootstrap_paired, cell_status
 from statistics import fdr_bh  # noqa: E402
 
 RESULTS = Path(__file__).resolve().parents[1] / "results" / "cross_window_code_generalisation.json"

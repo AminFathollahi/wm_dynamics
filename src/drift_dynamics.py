@@ -750,7 +750,7 @@ def fit_ou_moments(
     Lag zero is excluded from the exponential fit so white observation noise
     is not mistaken for diffusion.  The variance-function estimate is fit
     independently and reported in diagnostics; non-overlapping confidence
-    intervals are left for the caller's crack register.
+    intervals are left for the caller to report.
     """
     y = np.asarray(residuals, dtype=float)
     if y.ndim != 2:

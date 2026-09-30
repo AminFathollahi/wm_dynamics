@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Wolff et al. 2017 (Nature Neuroscience) human EEG impulse-perturbation dataset —
+"""Human scalp-EEG impulse-perturbation dataset —
 a direct test of activity-silent versus persistently-active working memory.
 
 Cross-temporal generalization above chance throughout a delay period rules out
 fully silent storage, but cannot distinguish a weakly-persistent code from a
-genuinely silent, dynamically-read-out one. Wolff et al.'s impulse paradigm
+genuinely silent, dynamically-read-out one. The impulse paradigm used here
 provides a more direct test: a task-irrelevant visual perturbation is
 introduced during the retention delay, and the memorandum's decodability from
 the perturbation-evoked response (post-perturbation) is compared against its
@@ -60,7 +60,6 @@ from geometry import time_resolved_content_decoding
 from statistics import stable_seed, stouffer_combine, paired_sign_flip_test
 from io_utils import locked_json_update
 
-DATA_DIR = dataset_path("wolff_eeg_impulse")
 RESULTS = ROOT / "results"
 MIN_SUBJECT_FILES = 20
 
@@ -190,10 +189,11 @@ def pool(per_subject: list[dict], key: str) -> dict:
 
 
 def main():
-    exp1_files = sorted(DATA_DIR.glob("Dynamic_hidden_states_exp1_*.mat"))
-    exp2_files = sorted(DATA_DIR.glob("Dynamic_hidden_states_exp2_*.mat"))
+    data_dir = dataset_path("wolff_eeg_impulse")
+    exp1_files = sorted(data_dir.glob("Dynamic_hidden_states_exp1_*.mat"))
+    exp2_files = sorted(data_dir.glob("Dynamic_hidden_states_exp2_*.mat"))
     if len(exp1_files) + len(exp2_files) < MIN_SUBJECT_FILES:
-        print(f"SKIP - Wolff et al. 2017 data incomplete at {DATA_DIR} "
+        print(f"SKIP - source data incomplete at {data_dir} "
               f"({len(exp1_files)} exp1 + {len(exp2_files)} exp2 files found).")
         return
 

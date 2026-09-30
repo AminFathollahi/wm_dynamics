@@ -45,7 +45,7 @@ gate is recorded with a machine-readable reason and, where the reason is a count
 excluded it.
 
 Run:
-    /home/amin/miniconda3/envs/wm_dynamics/bin/python \
+    python \
         scripts/run_state_space_estimation_admissibility.py
 """
 from __future__ import annotations
@@ -79,10 +79,11 @@ from corpus_sessions import (  # noqa: E402
 )
 from geometry import parallel_analysis, participation_ratio, spatiotemporal_participation_ratio  # noqa: E402
 from preprocessing import bandpass_filter, load_boran_nwb  # noqa: E402
-from provenance import canonical_json, git_commit  # noqa: E402
-from run_latent_model_comparison import anscombe_counts, counts_to_spiketrains, raw_counts_from_entry  # noqa: E402
+from provenance import canonical_json, checkpoint_store, git_commit  # noqa: E402
+from info_decoding import anscombe_counts, counts_to_spiketrains
+from corpus_sessions import raw_counts_from_entry
 from statistics import stable_seed  # noqa: E402
-from project_config import executable  # noqa: E402
+from project_config import executable
 
 import torch  # noqa: E402
 import torch.nn as nn  # noqa: E402
@@ -91,6 +92,9 @@ from sklearn.decomposition import FactorAnalysis  # noqa: E402
 from sklearn.linear_model import PoissonRegressor, Ridge  # noqa: E402
 from sklearn.metrics import explained_variance_score, mean_poisson_deviance  # noqa: E402
 from sklearn.model_selection import KFold  # noqa: E402
+from info_decoding import FIELD_BAND_HI_HZ, FIELD_BAND_LO_HZ  # noqa: E402
+from corpus_sessions import _boran_field_potential_session  # noqa: E402
+from info_decoding import _flatten  # noqa: E402
 
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=RuntimeWarning)
@@ -119,9 +123,6 @@ GATE_MAJORITY_THRESHOLD = 0.5
 # Field-potential feature band: safely under the Nyquist of both signal types this project holds at
 # this recording site (depth ~1398 Hz, scalp ~140 Hz), so one band definition applies to both without
 # a per-signal special case.
-FIELD_BAND_LO_HZ = 1.0
-FIELD_BAND_HI_HZ = 40.0
-FIELD_MAINTENANCE_WINDOW_S = (-3.0, 0.0)  # relative to probe onset, this task's own convention
 
 
 def _seed(*parts: str) -> np.random.Generator:
@@ -156,46 +157,6 @@ def spiking_sessions(root: Path):
                "X": entry["counts"].astype(int), "bin_ms": BIN_MS}
 
 
-def _boran_field_potential_session(nwb_path: Path, signal: str) -> dict | None:
-    """One dandi_000574 session's maintenance-window band power for one field-potential signal
-    ('ieeg' = depth macro-contacts, 'eeg' = scalp montage), trial-admitted the same way
-    src/corpus_sessions.py's own dandi_000574 spike iterator admits trials (artifact-flag exclusion
-    plus correct-only), applied here independently since this reads a different signal group from the
-    same file and is not a modification of that iterator.
-    """
-    with h5py.File(str(nwb_path), "r") as handle:
-        if "intervals/trials" not in handle:
-            return None
-        trials = handle["intervals/trials"]
-        artifact = trials["artifact"][:].astype(bool)
-        correct = trials["correct"][:].astype(bool)
-    keep = (~artifact) & correct
-    if keep.sum() < MIN_TRIALS:
-        return None
-    loaded = load_boran_nwb(str(nwb_path), signal=signal, epoch_win=(-3.2, 0.3))
-    epochs = loaded["epochs"][keep]  # (N, C, T)
-    times = loaded["times"]
-    srate = loaded["srate"]
-    win_mask = (times >= FIELD_MAINTENANCE_WINDOW_S[0]) & (times < FIELD_MAINTENANCE_WINDOW_S[1])
-    win_times = times[win_mask]
-    n_bins = int(round((FIELD_MAINTENANCE_WINDOW_S[1] - FIELD_MAINTENANCE_WINDOW_S[0]) * 1000.0 / BIN_MS))
-    bin_edges = np.linspace(win_times[0], FIELD_MAINTENANCE_WINDOW_S[1], n_bins + 1)
-    n_trials, n_ch, _ = epochs.shape
-    power = np.zeros((n_trials, n_ch, n_bins), dtype=float)
-    for i in range(n_trials):
-        try:
-            filtered = bandpass_filter(epochs[i].T, FIELD_BAND_LO_HZ, FIELD_BAND_HI_HZ, srate)  # (T, C)
-        except Exception:
-            return None
-        sq = (filtered ** 2)[win_mask]
-        for b in range(n_bins):
-            bin_mask = (win_times >= bin_edges[b]) & (win_times < bin_edges[b + 1])
-            power[i, :, b] = sq[bin_mask].mean(axis=0) if bin_mask.any() else np.nan
-    if not np.isfinite(power).all():
-        return None
-    patient = nwb_path.parent.name
-    return {"dataset": f"dandi_000574_{signal}", "patient": patient, "session": nwb_path.stem,
-            "X": power, "bin_ms": BIN_MS}
 
 
 def field_potential_sessions(root: Path):
@@ -416,9 +377,6 @@ def fit_native_full_rank(train_X, test_X, k, rng, is_spiking, bin_ms):
             "latent_train": train_X.astype(float), "latent_test": test_X.astype(float)}
 
 
-def _flatten(X):
-    n, b, f = X.shape
-    return X.reshape(n * b, f), n, b
 
 
 def fit_principal_components(train_X, test_X, k, rng, is_spiking, bin_ms):
@@ -900,17 +858,8 @@ def load_checkpoint(key: str) -> dict | None:
 
 
 def save_checkpoint(key: str, record: dict) -> None:
-    CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
     path = _checkpoint_path(key)
-    payload = {"_complete": True, "record": record}
-    fd, tmp_name = tempfile.mkstemp(dir=str(CHECKPOINT_DIR), prefix="._tmp_")
-    try:
-        with os.fdopen(fd, "w") as f:
-            f.write(canonical_json(payload))
-        os.replace(tmp_name, path)
-    finally:
-        if os.path.exists(tmp_name):
-            os.remove(tmp_name)
+    checkpoint_store(path, {"_complete": True, "record": record})
 
 
 def run_checkpointed(key: str, fit_fn) -> dict:

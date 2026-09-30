@@ -45,14 +45,12 @@ from provenance import git_commit  # noqa: E402
 # ---------------------------------------------------------------------------
 # Paths. The transcranial and direct-stimulation corpora are not yet in
 # config/datasets.json -- that file and src/corpus_sessions.py are being read
-# by other long-running jobs right now and must not be touched. Resolved here
+# by other long-running analyses right now and must not be touched. Resolved here
 # from the data-root environment variable instead; the corpus registry entry
 # for the transcranial corpus is still to be added.
 # ---------------------------------------------------------------------------
 from project_config import data_root
 
-DATA_ROOT = data_root()
-TES1_DIR = DATA_ROOT / "Tes1" / "data"
 OPENLOOP_CORPUS = "ds005489-download"
 CLOSEDLOOP_CORPUS = "ds005557-download"
 RAM_CORPORA = (OPENLOOP_CORPUS, CLOSEDLOOP_CORPUS)
@@ -145,8 +143,9 @@ _GROUP_RE = re.compile(r"^[A-Za-z]+")
 
 
 def load_tes1():
+    tes1_dir = data_root() / "Tes1" / "data"
     """Read every P*/P*.txt row. Returns (electrodes, zero_drop)."""
-    files = sorted(TES1_DIR.glob("P*/P*.txt"))
+    files = sorted(tes1_dir.glob("P*/P*.txt"))
     electrodes = []
     seen = 0
     # Mutually exclusive so the four counts below sum exactly to rows_seen --
@@ -249,8 +248,9 @@ def add_field_per_ma(electrodes):
 def load_ram_sites():
     seen = excl_coords = 0
     sites = []
+    data_root_dir = data_root()
     for corpus in RAM_CORPORA:
-        corpus_dir = DATA_ROOT / corpus
+        corpus_dir = data_root_dir / corpus
         if not corpus_dir.is_dir():
             continue
         for sub_dir in sorted(corpus_dir.glob("sub-*")):
@@ -418,8 +418,9 @@ def load_electrode_coords_by_subject():
     """subject -> {electrode_name: mni tuple}, both RAM corpora, first
     session only (geometry is static within a subject)."""
     coords: dict[str, dict[str, tuple]] = {}
+    data_root_dir = data_root()
     for corpus in RAM_CORPORA:
-        corpus_dir = DATA_ROOT / corpus
+        corpus_dir = data_root_dir / corpus
         if not corpus_dir.is_dir():
             continue
         for sub_dir in sorted(corpus_dir.glob("sub-*")):
@@ -462,8 +463,9 @@ def load_reference_dose(ram_site_regions: dict):
     seen_events = excl_unlocalised = 0
     pairs = set()
     region_fields: dict[str, list[float]] = {}
+    data_root_dir = data_root()
     for corpus in RAM_CORPORA:
-        corpus_dir = DATA_ROOT / corpus
+        corpus_dir = data_root_dir / corpus
         if not corpus_dir.is_dir():
             continue
         for ev_path in sorted(corpus_dir.glob("sub-*/ses-*/ieeg/*_events.tsv")):
@@ -658,7 +660,7 @@ def main():
             "achieve to reach a field of the same order of magnitude, "
             "nothing more. The transcranial corpus is not yet in the corpus "
             "registry (config/datasets.json / src/corpus_sessions.py); those "
-            "files are being read by other running jobs and were not edited "
+            "files are being read by other running analyses and were not edited "
             "for this leg."
         ),
         "predeclared_constants": {

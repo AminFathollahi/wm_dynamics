@@ -131,7 +131,7 @@ def test_accuracy_reuses_recognition_correct_semantics(tmp_path):
     entry = _entries(tmp_path)[0]
     labels = np.array(["0" if i % 2 == 0 else "1" for i in range(25)])
     responses = np.array([34.0 if i % 2 == 0 else 31.0 for i in range(25)])
-    from run_dandi_000004_recognition_generalization import recognition_correct
+    from corpus_sessions import recognition_correct
 
     expected = recognition_correct(labels, responses)
     np.testing.assert_array_equal(entry["accuracy"], expected)

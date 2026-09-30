@@ -8,7 +8,7 @@ could in principle be nothing more than a shared temporal envelope
 (condition-independent, present regardless of load) rather than something
 that actually distinguishes conditions. marginalize_condition_time already
 reports the variance fractions carried by the condition-independent versus
-condition-dependent marginalization (used for Miller in
+condition-dependent marginalization (used for ECoG n-back corpus in
 scripts/run_miller_ctg_corrected.py, under the key "dpca_lite"); this analysis
 goes one step further and asks the cross-temporal generalization question
 directly: if single trials are projected onto only the condition-dependent
@@ -18,7 +18,7 @@ nested-cross-validation, label-permutation cross-temporal generalization
 pipeline is rerun on each, does the temporally stable structure survive in the
 condition-dependent projection, the condition-independent one, or both?
 
-Datasets: Miller (load), DANDI 000469 (load and content), CRCNS pfc-3 (content).
+Datasets: ECoG n-back corpus (load), DANDI 000469 (load and content), CRCNS pfc-3 (content).
 
 Outputs: results/dpca_{dataset}.json
 Updates: results/all_statistics.json — "dpca_{dataset}" keys
@@ -42,7 +42,7 @@ across the ~30-90 tests this script runs, though with less precision in the
 full 5000-permutation run in the future (e.g. on a machine with more cores,
 or run unattended over 1-2 days), N_PERM should be restored to 5000.
 
-Run (after run_000469_pipeline.py, run_pfc3_content_ctg.py, Miller geometry exist):
+Run (after run_000469_pipeline.py, run_pfc3_content_ctg.py, ECoG n-back corpus geometry exist):
     conda run -n wm_dynamics python scripts/run_dpca_analysis.py
 """
 import sys, json
@@ -64,7 +64,7 @@ from provenance import _json_safe
 RESULTS = ROOT / "results"
 N_DPCA_COMPONENTS = 4
 N_PERM = 1000   # see compute note above — reduced from the >=5000 spec for wall-clock feasibility
-N_JOBS = -1     # joblib: use all available cores (each pinned to 1 BLAS thread)
+N_WORKERS = -1     # joblib: use all available cores (each pinned to 1 BLAS thread)
 
 
 def _ctg_on_projection(Z_proj: np.ndarray, labels: np.ndarray, t_idx: np.ndarray,
@@ -100,7 +100,7 @@ def _miller_one_subject(subj: str) -> tuple[str, dict]:
         rng = np.random.default_rng(stable_seed(subj + "_dpca"))
         ci_ctg = _ctg_on_projection(proj["Z_condition_independent"], labels, t_idx, False, rng)
         cd_ctg = _ctg_on_projection(proj["Z_condition_dependent"], labels, t_idx, False, rng)
-        print(f"  Miller {subj}: frac_cd={marg['frac_condition_dependent']:.3f} | "
+        print(f"  ECoG n-back corpus {subj}: frac_cd={marg['frac_condition_dependent']:.3f} | "
               f"CI offdiag={ci_ctg['offdiag_effect']:.4f} (p={ci_ctg['p_value']:.3f}) | "
               f"CD offdiag={cd_ctg['offdiag_effect']:.4f} (p={cd_ctg['p_value']:.3f})", flush=True)
     return subj, {"variance_fractions": marg, "ci_ctg": ci_ctg, "cd_ctg": cd_ctg}
@@ -108,7 +108,7 @@ def _miller_one_subject(subj: str) -> tuple[str, dict]:
 
 def run_miller() -> dict:
     subjects = ["al", "ca", "cc", "ug"]
-    results = Parallel(n_jobs=N_JOBS)(delayed(_miller_one_subject)(s) for s in subjects)
+    results = Parallel(n_jobs=N_WORKERS)(delayed(_miller_one_subject)(s) for s in subjects)
     return dict(results)
 
 
@@ -154,7 +154,7 @@ def _dandi000469_one_session(path) -> tuple[str, dict] | None:
 
 def run_dandi000469() -> dict:
     paths = sorted(RESULTS.glob("dandi000469_geometry_sub-*.npz"))
-    results = Parallel(n_jobs=N_JOBS)(delayed(_dandi000469_one_session)(p) for p in paths)
+    results = Parallel(n_jobs=N_WORKERS)(delayed(_dandi000469_one_session)(p) for p in paths)
     return dict(r for r in results if r is not None)
 
 
@@ -179,7 +179,7 @@ def main():
     with open(RESULTS / "all_statistics.json") as f:
         stats = json.load(f)
 
-    print("Miller (load)...")
+    print("ECoG n-back corpus (load)...")
     miller = run_miller()
     with open(RESULTS / "dpca_miller.json", "w") as f:
         json.dump(_json_safe(miller), f, indent=2, allow_nan=False)

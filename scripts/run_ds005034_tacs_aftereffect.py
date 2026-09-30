@@ -21,67 +21,25 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from preprocessing import bandpass_filter, common_average_reference  # noqa: E402
 from provenance import canonical_json, git_commit  # noqa: E402
-from run_rate_free_state_geometry_behavior_link import rate_free_state_deviation  # noqa: E402
+from stimulation_response_estimator import rate_free_state_deviation
 from statistics import fdr_bh, paired_sign_flip_test, stable_seed  # noqa: E402
+from corpus_sessions import SESSIONS  # noqa: E402
+from preprocessing import BANDS, BASELINE_WINDOW, CELLS, DELAY_WINDOW, MAX_GLOBAL_BAD_FRACTION, POSTERIOR_ROI  # noqa: E402
+from corpus_sessions import paired_inventory  # noqa: E402
+from preprocessing import TARGET_SFREQ, THETA_ROI, _global_bad_channels, _interpolate, _mne_session_context, load_events, periodogram_band_power  # noqa: E402
 
 os.environ.setdefault("NUMBA_CACHE_DIR", "/tmp/wm_dynamics_numba")
 os.environ.setdefault("MPLCONFIGDIR", "/tmp/wm_dynamics_matplotlib")
 
 ANALYSIS_ID = "ds005034_tacs_aftereffect"
 ANALYSIS_VERSION = "2026-09-08"
-SESSIONS = ("sham", "verum")
-TARGET_SFREQ = 250.0
 READ_WINDOW = (-5.0, 7.0)
-BASELINE_WINDOW = (-3.7, -2.7)
-DELAY_WINDOW = (0.5, 6.5)
 MIN_CLEAN_PER_CELL = 12
 MAX_TRANSIENT_BAD_CHANNELS = 5
-MAX_GLOBAL_BAD_FRACTION = 0.20
-BANDS = {"theta": (4.0, 8.0), "alpha": (8.0, 13.0), "beta": (13.0, 20.0)}
-THETA_ROI = ("E15", "E18", "E10", "E11", "E16")
-POSTERIOR_ROI = (
-    "E60", "E62", "E85", "E59", "E67", "E77", "E91", "E58", "E66",
-    "E72", "E84", "E96", "E65", "E90", "E70", "E75", "E83",
-)
-EVENT_MAP = {
-    "DIN104": ("forward", 4), "DIN106": ("forward", 6),
-    "DIN114": ("backward", 4), "DIN116": ("backward", 6),
-    "DIN124": ("alphabetical", 4), "DIN126": ("alphabetical", 6),
-}
-CELLS = tuple(itertools.product(("forward", "backward", "alphabetical"), (4, 6)))
 
 
-def paired_inventory(dataset_root: Path) -> dict:
-    participants = sorted(p.name for p in dataset_root.glob("sub-*") if p.is_dir())
-    paths = {}
-    for participant in participants:
-        paths[participant] = {
-            session: dataset_root / participant / f"ses-{session}" / "eeg"
-            / f"{participant}_ses-{session}_task-memory_eeg.set"
-            for session in SESSIONS
-        }
-    complete = [p for p in participants if all(paths[p][s].is_file() for s in SESSIONS)]
-    unpaired = [p for p in participants if sum(paths[p][s].is_file() for s in SESSIONS) == 1]
-    absent = [p for p in participants if not any(paths[p][s].is_file() for s in SESSIONS)]
-    return {
-        "registered_participants": participants,
-        "complete_pairs": complete,
-        "unpaired_raw": unpaired,
-        "no_raw_memory_recording": absent,
-        "paths": paths,
-    }
 
 
-def load_events(path: Path) -> list[dict]:
-    with path.open() as handle:
-        rows = list(csv.DictReader(handle, delimiter="\t"))
-    delays = []
-    for row in rows:
-        if row["value"] not in EVENT_MAP:
-            continue
-        task, load = EVENT_MAP[row["value"]]
-        delays.append({"onset": float(row["onset"]), "task": task, "load": load, "code": row["value"]})
-    return delays
 
 
 def robust_high_outliers(values: np.ndarray, z: float = 6.0) -> np.ndarray:
@@ -99,22 +57,6 @@ def transient_bad_channels(epoch_uv: np.ndarray) -> np.ndarray:
     return np.flatnonzero(relative & (peak_to_peak > 150.0))
 
 
-def periodogram_band_power(
-    data: np.ndarray, sfreq: float, interval: tuple[float, float], times: np.ndarray,
-    csd_transform: np.ndarray,
-) -> np.ndarray:
-    mask = (times >= interval[0]) & (times < interval[1])
-    segment = detrend(data[:, mask], axis=1, type="linear")
-    taper = windows.hann(segment.shape[1], sym=False)
-    spectrum = np.fft.rfft(segment * taper[None, :], axis=1)
-    spectrum = csd_transform @ spectrum
-    frequencies = np.fft.rfftfreq(segment.shape[1], 1.0 / sfreq)
-    scale = sfreq * np.sum(taper**2)
-    power = np.abs(spectrum) ** 2 / scale
-    return np.stack([
-        power[:, (frequencies >= lo) & (frequencies < hi)].mean(axis=1)
-        for lo, hi in BANDS.values()
-    ], axis=1)
 
 
 def spectral_features(
@@ -200,45 +142,10 @@ def paired_test(a: np.ndarray, b: np.ndarray, tag: str, alternative: str = "two-
     return result
 
 
-def _mne_session_context(set_path: Path):
-    import mne
-
-    raw = mne.io.read_raw_eeglab(set_path, preload=False, verbose="ERROR")
-    montage = raw.get_montage()
-    info = mne.create_info(raw.ch_names, TARGET_SFREQ, ch_types="eeg")
-    info.set_montage(montage, on_missing="raise")
-    identity = mne.io.RawArray(np.eye(len(raw.ch_names)), info, verbose="ERROR")
-    csd = mne.preprocessing.compute_current_source_density(
-        identity, lambda2=1e-5, stiffness=4, n_legendre_terms=50, copy=True,
-    )
-    return raw, info, csd.get_data()
 
 
-def _global_bad_channels(data_uv: np.ndarray, info, seed: int) -> list[str]:
-    import mne
-    from pyprep.find_noisy_channels import NoisyChannels
-
-    n_times = data_uv.shape[1]
-    width = int(2 * 1000)
-    starts = np.linspace(0, max(n_times - width, 0), 60).astype(int)
-    sampled = np.concatenate([data_uv[:, start:start + width] for start in starts], axis=1)
-    sampled = resample_poly(sampled, int(TARGET_SFREQ), 1000, axis=1) / 1e6
-    sampled = bandpass_filter(sampled.T, 1.0, 45.0, TARGET_SFREQ).T
-    sample_raw = mne.io.RawArray(sampled, info, verbose="ERROR")
-    detector = NoisyChannels(sample_raw, random_state=seed, ransac=True)
-    detector.find_all_bads(ransac=True, channel_wise=True, max_chunk_size=30)
-    return sorted(detector.get_bads())
 
 
-def _interpolate(data_uv: np.ndarray, info, bad_names: list[str]) -> np.ndarray:
-    if not bad_names:
-        return data_uv
-    import mne
-
-    raw = mne.io.RawArray(data_uv / 1e6, info, verbose="ERROR")
-    raw.info["bads"] = bad_names
-    raw.interpolate_bads(reset_bads=True, verbose="ERROR")
-    return raw.get_data() * 1e6
 
 
 def analyze_session(set_path: Path, events_path: Path, cache_path: Path, force: bool = False) -> dict:
@@ -462,7 +369,7 @@ def main() -> None:
         "design": {
             "estimand": "participant-paired verum-minus-sham aftereffect on delay-period scalp spectral state",
             "independent_unit": "participant", "randomization_inference": "within-participant sign flips",
-            "source": "Kasanov et al. 2025, Journal of Cognitive Neuroscience, doi:10.1162/jocn_a_02269",
+            "source": "Journal of Cognitive Neuroscience, doi 10.1162/jocn_a_02269",
             "windows_seconds_from_delay_onset": {"baseline": BASELINE_WINDOW, "delay": DELAY_WINDOW},
             "bands_hz": BANDS, "minimum_clean_trials_per_task_load_cell": MIN_CLEAN_PER_CELL,
             "minimum_admitted_complete_pairs": 8,

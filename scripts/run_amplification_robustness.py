@@ -15,7 +15,7 @@ rationale) scoped to this one new comparison, with its own independent RNG
 stream.
 
 Run:
-    /home/amin/miniconda3/envs/wm_dynamics/bin/python scripts/run_amplification_robustness.py
+    python scripts/run_amplification_robustness.py
 """
 from __future__ import annotations
 

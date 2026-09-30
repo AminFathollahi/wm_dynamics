@@ -205,7 +205,7 @@ DATA_AVAILABLE = bool(os.environ.get("WM_DYNAMICS_DATA_ROOT")) and Path(
 
 @pytest.mark.skipif(not DATA_AVAILABLE, reason="WM_DYNAMICS_DATA_ROOT is not set or not mounted")
 def test_trial_admission_trap_audit_reconciles_against_the_shared_loader():
-    """The naive error fraction the brief warns against must be computed
+    """The naive error fraction (a misleading ratio) must be computed
     (for disclosure) but the correct-count coefficient of variation must be
     far smaller than the error-count one, in every session -- the trap the
     audit exists to detect and report."""

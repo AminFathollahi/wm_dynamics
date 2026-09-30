@@ -21,9 +21,9 @@ A duplicated recording uploaded under two different identifiers reproduces
 the same trial-onset sequence to millisecond precision; an independent
 recording from a different patient does not.
 
-"Boran" and DANDI 000574 are the same NWB corpus in this project (Boran et
-al. 2020, Sci Data) accessed at two grains (single-unit vs scalp/iEEG); they
-are audited once here, not as two separate corpora.
+The single-unit and scalp/iEEG views of DANDI 000574 are the same NWB corpus
+in this project, accessed at two grains; they are audited once here, not as two
+separate corpora.
 
 Run:
     conda run -n wm_dynamics python scripts/audit_patient_identity_all_pairs.py
@@ -278,7 +278,7 @@ def main() -> None:
             "identity, verified empirically before adopting ITI -- plus "
             "session span and n_trials) compared all-pairs across every "
             "session in different releases among 000469/001187/000673/000574 "
-            "(Boran = 000574, same corpus). Declared thresholds: duplicate "
+            "(both views are DANDI 000574, same corpus). Declared thresholds: duplicate "
             f"requires ITI-correlation >= {DUPLICATE_CORR_THRESHOLD}, identical "
             f"trial count, and max abs ITI difference <= {DUPLICATE_MAX_ABS_DIFF_S}s; "
             f"candidate review requires ITI-correlation >= {CANDIDATE_CORR_THRESHOLD}."

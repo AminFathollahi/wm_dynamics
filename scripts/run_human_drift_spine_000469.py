@@ -45,13 +45,10 @@ from spike_pipeline import (  # noqa: E402
     low_rate_unit_mask,
     resolve_unit_regions,
 )
+from corpus_sessions import AXIS_WINDOW, MIN_UNITS, N_COMPONENTS, N_SPLITS, WINDOW_S  # noqa: E402
+from statistics import bootstrap_mean  # noqa: E402
 
 BIN_MS = 100
-WINDOW_S = 2.3
-N_COMPONENTS = 8
-N_SPLITS = 5
-MIN_UNITS = 15
-AXIS_WINDOW = (0.3, 1.0)
 RULE_PATH = ROOT / "preregistration" / "rotation_drift_decision_rule.json"
 RULE_HASH = "c9505c80aed6b6c82494e472991a519c46a60a00bd8bfab7e6375f0706dc0ecd"
 
@@ -389,9 +386,6 @@ def analyze_session(
     }
 
 
-def bootstrap_mean(values: np.ndarray, rng: np.random.Generator, n_boot: int = 5000) -> list[float]:
-    draws = np.mean(values[rng.integers(0, len(values), size=(n_boot, len(values)))], axis=1)
-    return list(map(float, np.percentile(draws, [2.5, 97.5])))
 
 
 METRIC_NAMES = (
@@ -628,7 +622,7 @@ def run_region_stratified(directory: Path, pooled: tuple[dict, dict] | None = No
                 "computed in results/drift_positive_control_000469.json's region-stratified block "
                 "(scripts/run_drift_positive_controls.py); this artifact carries only the plain "
                 "M2-minus-iid-M0 comparator, which is not the matched-flexibility comparator this "
-                "project's standing rule for this contrast calls for"
+                "contrast calls for"
             ),
             "content_minus_complement_own_trial_r2": paired_region_contrast(
                 regions_out, "hippocampus", "amygdala", "trial_prediction_r2_advantage",
@@ -682,7 +676,7 @@ def run_region_stratified(directory: Path, pooled: tuple[dict, dict] | None = No
         "Confined content dynamics are supported region-wise only if, within a region, M2 retains a "
         "patient-bootstrap interval above zero against BOTH matched-flexibility comparators AND the "
         "content axis exceeds both the permuted axis and the signal-matched complement. The pooled "
-        "2026-08-02 reversal is attributed to anatomical pooling only if this holds in hippocampus "
+        "reversal is attributed to anatomical pooling only if this holds in hippocampus "
         "while failing in the pooled state, with the unit-count-matched sensitivity preserving the "
         "sign. This artifact carries the deciding contrast's own-trial-R2 half and "
         "the lambda ordering; the M2-minus-matched-flexibility half is in "
@@ -691,11 +685,11 @@ def run_region_stratified(directory: Path, pooled: tuple[dict, dict] | None = No
 
     distance_to_attractor_basis_note = (
         "DA is recomputed here in a content-discriminative basis (fields with the "
-        "_content_axis_ infix), not the plain-variance PCA state the withdrawn 2026-08-03 comparison "
+        "_content_axis_ infix), not the plain-variance PCA state the earlier comparison "
         "used. The basis is this fold's discriminant_direction(), trained on repeated-item identity "
         "labels -- the same labels M2 already tests confinement against -- projected to one dimension. "
-        "That is the closest match available in this project to Daume et al. 2025's dPCA axis "
-        "marginalised on picture category: both isolate the dimension that best separates trials by "
+        "That is the closest match available in this project to the dPCA axis reported in this "
+        "dataset's original publication, marginalised on picture category: both isolate the dimension that best separates trials by "
         "which item was held in working memory. The original plain-variance fields "
         "(distance_to_attractor_mean / distance_to_attractor_below_one_fraction) are retained inline, "
         "superseded but not deleted, so the withdrawn comparison stays reconstructable."
@@ -712,7 +706,7 @@ def run_region_stratified(directory: Path, pooled: tuple[dict, dict] | None = No
         "project with repeated-item identity labels (item_identity_available=True), the condition "
         "variable a content-discriminative axis needs. DANDI 000574 carries ventral_temporal_cortex "
         "units (57 units, 8 patients; results/anatomical_census.json "
-        "structure_by_dataset_matrix.vtc) -- Daume et al. 2025's second positive region -- but its own "
+        "structure_by_dataset_matrix.vtc) -- this dataset's original publication's second positive region -- but its own "
         "artifact records item_identity_available=False (its trial labels are memory set size, not "
         "item identity; run_human_drift_spine_000574.py), so a content-discriminative DA basis is not "
         "defensible there and the comparison is withdrawn for that corpus rather than computed on a "

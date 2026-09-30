@@ -21,7 +21,7 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from project_config import dataset_path  # noqa: E402
+from project_config import dataset_path
 from spike_pipeline import (  # noqa: E402
     load_spike_times, build_psth, resolve_unit_regions,
     MIN_UNITS_PER_REGION, MIN_SESSION_ACCURACY, N_PC_DEFAULT,
@@ -39,15 +39,14 @@ from provenance import _json_safe, git_commit, canonical_patient_by_relative_pat
 from subject_independence import resolve_group, count_independent_groups  # noqa: E402
 from io_utils import locked_json_update  # noqa: E402
 from response_latency import response_probe_latency_field, response_time_field  # noqa: E402
-from run_region_resolved_rate_stability_behaviour import (  # noqa: E402
-    CORPUS_SPECS as REGION_CORPUS_SPECS, _trial_population_spike_count,
-)
+from run_region_resolved_rate_stability_behaviour import CORPUS_SPECS as REGION_CORPUS_SPECS
+from statistics import _trial_population_spike_count
+from info_decoding import CATEGORIES_100_DIVIDED, CATEGORIES_469, DPCA_RIDGE_LAMBDA_GRID, N_CV_FOLDS_LAMBDA, _category_469, _category_divided  # noqa: E402
 
 CANONICAL_PATIENT_BY_PATH = canonical_patient_by_relative_path(ROOT / "provenance")
 
 RESULTS = ROOT / "results"
 CHECKPOINT_DIR = RESULTS / ".checkpoints" / "run_selective_persistence_and_attractor_geometry"
-CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
 
 CATEGORY_NEURON_WINDOW_OFFSET_S = 0.2
 CATEGORY_NEURON_WINDOW_DURATION_S = 1.0
@@ -111,8 +110,6 @@ SLIDING_WINDOW_STEP_REASON = (
 )
 CATEGORY_SUBSPACE_DIMENSIONALITY = 4
 SHRINKAGE_GRID = (0.0, 0.25, 0.5, 0.75, 0.9)
-DPCA_RIDGE_LAMBDA_GRID = (0.0, 0.01, 0.1, 1.0, 10.0)
-N_CV_FOLDS_LAMBDA = 3
 N_CV_FOLDS_LAMBDA_NESTED_OUTER = 3
 
 N_PSEUDO_TRIALS_PER_CATEGORY = 20
@@ -142,8 +139,6 @@ HIPPOCAMPUS_VTC_COMBINED_UNAVAILABLE_REASON = (
 
 N_PERM = 10000
 
-CATEGORIES_469 = "loadsEnc1_PicIDs is already valued 1..5 -- used directly as the category"
-CATEGORIES_100_DIVIDED = "PicIDs_Encoding1 // 100 resolves to 5 category values (1..5)"
 
 DANDI_000574_EXCLUSION_REASON = (
     "dandi_000574 has no per-trial item/category field: set_letters is reported 'not available' on "
@@ -171,12 +166,8 @@ ITEM_IDENTITY_TEST_FEASIBILITY = {
 }
 
 
-def _category_469(pic_ids: np.ndarray) -> np.ndarray:
-    return pic_ids.astype(int)
 
 
-def _category_divided(pic_ids: np.ndarray) -> np.ndarray:
-    return (pic_ids.astype(int) // 100)
 
 
 def _canonical_patient(release_dir: str, path: Path) -> str | None:
@@ -389,8 +380,7 @@ def _dpca_ridge_axes(Z: np.ndarray, category: np.ndarray, lam: float, d: int) ->
     reused rather than the time-collapsed per-category mean) -- carrying time structure the way the
     published study's own 200ms sliding-window binning does. D (returned here as the axes) is the top-d
     eigenvectors of the second moment of the ridge-regularised regression's fitted values, B.T @ Sxx @ B
-    where B = (Sxx + lambda*I)^-1 @ Sxy -- the classic reduced-rank-ridge-regression solution (Mukherjee &
-    Zhu 2011). Z may be 2D (n_trials, k), treated as a single timepoint (T=1), in which case the target
+    where B = (Sxx + lambda*I)^-1 @ Sxy -- the classic reduced-rank-ridge-regression solution. Z may be 2D (n_trials, k), treated as a single timepoint (T=1), in which case the target
     collapses exactly to the time-collapsed per-category mean -- this is what every lambda-selection call
     site below still passes, so selecting lambda by held-out reconstruction stays on the cheaper
     single-timepoint pseudo-trial construction while the axes actually reported are fit on the full
@@ -1425,7 +1415,7 @@ def _pseudopopulation_geometry(corpus: str, region: str, selected_keys: set | No
             "cell's real data, dpca_ridge_axes_lambda_dependence_check's min_lambda_vs_max_lambda_overlap "
             "reports how much DPCA_RIDGE_LAMBDA_GRID actually moves that subspace -- when it sits at or "
             "near 1.0, the regularisation strength is not materially determining the category subspace "
-            "here, a property of the data at this component count rather than a defect in the axis-fitting "
+            "here, a property of the data at this component count rather than an error in the axis-fitting "
             "code -- the top-level dpca_ridge_axes_synthetic_verification documents that the same function "
             "does rotate genuinely with lambda on a lower-rank synthetic construction, so the near-"
             "invariance measured here is not a bug that silently pins the axes everywhere."
@@ -1762,6 +1752,7 @@ def _pseudopopulation_region_report_all_arms(corpus: str, region: str) -> dict:
 
 
 def _checkpoint_path(name: str) -> Path:
+    CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
     return CHECKPOINT_DIR / f"{name}.json"
 
 
@@ -2015,7 +2006,7 @@ def build_artifact() -> dict:
             "subspace overlap across DPCA_RIDGE_LAMBDA_GRID at every cell, and a startup check on a small "
             "synthetic construction (dpca_ridge_axes_synthetic_verification) confirms the ridge fit is not "
             "trivially lambda-invariant everywhere; neither halts the run, since near-invariance on real "
-            "data is a property of that data to report, not a defect to block on -- see "
+            "data is a property of that data to report, not an error to block on -- see "
             "dpca_ridge_time_resolved_near_invariance_note per cell.",
         "part4_selective_versus_all_unit_arms": "every population-level quantity in "
             "part4_pseudopopulation_geometry (distance-to-attractor, pseudo-population decoding accuracy, "
@@ -2067,7 +2058,7 @@ def build_artifact() -> dict:
             "dandi_001187 enters this pooling once, from dandi_001187 (the canonical primary release for "
             "that overlap), and the loaders never admit the matching dandi_000673 session at all, so no "
             "patient row is double-counted across the two.",
-        "rate_control": "Part 3 recomputes the maintenance distance-to-attractor construct in rate-free "
+        "rate_control": "part3_rate_controlled_da_to_behaviour recomputes the maintenance distance-to-attractor construct in rate-free "
             "form using stimulation_response_estimator.rate_free_state_deviation (this project's existing "
             "rate-free distance-to-attractor observable, unmodified) on the same per-trial per-unit "
             "maintenance activity, and reports its own association with behaviour beside the raw "

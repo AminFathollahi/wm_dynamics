@@ -7,7 +7,7 @@ MIN_SESSION_ACCURACY excludes whole sessions at eleven call sites across this
 repository, but no delivered artifact records how many sessions or patients
 that exclusion actually removes -- only how many trials. This script closes
 that gap by reading the same accuracy field each site already reads
-(``response_accuracy`` for the three Rutishauser-lineage releases,
+(``response_accuracy`` for the three human single-unit DANDI releases,
 ``correct`` for dandi_000574) directly from every session file registered in
 provenance/canonical_recording_registry.json, which already carries the
 verified cross-release patient identity this project uses everywhere else

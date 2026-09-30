@@ -707,8 +707,8 @@ class TestForestMeta:
 
     def test_rows_carry_labels_and_cis(self):
         res = forest_meta(np.array([0.2, 0.5]), np.array([0.1, 0.1]),
-                          labels=["Miller", "Boran"])
-        assert [r["label"] for r in res["rows"]] == ["Miller", "Boran"]
+                          labels=["cohort A", "cohort B"])
+        assert [r["label"] for r in res["rows"]] == ["cohort A", "cohort B"]
         r0 = res["rows"][0]
         assert r0["ci_lo"] < r0["estimate"] < r0["ci_hi"]
 

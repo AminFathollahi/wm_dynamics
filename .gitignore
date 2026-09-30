@@ -50,6 +50,7 @@ references.bib
 # ── Outputs ─────────────────────────────────────────────────────────────────────
 figures/
 results/
+/results
 !results/implementation_report.md
 INFO_BENCHMARK.md
 INFO_BENCHMARK_SEEDS.md
@@ -76,6 +77,8 @@ AGENTS.md
 advisor*.md
 executor.md
 plan.md
+tasks.md
+config/project.local.json
 prompt.md
 commands.txt
 audit/
@@ -132,3 +135,11 @@ scripts/audit_dynamax_api.py
 scripts/verify_lfads_environment.py
 scripts/verify_contrastive_embedding_environment.py
 tooling_f6_baseline/
+scripts/build_evidence_ledger.py
+scripts/validate_evidence_ledger.py
+scripts/validate_manuscript.py
+tests/test_validate_manuscript.py
+tests/test_validate_evidence_ledger.py
+tests/test_narrative_map_covers_every_result.py
+provenance/evidence_ledger.json
+provenance/legacy_manifest.json

@@ -21,8 +21,8 @@ reference such as zero, because a small trial-to-unit ratio biases the participa
 own and only a null built from the identical construction shares that bias.
 
 Scope is set by an existing, already-measured precondition, not chosen here: only the single-item macaque
-lateral prefrontal cortex corpus (Panichello et al. 2024) and the multi-object macaque corpus (Watters,
-Gabel, Tenenbaum and Jazayeri; DANDI 000620) have a rate-free deviation that passes its own orthogonality
+lateral prefrontal cortex corpus (doi 10.1038/s41586-024-08139-9) and the multi-object macaque corpus (doi
+10.64898/2026.01.27.702062; DANDI 000620) have a rate-free deviation that passes its own orthogonality
 gate against total spike count. The mouse and both human maintenance-delay corpora fail that gate and are
 excluded on that measured precondition. The multi-object corpus is analysed WITHIN item-count level
 throughout (a different memorandum cardinality is a different task condition) and combined across levels
@@ -72,47 +72,48 @@ for _sub in ("src", "scripts"):
 
 from corpus_sessions import data_root, iter_watters  # noqa: E402
 from provenance import _json_safe  # noqa: E402
-from run_behavior_amplitude_rate_controls import _reachable_sessions  # noqa: E402
-from run_component_and_content_specific_serial_pull import (  # noqa: E402
-    _bias_only_reproduces, _trial_count_weighted, _watters_bundle_with_label,
-)
-from run_component_effect_size_and_anatomy import N_CV_FOLDS, _contiguous_folds  # noqa: E402
-from run_deviation_serial_dependence_and_temporal_locus import (  # noqa: E402
-    CONTENT_LABEL_K_CLASSES, SHARP_TEST_MIN_CLASSES, SHARP_TEST_MIN_PER_CLASS, SIGN_TO_WORSE_BEHAVIOUR,
-    _macaque_session_bundle, _panichello_directory, _watters_session_bundle, full_reproduction_gate,
-    unit_direction_vectors,
-)
-from run_deviation_subspace_decomposition import (  # noqa: E402
-    IDENTITY_TOLERANCE, WATTERS_REGRESSION_DIM, _leave_one_out_unit_directions, _orthonormal_basis,
-    residual_decomposition_and_identity_check,
-)
+from corpus_sessions import _reachable_sessions
+from statistics import _bias_only_reproduces
+from corpus_sessions import _watters_bundle_with_label
+from run_multi_object_interference_and_locus_within_item_count import _trial_count_weighted
+from subspace_identity import N_CV_FOLDS, _contiguous_folds
+from run_deviation_serial_dependence_and_temporal_locus import full_reproduction_gate
+from corpus_sessions import _macaque_session_bundle
+from statistics import SHARP_TEST_MIN_CLASSES, SHARP_TEST_MIN_PER_CLASS, SIGN_TO_WORSE_BEHAVIOUR, unit_direction_vectors
+from corpus_sessions import _watters_session_bundle
+from statistics import CONTENT_LABEL_K_CLASSES
+from corpus_sessions import _panichello_directory
+from info_decoding import IDENTITY_TOLERANCE, WATTERS_REGRESSION_DIM, _leave_one_out_unit_directions, residual_decomposition_and_identity_check
+from subspace_identity import _orthonormal_basis
 from run_deviation_serial_dependence_and_temporal_locus import (  # noqa: E402
     MACAQUE_DEVIATION_RAW_R as _MACAQUE_DELIVERED_RAW_R, WATTERS_DEVIATION_RAW_R as _WATTERS_DELIVERED_RAW_R,
 )
-from run_dissociation_cross_preparation_test import MIN_TRIALS_WITH_DEFINED_DIRECTION  # noqa: E402
+from statistics import MIN_TRIALS_WITH_DEFINED_DIRECTION
 from sklearn.decomposition import PCA  # noqa: E402
-from run_rate_free_state_geometry_behavior_link import (  # noqa: E402
-    MEANINGFUL_EFFECT_THRESHOLD_R_UNITS, rate_free_state_deviation,
-)
-from run_watters_state_geometry import MIN_TRIALS_FOR_BEHAVIOURAL_CORRELATION  # noqa: E402
+from statistics import MEANINGFUL_EFFECT_THRESHOLD_R_UNITS
+from stimulation_response_estimator import rate_free_state_deviation
+from corpus_sessions import MIN_TRIALS_FOR_BEHAVIOURAL_CORRELATION
 from state_persistence import slope_across_sessions_test  # noqa: E402
 from statistics import (  # noqa: E402
     bootstrap_ci, fdr_bh, minimum_detectable_paired_difference, partial_correlation_permutation_test,
     permutation_pvalue, stable_seed,
 )
+from info_decoding import CORPORA, MIN_FOLD_TRIALS, N_PERM, N_RANDOM_AXIS_DRAWS, N_ROTATION_DRAWS, RESIDUAL_NORM_FLOOR  # noqa: E402
+from corpus_sessions import _watters_bundles  # noqa: E402
+from info_decoding import _cv_pca_rank, _axis_stability, _empirical_two_sided, _occupied_space_decomposition, _regression_direction, _unit_residual_matrix, _weighted_combine_draws, _worse_behaviour, classify_occupied_space_branch, pooled_off_fraction_against_matched_null  # noqa: E402
+from state_persistence import _pool_rotation_statistic  # noqa: E402
+from subspace_identity import leading_eigenvector  # noqa: E402
+from info_decoding import _class_mean_dict  # noqa: E402
+from info_decoding import _residual_rows, _collect_axis_entries  # noqa: E402
+from subspace_identity import _class_mean_subspace_basis, _regression_subspace_basis  # noqa: E402
+from info_decoding import _fold_combined_and_pooled  # noqa: E402
 
 OUTPUT_PATH = ROOT / "results" / "deviation_axis_structure.json"
 CHECKPOINT_DIR = ROOT / "results" / ".checkpoints" / "run_deviation_axis_structure"
 ANALYSIS_VERSION = "2026-09-24"
 
-N_PERM = 10000
-N_ROTATION_DRAWS = 1000
-N_RANDOM_AXIS_DRAWS = 200
 REPRODUCTION_TOLERANCE = 1e-6
-RESIDUAL_NORM_FLOOR = 1e-8  # matches IDENTITY_TOLERANCE's floating-point-equality tolerance
-MIN_FOLD_TRIALS = 8
 
-CORPORA = ("panichello_2024_macaque_lPFC_single_item", "watters_2026_macaque_multi_object")
 
 ANISOTROPY_DECISION_RULE_DECLARED_BEFORE_FITTING = (
     "Per corpus: the pooled participation ratio (macaque: per session; multi-object corpus: per session, "
@@ -282,26 +283,6 @@ def _flush(output: dict) -> None:
 # Residual-row construction: the numerical floor, and the trials-by-units unit-residual matrix.
 # =======================================================================================================
 
-def _residual_rows(activity_by_unit: np.ndarray, floor: float = RESIDUAL_NORM_FLOOR) -> dict:
-    identity = residual_decomposition_and_identity_check(activity_by_unit)
-    loo_mean = _leave_one_out_unit_directions(activity_by_unit)["loo_mean_normalized"]
-    finite = identity["finite"]
-    residual = identity["residual"]
-    residual_norm = np.linalg.norm(residual, axis=1)
-    with np.errstate(invalid="ignore"):
-        above_floor = finite & (residual_norm >= floor)
-    return {
-        "identity": identity, "loo_mean": loo_mean, "residual": residual, "residual_norm": residual_norm,
-        "keep": above_floor, "n_trials_with_defined_direction": int(finite.sum()),
-        "n_trials_excluded_by_residual_floor": int((finite & ~above_floor).sum()),
-        "n_kept": int(above_floor.sum()),
-    }
-
-
-def _unit_residual_matrix(rows: dict) -> tuple[np.ndarray, np.ndarray]:
-    idx = np.flatnonzero(rows["keep"])
-    R = rows["residual"][idx] / rows["residual_norm"][idx, None]
-    return R, idx
 
 
 def participation_ratio_and_leading_fraction(R: np.ndarray) -> dict | None:
@@ -316,11 +297,6 @@ def participation_ratio_and_leading_fraction(R: np.ndarray) -> dict | None:
         "leading_eigenvalue_fraction": float(eigvals.max() / total),
         "n_units": int(R.shape[1]), "n_trials": int(R.shape[0]),
     }
-
-
-def leading_eigenvector(R: np.ndarray) -> np.ndarray:
-    _w, v = np.linalg.eigh(R.T @ R)
-    return v[:, -1]
 
 
 def rotation_null_draws(loo_mean_kept: np.ndarray, n_draws: int, seed_tag: str) -> tuple[np.ndarray, np.ndarray]:
@@ -343,51 +319,6 @@ def rotation_null_draws(loo_mean_kept: np.ndarray, n_draws: int, seed_tag: str) 
             pr_draws[d] = stat["participation_ratio"]
             lead_draws[d] = stat["leading_eigenvalue_fraction"]
     return pr_draws, lead_draws
-
-
-def _weighted_combine_draws(entries: list[tuple[int, np.ndarray]]) -> np.ndarray | None:
-    """Trial-count-weighted combination of per-level null-draw arrays into one session-level array, the
-    same weighting _trial_count_weighted applies to scalars, applied here draw-index by draw-index."""
-    if not entries:
-        return None
-    n_arr = np.array([n for n, _ in entries], dtype=float)
-    stack = np.array([d for _, d in entries], dtype=float)
-    valid = np.isfinite(stack)
-    weights = n_arr[:, None] * valid
-    denom = weights.sum(axis=0)
-    numer = np.nansum(np.where(valid, stack, 0.0) * n_arr[:, None], axis=0)
-    return np.where(denom > 0, numer / np.where(denom > 0, denom, 1.0), np.nan)
-
-
-def _pool_rotation_statistic(session_records: list[dict]) -> dict:
-    """Pools a real per-session scalar via the project's paired sign-flip test and separately pools each
-    session's own rotation-null draws (mean across sessions per draw index, the same construction
-    _pool_adjacency in run_deviation_serial_dependence_and_temporal_locus.py already uses), then reports a
-    two-sided empirical p-value of the real pooled mean against that pooled null distribution."""
-    observed = [r["observed"] for r in session_records if r.get("observed") is not None]
-    real_pooled = slope_across_sessions_test(observed, alternative="two-sided") if observed else {"status": "not_computed"}
-    mdd = minimum_detectable_paired_difference(observed) if len(observed) >= 2 else {"status": "not_computable", "n": len(observed)}
-    out = {
-        "n_sessions": len(observed), "real_pooled": real_pooled,
-        "minimum_detectable_difference_80pct_power": mdd,
-        "pooled_null_mean": None, "pooled_null_sd": None, "two_sided_empirical_p_value": None,
-        "significant": False, "below_null": None,
-    }
-    draws_list = [np.asarray(r["null_draws"], dtype=float) for r in session_records if r.get("null_draws") is not None]
-    if not draws_list or real_pooled.get("status") != "tested":
-        return out
-    pooled_null = np.nanmean(np.stack(draws_list), axis=0)
-    finite_null = pooled_null[np.isfinite(pooled_null)]
-    if finite_null.size < 10:
-        return out
-    null_center = float(np.mean(finite_null))
-    real_mean = real_pooled["mean_value"]
-    p = float(permutation_pvalue(np.abs(finite_null - null_center) >= abs(real_mean - null_center)))
-    out.update({
-        "pooled_null_mean": null_center, "pooled_null_sd": float(np.std(finite_null)),
-        "two_sided_empirical_p_value": p, "significant": bool(p <= 0.05), "below_null": bool(real_mean < null_center),
-    })
-    return out
 
 
 def _single_axis_reference_participation_ratio(leading_fraction: float, dim: float) -> float | None:
@@ -446,24 +377,6 @@ def _macaque_bundles(root: Path) -> tuple[list[dict], list[Path]]:
             bundle["memorandum_label"] = np.asarray(bundle["memorandum_label"])
             bundles.append(bundle)
     return bundles, paths
-
-
-def _watters_bundles(watters_arrays_by_session: dict) -> list[dict]:
-    bundles = []
-    for session_id, entry in watters_arrays_by_session.items():
-        bundle = _watters_bundle_with_label(entry, CONTENT_LABEL_K_CLASSES)
-        # cued_theta is not part of _watters_bundle_with_label's own return (it only needs the
-        # discretised label from it); the axis-alignment analysis's continuous memorandum regression subspace needs the raw
-        # angle, restricted to the identical `usable` trial mask that function already applied.
-        bundle["cued_theta"] = np.asarray(entry["session"]["cued_theta"], dtype=float)[entry["usable"]]
-        bundles.append(bundle)
-    return bundles
-
-
-def _worse_behaviour(bundle: dict, sign: float) -> np.ndarray:
-    """A literal worse-coded outcome array (higher = worse), for the signed-displacement test's median-split sign rule --
-    distinct from the correlation-coefficient sign flip SIGN_TO_WORSE_BEHAVIOUR applies elsewhere."""
-    return bundle["outcome_raw"] if sign == 1.0 else (1.0 - bundle["outcome_raw"])
 
 
 # =======================================================================================================
@@ -576,39 +489,9 @@ def run_anisotropy_test(bundles: list[dict], corpus_key: str) -> dict:
 # AXIS ALIGNMENT AGAINST REFERENCE DIRECTIONS
 # =======================================================================================================
 
-def _regression_direction(U: np.ndarray, covariate: np.ndarray) -> np.ndarray | None:
-    n = U.shape[0]
-    design = np.column_stack([np.ones(n), covariate])
-    coef, *_ = np.linalg.lstsq(design, U, rcond=None)
-    beta = coef[1]
-    norm = np.linalg.norm(beta)
-    return (beta / norm) if norm > 0 else None
 
 
-def _class_mean_subspace_basis(U: np.ndarray, labels: np.ndarray, dim: int) -> np.ndarray | None:
-    classes = np.unique(labels)
-    if len(classes) < dim + 1:
-        return None
-    centred = U - U.mean(axis=0)
-    class_means = np.stack([centred[labels == c].mean(axis=0) for c in classes])
-    return _orthonormal_basis(class_means, dim)
 
-
-def _regression_subspace_basis(U: np.ndarray, target_2d: np.ndarray, dim: int) -> np.ndarray | None:
-    x_c = target_2d - target_2d.mean(axis=0)
-    u_c = U - U.mean(axis=0)
-    coef, *_ = np.linalg.lstsq(x_c, u_c, rcond=None)
-    return _orthonormal_basis(coef, dim)
-
-
-def _class_mean_dict(U: np.ndarray, labels: np.ndarray) -> dict | None:
-    finite_label = np.isfinite(labels)
-    if not finite_label.any():
-        return None
-    classes = np.unique(labels[finite_label])
-    class_members = {c: np.flatnonzero((labels == c) & finite_label) for c in classes}
-    class_mean = {c: U[idx].mean(axis=0) for c, idx in class_members.items() if len(idx) >= SHARP_TEST_MIN_PER_CLASS}
-    return class_mean if len(class_mean) >= SHARP_TEST_MIN_CLASSES else None
 
 
 def _alignment_null_vector(a: np.ndarray, target: np.ndarray, n_draws: int, seed_tag: str, n_units: int) -> dict:
@@ -629,18 +512,6 @@ def _alignment_null_subspace(a: np.ndarray, basis: np.ndarray, n_draws: int, see
     result = _empirical_two_sided(observed, draws)
     result["principal_angle_deg"] = float(np.degrees(np.arccos(min(observed, 1.0))))
     return result
-
-
-def _empirical_two_sided(observed: float, draws: np.ndarray) -> dict:
-    finite = draws[np.isfinite(draws)]
-    if finite.size < 10:
-        return {"status": "not_computable"}
-    null_mean = float(np.mean(finite))
-    p = float(permutation_pvalue(np.abs(finite - null_mean) >= abs(observed - null_mean)))
-    return {
-        "status": "computed", "observed": observed, "null_mean": null_mean, "null_sd": float(np.std(finite)),
-        "n_draws": int(finite.size), "two_sided_p_value": p, "significant": bool(p <= 0.05 and observed > null_mean),
-    }
 
 
 def _preceding_class_mean_alignment(a: np.ndarray, U: np.ndarray, labels: np.ndarray, class_mean: dict,
@@ -671,33 +542,6 @@ def _preceding_class_mean_alignment(a: np.ndarray, U: np.ndarray, labels: np.nda
     result = _empirical_two_sided(observed, draws)
     result["n_qualifying_trials"] = len(cosines)
     return result
-
-
-def _axis_stability(R: np.ndarray, seed_tag: str) -> dict:
-    n, n_units = R.shape
-    if n < N_CV_FOLDS * MIN_FOLD_TRIALS:
-        return {"status": "too_few_trials", "n_trials": n}
-    folds = _contiguous_folds(n, N_CV_FOLDS)
-    fold_axes = [leading_eigenvector(R[folds == f]) if int((folds == f).sum()) >= MIN_FOLD_TRIALS else None
-                 for f in range(N_CV_FOLDS)]
-    pairs = [(i, j) for i in range(N_CV_FOLDS) for j in range(i + 1, N_CV_FOLDS)
-             if fold_axes[i] is not None and fold_axes[j] is not None]
-    if len(pairs) < 3:
-        return {"status": "too_few_fold_pairs", "n_fold_pairs": len(pairs)}
-    observed = float(np.mean([abs(float(np.dot(fold_axes[i], fold_axes[j]))) for i, j in pairs]))
-    rng = np.random.default_rng(stable_seed(seed_tag))
-    draws = np.empty(N_ROTATION_DRAWS)
-    for d in range(N_ROTATION_DRAWS):
-        vecs = rng.standard_normal((2 * len(pairs), n_units))
-        vecs /= np.linalg.norm(vecs, axis=1, keepdims=True)
-        draws[d] = float(np.mean(np.abs(np.sum(vecs[0::2] * vecs[1::2], axis=1))))
-    null_mean = float(np.mean(draws))
-    p = float(permutation_pvalue(draws >= observed))
-    return {
-        "status": "computed", "observed_mean_abs_cosine": observed, "n_fold_pairs": len(pairs),
-        "null_mean": null_mean, "null_sd": float(np.std(draws)),
-        "one_sided_p_value_stability_above_chance": p, "stable": bool(p <= 0.05),
-    }
 
 
 def _axis_alignment_macaque_session(bundle: dict) -> dict | None:
@@ -857,32 +701,8 @@ def run_axis_alignment(bundles: list[dict], corpus_key: str) -> dict:
 # SIGNED VS UNSIGNED DISPLACEMENT TEST
 # =======================================================================================================
 
-def _pearson_r(x: np.ndarray, y: np.ndarray) -> float | None:
-    if len(x) < 4 or np.std(x) == 0.0 or np.std(y) == 0.0:
-        return None
-    r = float(np.corrcoef(x, y)[0, 1])
-    return r if np.isfinite(r) else None
 
 
-def _fold_combined_and_pooled(feature: np.ndarray, outcome: np.ndarray, folds: np.ndarray, seed_tag: str) -> dict:
-    valid = np.isfinite(feature) & np.isfinite(outcome)
-    if int(valid.sum()) < MIN_TRIALS_WITH_DEFINED_DIRECTION:
-        return {"status": "too_few_trials"}
-    pooled = partial_correlation_permutation_test(
-        outcome[valid], feature[valid], [], N_PERM, np.random.default_rng(stable_seed(f"{seed_tag}|pooled")))
-    per_fold = []
-    for f in range(N_CV_FOLDS):
-        test = (folds == f) & valid
-        if int(test.sum()) < 4:
-            continue
-        r = _pearson_r(feature[test], outcome[test])
-        if r is not None:
-            per_fold.append((int(test.sum()), r))
-    within_fold = _trial_count_weighted(per_fold) if per_fold else None
-    return {
-        "status": "computed", "pooled_across_fold": pooled,
-        "within_fold_trial_count_weighted_r": within_fold, "n_folds_contributing": len(per_fold),
-    }
 
 
 def _signed_displacement_core(R: np.ndarray, idx: np.ndarray, deviation: np.ndarray, worse: np.ndarray, seed_tag: str) -> dict | None:
@@ -1086,33 +906,6 @@ def run_signed_displacement_test(bundles: list[dict], corpus_key: str, sign: flo
 # coding subspace?
 # =======================================================================================================
 
-def _cv_pca_rank(U: np.ndarray, max_k: int, seed_tag: str) -> dict:
-    n = U.shape[0]
-    if max_k < 1 or n < N_CV_FOLDS * MIN_FOLD_TRIALS:
-        return {"status": "not_estimable"}
-    folds = _contiguous_folds(n, N_CV_FOLDS)
-    candidate_ks = list(range(1, max_k + 1))
-    errors = np.zeros(len(candidate_ks))
-    n_folds_used = 0
-    for f in range(N_CV_FOLDS):
-        train, test = folds != f, folds == f
-        if int(train.sum()) < 4 or not test.any():
-            continue
-        mean_train = U[train].mean(axis=0)
-        _u_svd, _s_svd, vt_svd = np.linalg.svd(U[train] - mean_train, full_matrices=False)
-        test_c = U[test] - mean_train
-        n_folds_used += 1
-        for i, k in enumerate(candidate_ks):
-            k_eff = min(k, vt_svd.shape[0])
-            basis = vt_svd[:k_eff].T
-            proj = test_c @ basis @ basis.T
-            errors[i] += float(np.sum((test_c - proj) ** 2))
-    if n_folds_used == 0:
-        return {"status": "not_estimable"}
-    best_idx = int(np.argmin(errors))
-    return {"status": "computed", "n_folds_used": n_folds_used, "candidate_ks": candidate_ks,
-            "cv_reconstruction_error": errors.tolist(), "best_k": candidate_ks[best_idx]}
-
 
 def _ppca_heldout_rank(U: np.ndarray, max_k: int, seed_tag: str) -> dict:
     """Held-out average log-likelihood under probabilistic PCA, over the same folds and candidate ks
@@ -1152,114 +945,6 @@ def _ppca_heldout_rank(U: np.ndarray, max_k: int, seed_tag: str) -> dict:
             "heldout_mean_loglik_by_k": mean_loglik, "best_k": candidate_ks[best_idx]}
 
 
-def _occupied_space_decomposition(U: np.ndarray, axis: np.ndarray, k: int, n_draws: int, seed_tag: str) -> dict:
-    n, p = U.shape
-    k_eff = min(k, min(n, p))
-    if k_eff < 1 or np.sum(axis ** 2) <= 0.0:
-        return {"status": "not_computable"}
-    mean_u = U.mean(axis=0)
-    _u_svd, _s_svd, vt = np.linalg.svd(U - mean_u, full_matrices=False)
-    k_eff = min(k_eff, vt.shape[0])
-    basis = vt[:k_eff].T
-    within = basis @ (basis.T @ axis)
-    within_frac = float(np.sum(within ** 2) / np.sum(axis ** 2))
-    off_frac = 1.0 - within_frac
-    rng = np.random.default_rng(stable_seed(seed_tag))
-    g = rng.standard_normal((n_draws, p))
-    g /= np.linalg.norm(g, axis=1, keepdims=True)
-    w = g @ basis
-    null_off = 1.0 - np.sum(w ** 2, axis=1)
-    null_mean = float(np.mean(null_off))
-    p_value = float(permutation_pvalue(np.abs(null_off - null_mean) >= abs(off_frac - null_mean)))
-    null_within = 1.0 - null_off
-    null_within_ci95 = [float(v) for v in np.percentile(null_within, [2.5, 97.5])]
-    return {
-        "status": "computed", "k": k_eff, "within_fraction": within_frac, "off_fraction": off_frac,
-        "null_off_fraction_mean": null_mean, "null_off_fraction_sd": float(np.std(null_off)),
-        "null_within_fraction_mean": float(np.mean(null_within)),
-        "null_within_fraction_ci95pct": null_within_ci95,
-        "within_fraction_minus_null_mean": float(within_frac - np.mean(null_within)),
-        "two_sided_p_value": p_value, "off_fraction_above_null": bool(p_value <= 0.05 and off_frac > null_mean),
-        # kept for pooling across sessions; stripped from the stored per-level furniture
-        "null_off_fraction_draws": null_off,
-    }
-
-
-def _collect_axis_entries(bundles: list[dict], corpus_key: str) -> dict:
-    """Rebuilds the identical (R, U) pair the anisotropy test used, per session (per item-count level for
-    the multi-object corpus), for the occupied-state-space decomposition -- recomputed rather than threaded
-    through the checkpoint, since these arrays are not JSON-safe and the anisotropy test's own checkpoint
-    intentionally keeps only its scalar summaries."""
-    out: dict[str, list[dict]] = {}
-    for bundle in bundles:
-        session = bundle["session"]
-        entries = []
-        if corpus_key == CORPORA[0]:
-            rows = _residual_rows(bundle["activity_by_unit"])
-            if rows["n_kept"] >= MIN_TRIALS_WITH_DEFINED_DIRECTION:
-                R, idx = _unit_residual_matrix(rows)
-                U = unit_direction_vectors(bundle["activity_by_unit"])[idx]
-                entries.append({"n_trials": int(R.shape[0]), "R": R, "U": U, "level": "all"})
-        else:
-            item_count = bundle["item_count"]
-            for level in sorted({int(v) for v in item_count.tolist()}):
-                mask = item_count == float(level)
-                if int(mask.sum()) < MIN_TRIALS_WITH_DEFINED_DIRECTION:
-                    continue
-                rows = _residual_rows(bundle["activity_by_unit"][mask])
-                if rows["n_kept"] < MIN_TRIALS_WITH_DEFINED_DIRECTION:
-                    continue
-                R, idx = _unit_residual_matrix(rows)
-                U = unit_direction_vectors(bundle["activity_by_unit"][mask])[idx]
-                entries.append({"n_trials": int(R.shape[0]), "R": R, "U": U, "level": str(level)})
-        out[session] = entries
-    return out
-
-
-def pooled_off_fraction_against_matched_null(computed_sessions: list[dict]) -> dict:
-    """Pools each session's own matched-random-axis null draws -- per session first combined across
-    item-count levels by trial-count weighting, draw-index aligned; across sessions by their mean,
-    draw-index aligned (the same pooling convention the anisotropy block applies to its rotation nulls)
-    -- and compares the pooled observed off-fraction (mean across sessions) against that pooled null's
-    central mass by a two-sided empirical percentile test. The observed off-fraction is never tested
-    against zero: a random axis of the same dimension has a nonzero off-occupied fraction by
-    construction, so only the matched null separates 'leaves the occupied space' from 'does not'."""
-    off_fracs = [s["off_fraction"] for s in computed_sessions if s.get("off_fraction") is not None]
-    draws_list = [np.asarray(s["null_draws"], dtype=float) for s in computed_sessions
-                  if s.get("null_draws") is not None]
-    out = {"status": "not_computable", "n_sessions": len(off_fracs),
-           "n_sessions_with_a_null_distribution": len(draws_list),
-           "pooled_observed_off_fraction": None, "pooled_null_mean": None, "pooled_null_sd": None,
-           "two_sided_empirical_p_value": None, "above_null": None,
-           "significant_above_null": False, "significant_below_null": False}
-    if not draws_list or not off_fracs or len(off_fracs) != len(draws_list):
-        return out
-    pooled_null = np.nanmean(np.stack(draws_list), axis=0)
-    finite = pooled_null[np.isfinite(pooled_null)]
-    if finite.size < 10:
-        return out
-    null_centre = float(np.mean(finite))
-    observed_pooled = float(np.mean(off_fracs))
-    p_value = float(permutation_pvalue(np.abs(finite - null_centre) >= abs(observed_pooled - null_centre)))
-    above = observed_pooled > null_centre
-    out.update({
-        "status": "computed", "pooled_observed_off_fraction": observed_pooled,
-        "pooled_null_mean": null_centre, "pooled_null_sd": float(np.std(finite)),
-        "two_sided_empirical_p_value": p_value, "above_null": bool(above),
-        "significant_above_null": bool(p_value <= 0.05 and above),
-        "significant_below_null": bool(p_value <= 0.05 and not above),
-    })
-    return out
-
-
-def classify_occupied_space_branch(comparison: dict) -> str:
-    """Pre-declared mapping from the pooled observed-versus-matched-null comparison to one of the three
-    named branches; see OCCUPIED_SPACE_DECISION_RULE_DECLARED_BEFORE_FITTING."""
-    if comparison.get("status") != "computed":
-        return "not_separable_at_the_available_dimensionality"
-    if comparison["significant_above_null"]:
-        return "the_axis_lies_outside_the_occupied_state_space"
-    return "the_axis_lies_within_the_occupied_state_space_but_outside_the_coding_subspace"
 
 
 def run_occupied_space_block(bundles: list[dict], corpus_key: str) -> dict:
@@ -1395,8 +1080,8 @@ def run_occupied_space_block(bundles: list[dict], corpus_key: str) -> dict:
 def stimulation_direction_alignment_block() -> dict:
     """The delivered microstimulation corpus (config key macaque_pfc_microstimulation, results/
     stimulation_latent_response_map.json) is a THIRD macaque corpus, recorded from different animals in
-    different sessions than either the single-item lateral prefrontal cortex corpus (Panichello et al.
-    2024) or the multi-object corpus (Watters, Gabel, Tenenbaum and Jazayeri) this module's residual axis is
+    different sessions than either the single-item lateral prefrontal cortex corpus (doi
+    10.1038/s41586-024-08139-9) or the multi-object corpus (doi 10.64898/2026.01.27.702062) this module's residual axis is
     fit on. A cosine between two directions requires both to live in the same coordinate basis -- the same
     recorded units, in the same session -- which does not exist across three corpora recorded from
     different neurons in different animals. This is checked directly below, not assumed, and reported as
@@ -1411,7 +1096,7 @@ def stimulation_direction_alignment_block() -> dict:
     # Distinguish three reasons macaque_pfc_microstimulation_sessions can end up empty -- an upstream
     # arm voided by its own reproduction gate must never be silently coerced into
     # the same empty list a genuinely-computed-but-empty ledger would produce
-    # (see this project's own named defect: a null read as a measured zero).
+    # (see this project's own named error: a null read as a measured zero).
     if not macaque_pfc_microstimulation_path.exists():
         macaque_pfc_microstimulation_source_status, macaque_pfc_microstimulation_source_reason = "source_artifact_not_found", None
     else:
@@ -1652,8 +1337,8 @@ def main() -> None:
         "scope": (
             "Run only on the two corpora whose rate-free deviation observable passes its own orthogonality "
             "gate against total spike count: the single-item macaque lateral prefrontal cortex corpus "
-            "(Panichello et al. 2024) and the multi-object macaque corpus (Watters, Gabel, Tenenbaum and "
-            "Jazayeri; DANDI 000620). The mouse anterior lateral motor cortex corpus and both human corpora "
+            "(doi 10.1038/s41586-024-08139-9) and the multi-object macaque corpus (doi "
+            "10.64898/2026.01.27.702062; DANDI 000620). The mouse anterior lateral motor cortex corpus and both human corpora "
             "are excluded here on that already-measured precondition, not left pending. The multi-object "
             "corpus is analysed WITHIN item-count level throughout and combined across levels by "
             "trial-count weighting; a pooled-across-item-count number is never reported as its effect size."

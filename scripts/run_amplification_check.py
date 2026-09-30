@@ -5,8 +5,7 @@ amplified direction?
 WHY: the project's own manuscript draft already ASSERTS (as interpretation) that v* has
 causal leverage because cortical dynamics are non-normal and a
 perturbation is amplified along the propagator's top RIGHT SINGULAR vector,
-not its top eigenvector (Murphy&Miller 2009; Goldman 2009; Hennequin/Vogels/
-Gerstner 2014; Bondanelli&Ostojic 2020). This script supplies the one missing
+not its top eigenvector (the published non-normal amplification literature). This script supplies the one missing
 number: cos(v*, w1) per macaque PFC microstimulation session, where v* is the EXACT vector the
 causal benchmark already uses (src/control.py:dominant_eigenmode, same
 argmax(eigs modulus)+unit-norm as run_macaque_pfc_microstimulation_pipeline.build_session_features)
@@ -18,8 +17,7 @@ run_macaque_pfc_microstimulation_pipeline.load_macaque_pfc_microstimulation_sess
 bit-identical to the one the benchmark scores.
 
 Run:
-    /home/amin/miniconda3/bin/graphify query ...  (already done)
-    /home/amin/miniconda3/envs/wm_dynamics/bin/python scripts/run_amplification_check.py
+    python scripts/run_amplification_check.py
 """
 from __future__ import annotations
 
@@ -39,9 +37,10 @@ from dynamics import dmd_reconstruction_error
 from control import dominant_eigenmode
 
 sys.path.insert(0, str(ROOT / "scripts"))
-from run_macaque_pfc_microstimulation_pipeline import (
-    load_macaque_pfc_microstimulation_session, crop_trial, SESSIONS, N_PC, DMD_RANK, N_BINS, BIN_S,
-)
+from run_macaque_pfc_microstimulation_pipeline import load_macaque_pfc_microstimulation_session, SESSIONS
+from spike_pipeline import crop_trial
+from dynamics import N_PC, DMD_RANK
+from spike_pipeline import N_BINS, BIN_S
 
 RESULTS = ROOT / "results"
 

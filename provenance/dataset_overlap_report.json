@@ -1,6 +1,6 @@
 {
   "canonical_view_rule": "Prefer 001187 for a verified 001187/000673 shared recording; retain 000673 as a linked sensitivity view.",
-  "data_root": "/media/amin/EXTERNAL_USB/SMAF/Research/Representation/Working Memory/data",
+  "data_root": "<data_root>",
   "n_primary_records": 129,
   "n_records": 168,
   "overlap_groups": [

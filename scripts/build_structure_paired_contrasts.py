@@ -41,8 +41,9 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from provenance import canonical_json, git_commit, sha256_file  # noqa: E402
 from statistics import bootstrap_ci, paired_sign_flip_test  # noqa: E402
 from spike_pipeline import load_spike_times, low_rate_unit_mask, resolve_unit_regions  # noqa: E402
-from build_structure_control_observables import _identifiable_session_field  # noqa: E402
+from statistics import _identifiable_session_field
 import run_human_drift_spine_000469 as spine469  # noqa: E402
+from statistics import extract_lfp  # noqa: E402
 
 RESULTS = ROOT / "results"
 SEED = 20260806
@@ -124,11 +125,6 @@ def extract_000574(artifact: dict, region: str) -> tuple[dict[str, float], dict[
 def extract_001187_000673(artifact: dict, region: str) -> tuple[dict[str, float], dict[str, float]]:
     sessions = artifact.get("content_axis_battery", {}).get("regions", {}).get(region, {}).get("sessions", {})
     return per_patient_lambda_diffusion_from_sessions(sessions, _session_to_patient_by_ses_suffix)
-
-
-def extract_lfp(artifact: dict, dataset_key: str, region: str) -> tuple[dict[str, float], dict[str, float]]:
-    block = artifact.get("datasets", {}).get(dataset_key, {}).get("structures", {}).get(region, {})
-    return dict(block.get("per_patient_lambda", {})), dict(block.get("per_patient_diffusion", {}))
 
 
 def bootstrap_paired_difference(diffs: np.ndarray, patient_ids: list[str], rng: np.random.Generator) -> dict[str, Any]:

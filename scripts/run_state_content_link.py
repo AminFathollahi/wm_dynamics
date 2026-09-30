@@ -38,16 +38,15 @@ from geometry import content_decoding_dropping_latent, out_of_fold_class_confide
 from spike_pipeline import FrozenPSTHTransform, build_psth  # noqa: E402
 from state_persistence import _ols_slope, per_unit_permutation_null_r_lag_profile, r_lag_profile  # noqa: E402
 from statistics import paired_sign_flip_test  # noqa: E402
+from info_decoding import MIN_CLASSES  # noqa: E402
+from spike_pipeline import DECIDING_WIDTH_BINS, delay_counts  # noqa: E402
+from statistics import CONTENT_N_PERM_FULL, PANICHELLO_DELAY_WINDOW_MS, _one_sample_sign_flip, _stable_seed  # noqa: E402
+from corpus_sessions import _panichello_directory  # noqa: E402
+from spike_pipeline import BIN_MS  # noqa: E402
+from info_decoding import session_subtractive_test  # noqa: E402
 
-BIN_MS = 100.0
 BIN_WIDTH_S = BIN_MS / 1000.0
-DECIDING_WIDTH_BINS = 3
-CONTENT_N_COMPONENTS_MAX = 8
-CONTENT_N_HALF_SPLITS = 12
-CONTENT_N_PERM_FULL = 50
-CONTENT_N_PERM_LATENT1 = 30
 MIN_TRIALS_PER_CLASS = 4
-MIN_CLASSES = 2
 MIN_TRIALS_FOR_MARGIN_SPLIT = 16
 MARGIN_SUBSAMPLE_REPEATS = 8
 MARGIN_MATCHED_N_SPLITS = 8
@@ -58,21 +57,6 @@ LAG_PATH = Path(__file__).resolve().parents[1] / "results" / "state_persistence_
 OUTPUT_PATH = Path(__file__).resolve().parents[1] / "results" / "state_content_link.json"
 
 
-def _one_sample_sign_flip(values: list[float], null_value: float, alternative: str = "less") -> dict:
-    n = len(values)
-    min_attainable_p = 1.0 / (2 ** n) if n else 1.0
-    if n < 4 or min_attainable_p > 0.05:
-        return {"status": "underpowered_by_construction", "n_sessions": n, "min_attainable_p": min_attainable_p}
-    arr = np.array(values) - null_value
-    test = paired_sign_flip_test(arr, np.zeros(n), alternative=alternative)
-    two_sided = paired_sign_flip_test(arr, np.zeros(n), alternative="two-sided")
-    return {
-        "status": "tested", "n_sessions": n, "min_attainable_p": min_attainable_p, "alternative": alternative,
-        "mean_value": float(test["mean_diff"] + null_value), "mean_diff_from_null": float(test["mean_diff"]),
-        "p_value": test["p_value"], "two_sided_p_value": two_sided["p_value"],
-        "significant": bool(test["p_value"] <= 0.05),
-        "significant_two_sided": bool(two_sided["p_value"] <= 0.05),
-    }
 
 
 def usable_label(labels: np.ndarray | None, min_classes: int = MIN_CLASSES, min_per_class: int = MIN_TRIALS_PER_CLASS) -> tuple[bool, str | None, np.ndarray | None]:
@@ -87,74 +71,8 @@ def usable_label(labels: np.ndarray | None, min_classes: int = MIN_CLASSES, min_
     return True, None, mask
 
 
-def delay_counts(spike_lists, onset: np.ndarray, window_s: float, bin_ms: float = BIN_MS) -> np.ndarray:
-    """Raw delay-epoch spike counts (trials, units, bins), the input
-    r_lag_profile and its nulls expect."""
-    rate = build_psth(spike_lists, onset, bin_ms=bin_ms, smooth_ms=0.0, window_s=window_s)
-    return rate * (bin_ms / 1000.0)
 
 
-def session_subtractive_test(X: np.ndarray, labels: np.ndarray, seed: int,
-                              k_max: int = CONTENT_N_COMPONENTS_MAX, n_half_splits: int = CONTENT_N_HALF_SPLITS,
-                              with_permutation_nulls: bool = True) -> dict:
-    """Leave-one-latent-out ablation cost of every one of the k PCA latents,
-    and the leading latent's rank among them by that cost.
-
-    ``with_permutation_nulls=False`` returns the ablation-cost ranking and
-    the full-model decoding accuracy but skips the three label-permutation
-    null fits, which dominate the cost. Callers that need only the ranking
-    -- for instance one resampling the label sequence many times per session
-    to build its own null over the pooled ranking -- should set it False;
-    the permutation p-values of a resampled label sequence answer a
-    different question and would be discarded anyway. Every returned field
-    that does not depend on the nulls is identical either way."""
-    k = min(k_max, X.shape[1] - 2, max(2, X.shape[0] // 8))
-    if k < 3:
-        return {"status": "too_few_units_or_trials_for_k_latents", "k_attempted": int(k)}
-    t_idx = np.array([0])
-
-    full_aucs: list[float] = []
-    minus_aucs: dict[int, list[float]] = {j: [] for j in range(k)}
-    for s in range(n_half_splits):
-        rng = np.random.default_rng(seed + s)
-        full = content_decoding_dropping_latent(X, labels, t_idx, k, None, n_splits=2, n_perm=0, rng=rng)
-        full_aucs.append(float(full["auc_per_t"][0]))
-        for j in range(k):
-            rng_j = np.random.default_rng(seed + 1000 * (s + 1) + j)
-            m = content_decoding_dropping_latent(X, labels, t_idx, k, j, n_splits=2, n_perm=0, rng=rng_j)
-            minus_aucs[j].append(float(m["auc_per_t"][0]))
-
-    a_full = float(np.nanmedian(full_aucs))
-    a_minus = {j: float(np.nanmedian(minus_aucs[j])) for j in range(k)}
-    cost = {j: a_full - a_minus[j] for j in range(k)}
-    rank_from_top = 1 + sum(1 for j in range(1, k) if cost[j] > cost[0])
-    fractional_rank = (rank_from_top - 1) / (k - 1) if k > 1 else 0.0
-
-    ranking = {
-        "status": "tested", "n_trials": int(X.shape[0]), "n_units": int(X.shape[1]),
-        "n_classes": int(len(np.unique(labels))), "k_latents": int(k),
-        "a_full": a_full, "a_minus1": a_minus[0], "a_minus_j": a_minus, "cost_j": cost,
-        "leading_latent_cost": cost[0], "leading_latent_rank_from_top": rank_from_top,
-        "leading_latent_fractional_rank": fractional_rank,
-    }
-    if not with_permutation_nulls:
-        return ranking
-
-    null_rng = np.random.default_rng(seed + 55555)
-    full_with_null = content_decoding_dropping_latent(X, labels, t_idx, k, None, n_splits=3, n_perm=CONTENT_N_PERM_FULL, rng=null_rng)
-    minus1_rng = np.random.default_rng(seed + 66666)
-    minus1_with_null = content_decoding_dropping_latent(X, labels, t_idx, k, 0, n_splits=3, n_perm=CONTENT_N_PERM_FULL, rng=minus1_rng)
-    latent1_rng = np.random.default_rng(seed + 77777)
-    latent1 = content_decoding_dropping_latent(X, labels, t_idx, 1, None, n_splits=3, n_perm=CONTENT_N_PERM_LATENT1, rng=latent1_rng)
-
-    return {
-        **ranking,
-        "a_full_p_value": float(full_with_null["p_per_t"][0]),
-        "a_full_clears_own_null": bool(full_with_null["p_per_t"][0] <= 0.05),
-        "a_minus1_p_value": float(minus1_with_null["p_per_t"][0]),
-        "a_minus1_clears_own_null": bool(minus1_with_null["p_per_t"][0] <= 0.05),
-        "a_latent1_alone": float(latent1["auc_per_t"][0]), "a_latent1_p_value": float(latent1["p_per_t"][0]),
-    }
 
 
 def session_trial_resolved_test(counts: np.ndarray, X: np.ndarray, labels: np.ndarray, k: int,
@@ -238,14 +156,8 @@ def session_trial_resolved_test(counts: np.ndarray, X: np.ndarray, labels: np.nd
 HUMAN_DATASETS = ("dandi_000469", "dandi_001187", "dandi_000574")
 
 
-def _panichello_directory(root: Path) -> Path | None:
-    config = json.loads((Path(__file__).resolve().parents[1] / "config" / "datasets.json").read_text())
-    entry = config["datasets"]["panichello_2024"]  # raise if the registry key is missing/mistyped, not a silent skip
-    path = root / entry["local_path"]
-    return path if path.is_dir() else None
 
 
-PANICHELLO_DELAY_WINDOW_MS = (300.0, 1450.0)
 
 
 def iter_sessions_with_labels(root: Path):
@@ -254,7 +166,7 @@ def iter_sessions_with_labels(root: Path):
     session) this module's content-link scope reaches. Human corpora: delay
     epoch, 100 ms bins, item identity if the corpus carries it (see
     src/corpus_sessions.py's item_ids field per iterator). ALM: instructed
-    lick direction. Panichello: cue angle index (8-way)."""
+    lick direction. Macaque spatial working-memory corpus: cue angle index (8-way)."""
     for meta in iter_all_corpora(root):
         yield {
             "dataset": meta["dataset"], "patient": meta["patient"], "session": meta["session"],
@@ -293,9 +205,6 @@ def iter_sessions_with_labels(root: Path):
             }
 
 
-def _stable_seed(*parts) -> int:
-    import zlib
-    return zlib.crc32("|".join(str(p) for p in parts).encode()) % (2 ** 31)
 
 
 def main() -> None:

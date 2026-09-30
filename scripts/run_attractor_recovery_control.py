@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Blocking gate: recover Inagaki et al. 2019's known ALM discrete-attractor
-dynamics with three attractor-identification methods before any of them is
+"""Blocking gate: recover the known ALM discrete-attractor dynamics
+(doi 10.1038/s41586-019-0919-7) with three attractor-identification methods before any of them is
 licensed to make an attractor-class claim about an unvalidated human corpus.
 
 Methods, each with a prediction declared before running:
@@ -385,7 +385,7 @@ def main() -> None:
     output = {
         "schema_version": "1.0.0",
         "analysis_id": "attractor_recovery_control",
-        "dataset": "Inagaki ALM silicon-probe perturbation release, RandomDelayTask/withPerturbation",
+        "dataset": "Mouse ALM silicon-probe perturbation release, RandomDelayTask/withPerturbation",
         "code_commit": git_commit(ROOT),
         "source_hash": sha256_file(Path(__file__)),
         "seed": SEED,

@@ -15,19 +15,18 @@ finding is actually about, not the lambda value itself.
 This REPLACES the matched-lambda-difference design in
 run_unit_count_matched_sensitivity.py (which conditions on identifiability
 before comparing lambda and dead-ends when one arm is essentially never
-identified -- see crack register:
-matched_count_design_cannot_identify_paired_lambda_difference). That script
+identified). That script
 is not modified or restarted here.
 
 SCOPE, DECLARED BEFORE RUNNING: DANDI 000469 only. A single matched draw
 costs ~35 s (one full 5-fold CV PCA + Gaussian state-space refit) --
 measured directly on this machine before choosing N_DRAWS_PER_ARM below.
 Extending this same joint-matching procedure to DANDI 001187/000673 and
-000574/Boran requires adding unit-index subsampling support to their own
+000574 requires adding unit-index subsampling support to their own
 session-fit functions (`fit_load_confinement`,
 run_human_drift_spine_000574.analyze_session), which neither currently has --
-that is additional engineering, not yet done, and is filed as a
-crack rather than silently skipped.
+that is additional engineering, not yet done, and is reported
+rather than silently skipped.
 """
 
 from __future__ import annotations
@@ -57,7 +56,7 @@ import run_human_drift_spine_000469 as spine469  # noqa: E402
 RESULTS = ROOT / "results"
 OUTPUT_PATH = RESULTS / "structure_identifiability_matched_draws.json"
 SEED = 20260807
-N_DRAWS_PER_ARM = 20  # reduced from the 200 used for a single pair last round (see docstring)
+N_DRAWS_PER_ARM = 20  # reduced from the 200 used for a single pair earlier (see docstring)
 N_RATE_CANDIDATES = 40  # cheap candidate subsets evaluated per draw to pick the closest-rate one
 N_WORKERS = 28
 
@@ -127,7 +126,7 @@ def main() -> None:
         for region in ANATOMICAL_REGIONS
     }
 
-    all_jobs = []
+    refit_args = []
     pair_patient_meta: dict[tuple, dict] = {}
 
     for region_a, region_b in itertools.combinations(ANATOMICAL_REGIONS, 2):
@@ -142,12 +141,12 @@ def main() -> None:
             target_count_b, target_rate_b = _target_rate_and_count(units_a, onsets_a, window_s, len(units_b))
             base_seed_a = _stable_seed(region_a, region_b, patient, "a")
             base_seed_b = _stable_seed(region_a, region_b, patient, "b")
-            start_a = len(all_jobs)
+            start_a = len(refit_args)
             for d in range(N_DRAWS_PER_ARM):
-                all_jobs.append((str(path), region_a, target_count_a, target_rate_a, window_s, base_seed_a, d))
-            start_b = len(all_jobs)
+                refit_args.append((str(path), region_a, target_count_a, target_rate_a, window_s, base_seed_a, d))
+            start_b = len(refit_args)
             for d in range(N_DRAWS_PER_ARM):
-                all_jobs.append((str(path), region_b, target_count_b, target_rate_b, window_s, base_seed_b, d))
+                refit_args.append((str(path), region_b, target_count_b, target_rate_b, window_s, base_seed_b, d))
             pair_patient_meta[(region_a, region_b, patient)] = {
                 "target_count_a": target_count_a, "target_rate_a": target_rate_a,
                 "target_count_b": target_count_b, "target_rate_b": target_rate_b,
@@ -155,12 +154,12 @@ def main() -> None:
                 "range_b": (start_b, start_b + N_DRAWS_PER_ARM),
             }
 
-    n_jobs = len(all_jobs)
-    print(f"total matched-draw refits queued: {n_jobs}", flush=True)
+    n_total_refits = len(refit_args)
+    print(f"total matched-draw refits queued: {n_total_refits}", flush=True)
     import time
     t0 = time.time()
     with Pool(N_WORKERS) as pool:
-        results = pool.map(_draw_one, all_jobs)
+        results = pool.map(_draw_one, refit_args)
     wall_clock_s = time.time() - t0
 
     pairs_out: dict[str, dict] = {}
@@ -209,19 +208,17 @@ def main() -> None:
         "scope": (
             "DANDI 000469 only, every ordered pair among the 5 co-recorded structures "
             "(ANATOMICAL_REGIONS), every patient with both structures 'complete' in "
-            "region_stratified_drift_000469.json. 001187/000673 and 000574/Boran are NOT covered "
+            "region_stratified_drift_000469.json. 001187/000673 and 000574 are NOT covered "
             "-- their session-fit functions have no unit_indices subsampling support, which is "
-            "additional engineering not yet completed (crack register: "
-            "structure_identifiability_matched_draws_scope_limited_to_000469)."
+            "additional engineering not yet completed."
         ),
         "reduced_scope_declaration": (
-            f"N_DRAWS_PER_ARM={N_DRAWS_PER_ARM}, reduced from the 200 used for a single pair last "
-            "round: a single matched draw costs ~35s (one full 5-fold CV PCA + Gaussian "
+            f"N_DRAWS_PER_ARM={N_DRAWS_PER_ARM}, reduced from the 200 used for a single pair "
+            "earlier: a single matched draw costs ~35s (one full 5-fold CV PCA + Gaussian "
             "state-space refit, measured directly before choosing this count). The reduction is "
-            "declared here, before running, per the standing house rule on infeasible mandatory "
-            "sensitivities."
+            "declared here, before running."
         ),
-        "n_total_refits": n_jobs,
+        "n_total_refits": n_total_refits,
         "measured_wall_clock_s": wall_clock_s,
         "n_workers": N_WORKERS,
         "matching_method": (
@@ -235,7 +232,7 @@ def main() -> None:
     }
     OUTPUT_PATH.write_text(canonical_json(output))
     print(json.dumps({
-        "output": str(OUTPUT_PATH), "n_jobs": n_jobs, "wall_clock_s": wall_clock_s,
+        "output": str(OUTPUT_PATH), "n_total_refits": n_total_refits, "wall_clock_s": wall_clock_s,
         "n_pairs": len(pairs_out),
     }, indent=2))
 

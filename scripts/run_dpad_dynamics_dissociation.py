@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """DPAD dissociation of behaviorally-relevant vs. behaviorally-irrelevant
-latent dynamics (Sani, Pesaran & Shanechi 2024, Nat Neurosci) on the DANDI
-000574 (Boran) single-unit sessions, compared against this project's existing
+latent dynamics on the DANDI 000574 single-unit sessions,
+compared against this project's existing
 unsupervised DMD/eigenmode dynamics characterization (v* = the fitted linear
 operator A's dominant-by-modulus eigenvector, src.control.dominant_eigenmode).
 
@@ -83,7 +83,7 @@ def _decode_score(Zp_trials: np.ndarray, n_tail: int = 5) -> np.ndarray:
 
 def process_session(key: str, data: dict, rng: np.random.Generator) -> dict | None:
     # Correct/error is near-ceiling in this cohort (already an established
-    # finding elsewhere in this project -- see Round-8 behavior-bounds work),
+    # finding elsewhere in this project),
     # so error trials are too rare per session for a class-balanced DPAD
     # supervision target. Set-size (memory load) 4-vs-8 is this project's
     # existing primary WM contrast (matches the CTG set4v8 analyses already

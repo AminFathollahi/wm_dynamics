@@ -47,12 +47,15 @@ from statistics import stable_seed  # noqa: E402
 from geometry import pca_decompose  # noqa: E402
 from control import canonicalize_eigenvector_phase  # noqa: E402
 from provenance import _json_safe
+from dynamics import N_PC
+from spike_pipeline import BIN_S, N_BINS
+from spike_pipeline import crop_trial
 
 RESULTS = ROOT / "results"
 RANKS = (4, 5, 6, 7, 8)
-BIN_S = macaque_pfc_microstimulation.BIN_S
-N_BINS = macaque_pfc_microstimulation.N_BINS
-N_PC = macaque_pfc_microstimulation.N_PC
+BIN_S = BIN_S
+N_BINS = N_BINS
+N_PC = N_PC
 
 
 def _control_latents() -> list[np.ndarray]:
@@ -64,7 +67,7 @@ def _control_latents() -> list[np.ndarray]:
         if corr is None or corr["control_idx"] is None:
             continue
         C = len(corr["channel_ids"])
-        ctrl = [macaque_pfc_microstimulation.crop_trial(tr["spikerate"]) for tr in corr["trials"]
+        ctrl = [crop_trial(tr["spikerate"]) for tr in corr["trials"]
                 if tr["stim_cond"] == corr["control_idx"]]
         ctrl = [e for e in ctrl if e is not None]
         if len(ctrl) < 10:
@@ -109,46 +112,41 @@ def cv_r2_and_vstar(latents: list[np.ndarray]) -> dict:
 def benchmark_slope_at_rank(r: int) -> dict:
     """Re-run the macaque PFC microstimulation v*-alignment benchmark with the operator rank set to r,
     reusing build_session_features + benchmark_modifiers unchanged."""
-    old = macaque_pfc_microstimulation.DMD_RANK
-    macaque_pfc_microstimulation.DMD_RANK = r
-    try:
-        all_rows, session_order = [], []
-        for prefix in macaque_pfc_microstimulation.SESSIONS:
-            try:
-                feat = macaque_pfc_microstimulation.build_session_features(prefix, structural_ctrl=None)
-            except Exception:
-                feat = None
-            if feat is None:
-                continue
-            si = len(session_order)
-            session_order.append(prefix)
-            for row in feat["rows"]:
-                row["session_idx"] = si
-            all_rows.extend(feat["rows"])
-        if not all_rows:
-            return {"benchmark_slope": float("nan"), "benchmark_p": float("nan"), "n": 0}
-        y = np.array([r_["y"] for r_ in all_rows], float)
-        t = np.array([r_["t"] for r_ in all_rows], int)
-        modifier = np.array([r_["modifier"] for r_ in all_rows], float)
-        propensity = np.array([r_["propensity"] for r_ in all_rows], float)
-        angle_idx = np.array([r_["angle_idx"] for r_ in all_rows], int)
-        session_idx = np.array([r_["session_idx"] for r_ in all_rows], int)
-        X = np.hstack([np.eye(angle_idx.max() + 1)[angle_idx],
-                       np.eye(len(session_order))[session_idx]])
+    all_rows, session_order = [], []
+    for prefix in macaque_pfc_microstimulation.SESSIONS:
+        try:
+            feat = macaque_pfc_microstimulation.build_session_features(prefix, structural_ctrl=None, dmd_rank=r)
+        except Exception:
+            feat = None
+        if feat is None:
+            continue
+        si = len(session_order)
+        session_order.append(prefix)
+        for row in feat["rows"]:
+            row["session_idx"] = si
+        all_rows.extend(feat["rows"])
+    if not all_rows:
+        return {"benchmark_slope": float("nan"), "benchmark_p": float("nan"), "n": 0}
+    y = np.array([r_["y"] for r_ in all_rows], float)
+    t = np.array([r_["t"] for r_ in all_rows], int)
+    modifier = np.array([r_["modifier"] for r_ in all_rows], float)
+    propensity = np.array([r_["propensity"] for r_ in all_rows], float)
+    angle_idx = np.array([r_["angle_idx"] for r_ in all_rows], int)
+    session_idx = np.array([r_["session_idx"] for r_ in all_rows], int)
+    X = np.hstack([np.eye(angle_idx.max() + 1)[angle_idx],
+                   np.eye(len(session_order))[session_idx]])
 
-        def _col(key):
-            return np.array([r_.get(key, np.nan) for r_ in all_rows], float)
+    def _col(key):
+        return np.array([r_.get(key, np.nan) for r_ in all_rows], float)
 
-        modifiers = {"vstar_alignment": modifier, "gramian_trace": _col("gramian_trace"),
-                     "stable_alignment": _col("stable_alignment"),
-                     "random_alignment": _col("random_alignment"), "input_norm": _col("input_norm")}
-        bench = benchmark_modifiers(y, t, X, modifiers=modifiers, propensity=propensity,
-                                    n_perm=2000, rng=np.random.default_rng(stable_seed(f"bench_r{r}")))
-        row = bench["leaderboard"]["vstar_alignment"]
-        return {"benchmark_slope": float(row["slope"]), "benchmark_p": float(row["p_value"]),
-                "winner": bench["winner"], "n": int(bench["n"])}
-    finally:
-        macaque_pfc_microstimulation.DMD_RANK = old
+    modifiers = {"vstar_alignment": modifier, "gramian_trace": _col("gramian_trace"),
+                 "stable_alignment": _col("stable_alignment"),
+                 "random_alignment": _col("random_alignment"), "input_norm": _col("input_norm")}
+    bench = benchmark_modifiers(y, t, X, modifiers=modifiers, propensity=propensity,
+                                n_perm=2000, rng=np.random.default_rng(stable_seed(f"bench_r{r}")))
+    row = bench["leaderboard"]["vstar_alignment"]
+    return {"benchmark_slope": float(row["slope"]), "benchmark_p": float(row["p_value"]),
+            "winner": bench["winner"], "n": int(bench["n"])}
 
 
 def main():

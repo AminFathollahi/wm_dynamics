@@ -12,7 +12,7 @@ for _sub in ("src", "scripts"):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from project_config import data_root, load_dataset_registry  # noqa: E402
+from project_config import data_root, load_dataset_registry
 from provenance import _json_safe, git_commit  # noqa: E402
 from io_utils import locked_json_update  # noqa: E402
 from response_latency import LATENCY_EXTRACTORS, LATENCY_UNAVAILABLE  # noqa: E402

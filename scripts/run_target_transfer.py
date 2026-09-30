@@ -30,7 +30,7 @@ block. Aggregate with a cluster/bootstrap over the 10 held-out sessions
 (not a trial-level p).
 
 Run:
-    /home/amin/miniconda3/envs/wm_dynamics/bin/python scripts/run_target_transfer.py
+    python scripts/run_target_transfer.py
 """
 from __future__ import annotations
 
@@ -52,10 +52,11 @@ from causal import benchmark_modifiers, _dr_slope
 from statistics import stable_seed
 
 sys.path.insert(0, str(ROOT / "scripts"))
-from run_macaque_pfc_microstimulation_pipeline import (
-    load_macaque_pfc_microstimulation_session, crop_trial, SESSIONS, N_PC, DMD_RANK, N_BINS, BIN_S,
-    build_session_features,
-)
+from run_macaque_pfc_microstimulation_pipeline import load_macaque_pfc_microstimulation_session, SESSIONS, build_session_features
+from spike_pipeline import crop_trial
+from dynamics import N_PC, DMD_RANK
+from spike_pipeline import N_BINS, BIN_S
+from statistics import _cluster_bootstrap_over_sessions  # noqa: E402
 
 RESULTS = ROOT / "results"
 WA_SESSIONS = [s for s in SESSIONS if s.startswith("Wa")]
@@ -75,7 +76,7 @@ def _channel_basis_check() -> bool:
 
 
 def _fit_session_v_and_V(prefix: str) -> dict | None:
-    """Same PCA+DMD+eigenvector fit as build_session_features (Part 1), plus
+    """Same PCA+DMD+eigenvector fit as build_session_features's own construction, plus
     V and v_star returned (not exposed by build_session_features itself)."""
     corr = load_macaque_pfc_microstimulation_session(prefix, correct=True)
     if corr is None or corr["control_idx"] is None:
@@ -113,22 +114,6 @@ def _slope_formula(m: np.ndarray, phi: np.ndarray) -> float:
     return float((mc * (phi - phi.mean())).sum() / denom)
 
 
-def _cluster_bootstrap_over_sessions(per_session_slope: np.ndarray, n_boot: int,
-                                      rng: np.random.Generator) -> dict:
-    """Cluster/bootstrap over the 10 held-out sessions (spec: not a trial-
-    level p) -- resample sessions with replacement, recompute the MEAN
-    transfer slope each draw (a session-level statistic, since each held-out
-    session already contributes exactly one transfer-modifier slope)."""
-    n = len(per_session_slope)
-    boot = np.empty(n_boot)
-    for b in range(n_boot):
-        idx = rng.integers(0, n, size=n)
-        boot[b] = per_session_slope[idx].mean()
-    ci_lo, ci_hi = np.percentile(boot, [2.5, 97.5])
-    mean_slope = float(per_session_slope.mean())
-    p = 2.0 * min(float((boot <= 0).mean()), float((boot >= 0).mean()))
-    p = min(p, 1.0)
-    return {"mean": mean_slope, "ci_lo": float(ci_lo), "ci_hi": float(ci_hi), "p_value": p, "n_boot": n_boot}
 
 
 def main() -> None:
@@ -219,8 +204,8 @@ def main() -> None:
         # alignment_to_vstar.
         # feat["rows"] rows are tagged with own-session alignment_to_vstar as
         # "modifier" but not the condition id itself, so re-derive rows
-        # directly the same way build_session_features does (Part 3 of that
-        # function), substituting transfer_align_by_cond for alignment_to_vstar.
+        # directly the same way build_session_features does its own row
+        # construction, substituting transfer_align_by_cond for alignment_to_vstar.
         rows = []
         def _epochs_for(cond_source, cond, label_correct):
             out = []

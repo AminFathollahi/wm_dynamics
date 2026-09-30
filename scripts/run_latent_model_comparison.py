@@ -4,7 +4,7 @@ structure a noise-blind one cannot?
 
 PCA has no observation-noise term, so it cannot separate signal from noise
 by construction. GPFA fits an explicit per-neuron independent noise variance
-alongside a Gaussian-process latent trajectory (Yu et al. 2009). This script
+alongside a Gaussian-process latent trajectory. This script
 fits both on the same training trials at matched latent dimensionality, on
 every human single-unit delay-epoch session and every mouse ALM session, and
 scores both on the same held-out trials: the nugget fraction of the leading
@@ -46,68 +46,28 @@ from drift_dynamics import confinement_identifiability, fit_gaussian_state_space
 from geometry import twonn_dimension  # noqa: E402
 from observability import median_nugget_from_held_out_latent  # noqa: E402
 from provenance import canonical_json, git_commit  # noqa: E402
-from run_latent_displacement_scaling import mean_squared_displacement, summarize_msd  # noqa: E402
+from info_decoding import mean_squared_displacement, summarize_msd
 from spike_pipeline import build_psth  # noqa: E402
 from statistics import paired_sign_flip_test, stable_seed  # noqa: E402
+from corpus_sessions import raw_counts_from_entry  # noqa: E402
+from info_decoding import LATENT_DIM, MIN_TEST_TRIALS, MIN_TRIALS, anscombe_counts, counts_to_spiketrains, TRAIN_FRACTION, split_trials  # noqa: E402
 
 SEED = 20260809
 BIN_MS = 100
-LATENT_DIM = 6
-TRAIN_FRACTION = 0.6
-MIN_TRIALS = 20
-MIN_TEST_TRIALS = 6
 OUTPUT_PATH = ROOT / "results" / "latent_model_comparison.json"
 
-EPOCH_WINDOWS_BY_DATASET = {
-    "dandi_000469": EPOCH_WINDOWS_S,
-    "dandi_001187": EPOCH_WINDOWS_S,
-    "dandi_000574": BORAN_EPOCH_WINDOWS_S,
-}
 
 
 def _seed(*parts: str) -> np.random.Generator:
     return np.random.default_rng((stable_seed("|".join(str(p) for p in parts)) ^ SEED) & 0xFFFFFFFF)
 
 
-def raw_counts_from_entry(entry: dict, bin_ms: float) -> np.ndarray:
-    """Integer spike counts (trials, units, bins), delay epoch, un-smoothed."""
-    window = EPOCH_WINDOWS_BY_DATASET[entry["dataset"]]["delay"]
-    rate = build_psth(entry["spike_lists"], entry["epoch_onsets"]["delay"], bin_ms=bin_ms, smooth_ms=0, window_s=window)
-    return np.rint(rate * (bin_ms / 1000.0)).astype(int)
 
 
-def split_trials(n_trials: int, rng: np.random.Generator, train_fraction: float = TRAIN_FRACTION) -> tuple[np.ndarray, np.ndarray]:
-    perm = rng.permutation(n_trials)
-    n_train = max(2, int(round(n_trials * train_fraction)))
-    n_train = min(n_train, n_trials - 2)
-    return perm[:n_train], perm[n_train:]
 
 
-def counts_to_spiketrains(counts: np.ndarray, bin_size_ms: float) -> list[list[neo.SpikeTrain]]:
-    """Reconstruct one synthetic spike per unit count, placed uniformly within
-    its bin -- elephant's GPFA re-bins at the same width on input, so this
-    round-trips the original integer counts exactly."""
-    n_trials, n_units, n_bins = counts.shape
-    t_stop = n_bins * bin_size_ms
-    trials = []
-    for tr in range(n_trials):
-        units = []
-        for u in range(n_units):
-            spikes: list[float] = []
-            for b in range(n_bins):
-                n = int(counts[tr, u, b])
-                if n > 0:
-                    offsets = (np.arange(n) + 0.5) / n * bin_size_ms
-                    spikes.extend(b * bin_size_ms + offsets)
-            units.append(neo.SpikeTrain(sorted(spikes) * pq.ms, t_stop=t_stop * pq.ms))
-        trials.append(units)
-    return trials
 
 
-def anscombe_counts(counts: np.ndarray) -> np.ndarray:
-    """Variance-stabilizing transform matching the project's existing
-    Anscombe convention (scripts/run_drift_positive_controls.py)."""
-    return 2.0 * np.sqrt(np.maximum(counts, 0.0) + 3.0 / 8.0)
 
 
 def _diagonal_gaussian_log_likelihood(residuals: np.ndarray, noise_var: np.ndarray) -> float:

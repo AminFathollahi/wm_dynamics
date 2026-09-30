@@ -15,7 +15,7 @@ This module answers the behaviour half: within condition (control vs
 stimulated) and within window (pre vs post), does the per-trial rate-free
 state displacement differ between correct and error trials.
 
-PART 1 settles a trap before any effect is fit: `error/` file counts per
+This module first settles a trap before any effect is fit: `error/` file counts per
 condition are wildly uneven (0-197 within one session) while `correct/` file
 counts are near-uniform (typically 15-20), so `n_error/(n_correct+n_error)`
 is not a usable error rate and no accuracy quantity is computed from these
@@ -24,7 +24,7 @@ each session's own `behavior.trialinfo` (rig settings: `badTrialHandling`,
 `earlySaccadePenalty`, `earlySaccadeTime`, `rpts`) and `behavior.codes`
 (per-trial event stream) before any displacement number is read.
 
-PART 2 is the link itself, reusing the shared time-resolved estimator
+It then builds the link itself, reusing the shared time-resolved estimator
 (src/stimulation_response_estimator.py) and this corpus's own feature path
 (crop_trial, BIN_S, PRE_S, load_macaque_pfc_microstimulation_session,
 imported unchanged from scripts/run_macaque_pfc_microstimulation_pipeline.py)
@@ -52,7 +52,7 @@ Outputs:
   results/macaque_maintenance_behaviour_link.json
 
 Run:
-    /home/amin/miniconda3/envs/wm_dynamics/bin/python \
+    python \
         scripts/run_macaque_maintenance_behaviour_link.py
 """
 from __future__ import annotations
@@ -77,17 +77,16 @@ from stimulation_response_estimator import (  # noqa: E402
     nuisance_treatment_effect,
     window_treatment_effect,
 )
-from run_macaque_pfc_microstimulation_pipeline import (  # noqa: E402
-    BIN_S, DATA, PRE_S, SESSIONS, crop_trial, load_macaque_pfc_microstimulation_session,
-)
+from run_macaque_pfc_microstimulation_pipeline import DATA, SESSIONS, load_macaque_pfc_microstimulation_session
+from spike_pipeline import crop_trial
+from spike_pipeline import BIN_S, PRE_S
 from run_stimulation_response_gate_and_panel import _read_census_row  # noqa: E402
 
 RESULTS = ROOT / "results"
 OUTPUT_PATH = RESULTS / "macaque_maintenance_behaviour_link.json"
 
-# Named reference on the displacement scale, inherited from this project's stimulation-response panel
-# (see docs/mandates/STANDING_CONSTRAINTS.md "Reference constants are internal, not biological"): the
-# scale a powered null is declared against, not a biological or clinical threshold.
+# Named reference on the displacement scale, inherited from this project's stimulation-response panel:
+# the scale a powered null is declared against, not a biological or clinical threshold.
 REFERENCE_DISPLACEMENT_SD = 1.0
 POWER = 0.80
 WINDOW_NAMES = ("pre_stimulation_window", "post_stimulation_window")
@@ -282,7 +281,7 @@ def _iter_behavior_grid(prefix: str, correct: bool):
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# PART 1 -- settle the trap before fitting anything
+# Settle the trap before fitting anything
 # ══════════════════════════════════════════════════════════════════════════
 
 def run_trial_admission_trap_audit() -> dict:
@@ -390,7 +389,7 @@ def run_trial_admission_trap_audit() -> dict:
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# PART 2 -- the link, reusing the panel's feature path, windows and metric
+# The link itself, reusing the panel's feature path, windows and metric
 # ══════════════════════════════════════════════════════════════════════════
 
 def _trial_ranks_by_condition(trialsequence: np.ndarray, n_angle: int) -> dict[tuple[int, int], list[int]]:

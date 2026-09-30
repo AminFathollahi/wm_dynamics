@@ -70,6 +70,10 @@ from causal import cate_vs_modifier_slope, benchmark_modifiers
 from statistics import stable_seed, paired_sign_flip_test
 from io_utils import locked_json_update
 from provenance import _json_safe
+from dynamics import DLPFC_CONNECTOME_AREA, DMD_RANK, N_PC  # noqa: E402
+from spike_pipeline import BIN_S, N_BINS  # noqa: E402
+from dynamics import _ascii_to_str, _parse_chan_token  # noqa: E402
+from spike_pipeline import crop_trial  # noqa: E402
 
 _DATA_CONFIG = json.loads((ROOT / "config" / "datasets.json").read_text())
 _DATA_ROOT = os.environ.get(_DATA_CONFIG["local_data_root_env"])
@@ -80,37 +84,31 @@ DATA = (
 )
 RESULTS = ROOT / "results"
 
-# STEP B-EXT: optional TRUE structural-controllability competitor (Markov &
-# Kennedy 2014 macaque FLNe connectome). Absent -> M2a/M2b/M6 are skipped
-# cleanly; the base benchmark (M1-M5) is unaffected.
-CONNECTOME_PATH = data_asset_path("connectome")
+# STEP B-EXT: optional TRUE structural-controllability competitor (macaque
+# FLNe connectome). Absent -> M2a/M2b/M6 are skipped cleanly; the base
+# benchmark (M1-M5) is unaffected.
 # The uStim arrays sit over the dorsolateral principal-
 # sulcus PFC; area-level assignment only (no per-electrode histology in this
 # dataset -- Methods states this limitation), same area for every session.
-DLPFC_MARKOV_AREA = "9/46d"
 N_RANDOM_DIRS = 20
 
 
 def _load_connectome() -> tuple[np.ndarray, list[str]] | tuple[None, None]:
-    if not CONNECTOME_PATH.exists():
-        print(f"structural competitor skipped (no connectome at {CONNECTOME_PATH})")
+    connectome_path = data_asset_path("connectome")
+    if not connectome_path.exists():
+        print(f"structural competitor skipped (no connectome at {connectome_path})")
         return None, None
-    with open(CONNECTOME_PATH) as f:
+    with open(connectome_path) as f:
         lines = [ln for ln in f if not ln.startswith("#")]
     areas = lines[0].strip().split(",")
     W = np.loadtxt(lines[1:], delimiter=",")
     return W, areas
 
-BIN_S = 0.05          # spikerate bin size (s), fixed by the dataset
-PRE_S = 0.8            # every trial's spikerate starts at -0.8 s re: stim onset
-N_BINS = 30             # common post-crop window: -0.8 .. +0.7 s. Retains 100% of trials
                         # (the global per-trial minimum across all 11 sessions is exactly
                         # 30 bins) and covers more of the post-stim delay period than the
                         # original 26-bin window, while staying close to the ~28-bin
                         # (~1.4s) window used in the paper's own PNBdecoder stats
                         # (stats/decoder/*_PNBdecoder.mat, accuracy shape (28, n_cond)).
-N_PC = 8
-DMD_RANK = 7   # A reported choice, not a data-selected optimum: the cross-validated one-step R^2
                # curve over r in {4..8} is monotonically increasing with no elbow (see
                # results/dmd_rank_selection.json), so no rank is uniquely "selected" by the data.
                # r=7 is the smallest rank within 0.01 R^2 of the best-performing rank tested.
@@ -139,14 +137,8 @@ SESSIONS = [
 #     control_idx  : int -- index into stim_channels/spikerate-cond-axis that is
 #                    the no-stim control condition
 
-def _ascii_to_str(arr: np.ndarray) -> str:
-    return "".join(chr(int(x)) for x in np.asarray(arr).ravel())
 
 
-def _parse_chan_token(token: str) -> list[int]:
-    """'265  281' -> [265, 281]; '0  0' / '0' -> []; '31' -> [31]."""
-    nums = [int(x) for x in re.findall(r"\d+", token)]
-    return [n for n in nums if n != 0]
 
 
 def _load_h5py_session(mat_path: Path, neural_field: str = "spikerate") -> dict | None:
@@ -318,15 +310,10 @@ def load_macaque_pfc_microstimulation_session(prefix: str, correct: bool, neural
 
 # ── Geometric feature extraction (all numerics reused from src/) ──────────────
 
-def crop_trial(mat: np.ndarray) -> np.ndarray | None:
-    """(T,C) -> (N_BINS,C), or None if the trial is shorter than the window."""
-    if mat.shape[0] < N_BINS:
-        return None
-    return mat[:N_BINS]
 
 
 def build_session_features(prefix: str, structural_ctrl: dict | None = None,
-                            geometry_out: dict | None = None) -> dict | None:
+                            geometry_out: dict | None = None, dmd_rank: int = DMD_RANK) -> dict | None:
     """geometry_out, if given a dict, is populated with this session's fitted
     operator and per-condition stimulation directions (A, eigs, vecs, and
     cond_B_hat = {condition: unit stimulation direction in latent space}) --
@@ -362,7 +349,7 @@ def build_session_features(prefix: str, structural_ctrl: dict | None = None,
 
     Z_ctrl_mean = ((Z_ctrl.reshape(-1, C) - X_flat.mean(0)) @ V).reshape(Z_ctrl.shape[0], N_BINS, k).mean(0)
     dt = BIN_S
-    r_use = min(DMD_RANK, k, N_BINS - 2)
+    r_use = min(dmd_rank, k, N_BINS - 2)
     dmd = dmd_reconstruction_error(Z_ctrl_mean, r=r_use, dt=dt)
     A = dmd["A"]
     eigs, vecs = np.linalg.eig(A)
@@ -379,8 +366,8 @@ def build_session_features(prefix: str, structural_ctrl: dict | None = None,
     w1 = w1 / (np.linalg.norm(w1) + 1e-12)
 
     # P_k: the k-dim WM-manifold projector in CHANNEL space (V is the same
-    # control-epoch PCA loading used to fit A above) -- for the Sadtler et al.
-    # 2014 within/outside-manifold constraint, scored on the raw channel-space
+    # control-epoch PCA loading used to fit A above) -- for the
+    # within/outside-manifold constraint, scored on the raw channel-space
     # stim direction (see run_manifold_constraint.py).
     Pk = V @ V.T  # (C, C)
 
@@ -598,11 +585,11 @@ def main():
     if W_connectome is not None:
         avg_ctrl = average_controllability(W_connectome)
         modal_ctrl = modal_controllability(W_connectome)
-        area_i = connectome_areas.index(DLPFC_MARKOV_AREA)
+        area_i = connectome_areas.index(DLPFC_CONNECTOME_AREA)
         structural_ctrl = {"anat_avg_ctrl": float(avg_ctrl[area_i]),
                            "anat_modal_ctrl": float(modal_ctrl[area_i])}
-        print(f"Structural competitor: area-level proxy at Markov area "
-              f"'{DLPFC_MARKOV_AREA}' (same for every session) -- "
+        print(f"Structural competitor: area-level proxy at connectome area "
+              f"'{DLPFC_CONNECTOME_AREA}' (same for every session) -- "
               f"avg_ctrl={structural_ctrl['anat_avg_ctrl']:.4f}, "
               f"modal_ctrl={structural_ctrl['anat_modal_ctrl']:.4f}")
 
@@ -699,7 +686,7 @@ def main():
     # cannot be scored as a rankable competitor here; benchmark_modifiers'
     # zero-variance guard would exclude them anyway, so don't even pass them in.
     # They remain in structural_ctrl/cond_features for
-    # the Boran-side benchmark and as a descriptive note.
+    # the DANDI 000574-side benchmark and as a descriptive note.
 
     bench_rng = np.random.default_rng(stable_seed("macaque_pfc_microstimulation_benchmark"))
     bench = benchmark_modifiers(y, t, X, modifiers=modifiers, propensity=propensity,
@@ -733,11 +720,11 @@ def main():
     bench_json = {"leaderboard": bench["leaderboard"], "joint": bench["joint"],
                   "nested": bench["nested"], "winner": bench["winner"], "n": bench["n"],
                   "structural_competitor_used": structural_ctrl is not None,
-                  "dlpfc_markov_area": DLPFC_MARKOV_AREA if structural_ctrl is not None else None,
+                  "dlpfc_markov_area": DLPFC_CONNECTOME_AREA if structural_ctrl is not None else None,
                   "m1_vs_gate": {"gate_slope": gate["slope"], "m1_unstandardized_slope": m1_raw_recovered,
                                 "matches": m1_matches_gate},
                   "dissociation_arm": "session_mean_vstar_scalar",
-                  "dissociation_arm_note": ("FALLBACK operationalization (Part 15A): v_star is fit once "
+                  "dissociation_arm_note": ("FALLBACK operationalization: v_star is fit once "
                                             "per session from control-epoch DMD (no per-trial v* vector "
                                             "exists at this call site), so this arm is the session-groupby "
                                             "mean of the per-condition vstar_alignment scalar, broadcast "

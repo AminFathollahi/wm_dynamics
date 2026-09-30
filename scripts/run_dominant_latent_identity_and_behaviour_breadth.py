@@ -79,21 +79,26 @@ if _scripts_dir not in sys.path:
 
 from corpus_sessions import data_root  # noqa: E402
 from provenance import _json_safe, checkpoint_safe, restore_checkpoint  # noqa: E402
-from run_rate_free_state_geometry_behavior_link import (  # noqa: E402
-    MEANINGFUL_EFFECT_THRESHOLD_R_UNITS, _classify, rate_free_state_deviation,
-)
-from run_state_behavior_link import (  # noqa: E402
-    _counts_from_spikes, _panichello_directory, trial_amplitude_covariates,
-)
-from run_state_content_link import (  # noqa: E402
-    _one_sample_sign_flip, _stable_seed, session_subtractive_test, usable_label,
-)
+from run_rate_free_state_geometry_behavior_link import _classify
+from statistics import MEANINGFUL_EFFECT_THRESHOLD_R_UNITS
+from stimulation_response_estimator import rate_free_state_deviation
+from state_persistence import trial_amplitude_covariates
+from spike_pipeline import _counts_from_spikes
+from corpus_sessions import _panichello_directory
+from run_state_content_link import usable_label
+from info_decoding import session_subtractive_test
+from statistics import _one_sample_sign_flip, _stable_seed
 from spike_pipeline import FrozenPSTHTransform  # noqa: E402
 from state_persistence import _ols_slope, slope_across_sessions_test  # noqa: E402
 from statistics import (  # noqa: E402
     bootstrap_ci, minimum_detectable_paired_difference, paired_sign_flip_test,
     partial_correlation_permutation_test, permutation_pvalue, spearman_permutation_test, stable_seed,
 )
+from state_persistence import _pool_correlations  # noqa: E402
+from statistics import ANIMAL_ASSIGNMENT_SOURCE, PRIMARY_ERROR_FLOOR  # noqa: E402
+from statistics import _classify_amplitude  # noqa: E402
+from corpus_sessions import DATE_BLOCK_TO_ANIMAL, _load_session, _session_paths  # noqa: E402
+from state_persistence import PRIMARY_HISTORY_LAG, history_labels, _behaviour_session_arrays  # noqa: E402
 
 CORPUS_KEY = "panichello_2024"
 
@@ -114,33 +119,18 @@ FRACTIONAL_RANK_RESOLUTION_AT_EIGHT_LATENTS = 1.0 / 7.0
 GATE_TOLERANCE = FRACTIONAL_RANK_RESOLUTION_AT_EIGHT_LATENTS / 10.0
 
 HISTORY_LAGS = (1, 2, 3, 5, 10)
-PRIMARY_HISTORY_LAG = 1
 N_CIRCULAR_SHIFT_REPLICATES = 30
 MIN_CIRCULAR_SHIFT_OFFSET = 20
 
 ERROR_FLOORS = (60, 45, 30)
-PRIMARY_ERROR_FLOOR = 60
 N_UNIT_MATCHED_DRAWS = 5
 N_PERM = 10000
 
-DATE_BLOCK_TO_ANIMAL = {"21": "monkey_A", "22": "monkey_H", "24": "monkey_J"}
 ANIMAL_RECORDED_AREA = {
     "monkey_A": "area 8",
     "monkey_H": "areas 8 and 9/46",
     "monkey_J": "area 9/46",
 }
-ANIMAL_ASSIGNMENT_SOURCE = (
-    "The deposited README states three animals with 10, 8 and 7 sessions, for monkey A, monkey H and "
-    "monkey J in that order, and the dataset's public landing page records the recorded area per "
-    "animal: monkey A in area 8, monkey H in areas 8 and 9/46, monkey J in area 9/46. The 25 staged "
-    "sessions form three date blocks of exactly 10 (2021), 8 (2022) and 7 (2024) sessions, so the "
-    "NUMBER of animals -- three, not two -- is depositor-stated rather than inferred, and every pooled "
-    "number computed on this corpus pools three animals and at least two prefrontal areas. The "
-    "assignment of a date block to a named animal remains a strong INFERENCE, stated as such: no "
-    "deposited file carries a subject field, and the inference rests on the block sizes matching the "
-    "README's 10/8/7 in date order plus two further properties -- unit count per session and task "
-    "accuracy -- separating cleanly and without overlap along the same block boundaries."
-)
 
 HISTORY_DECISION_RULE_DECLARED_BEFORE_FITTING = (
     "Reproduce the corpus's pooled current-item fractional rank first. The leading latent's "
@@ -250,32 +240,6 @@ AMPLITUDE_DECISION_RULE_DECLARED_BEFORE_FITTING = (
 # Label alignment
 # ============================================================================
 
-def history_labels(labels_all: np.ndarray, lag: int) -> tuple[np.ndarray, np.ndarray]:
-    """Relabel every trial by the item presented ``lag`` trials earlier in
-    the session's recorded order, returning (labels, defined_mask).
-
-    Trial i takes ``labels_all[i - lag]``. The predecessor is the trial that
-    physically preceded it, whether the animal got that trial right or wrong,
-    so this must be applied to the session's FULL trial sequence and any
-    correct-trial restriction applied afterwards -- restricting first and
-    shifting second would silently label each trial with the previous
-    CORRECT trial's item, skipping over the errors in between, which is a
-    different quantity.
-
-    The first ``lag`` trials of a session have no predecessor inside the
-    session and are excluded by the returned mask; sessions are separate
-    recording days and no trial pair may straddle two of them. The masked-out
-    positions are filled with the first label purely to keep the array
-    dtype-clean and are never read.
-    """
-    labels_all = np.asarray(labels_all)
-    n = len(labels_all)
-    if lag < 1:
-        raise ValueError(f"history lag must be at least 1 trial, got {lag}")
-    shifted = np.empty(n, dtype=labels_all.dtype)
-    shifted[lag:] = labels_all[: n - lag]
-    shifted[:lag] = labels_all[0] if n else 0
-    return shifted, np.arange(n) >= lag
 
 
 def circular_shift_labels(labels_all: np.ndarray, offset: int) -> np.ndarray:
@@ -295,49 +259,8 @@ def circular_shift_labels(labels_all: np.ndarray, offset: int) -> np.ndarray:
 # Session loading
 # ============================================================================
 
-def _session_paths(root: Path) -> list[Path]:
-    directory = _panichello_directory(root)
-    if directory is None:
-        return []
-    return [Path(p) for p in sorted(glob.glob(str(directory / "*.mat")))]
 
 
-def _load_session(path: Path) -> dict:
-    """Every per-session array the three result blocks need, read once.
-
-    The raster is left in its deposited integer dtype and binned directly:
-    the largest session's raster is 810 x 1950 x 716, which a float cast
-    would expand to nine gigabytes for no gain, while the binned counts it
-    reduces to are a few tens of megabytes.
-    """
-    raw = loadmat(str(path), squeeze_me=True)
-    spikes = raw["spks"]
-    time_ms = np.asarray(raw["tc"], dtype=float).reshape(-1)
-    is_corr_raw = np.asarray(raw["isCorr"]).reshape(-1)
-    cue_idx = np.asarray(raw["cueAngIdx"]).reshape(-1)
-    cue_ang = np.asarray(raw["cueAng"], dtype=float).reshape(-1)
-    counts = np.asarray(_counts_from_spikes(spikes, time_ms), dtype=float)
-    is_corr = is_corr_raw.astype(bool)
-    finite = np.isfinite(np.asarray(is_corr_raw, dtype=float))
-    return {
-        "session": path.stem,
-        "date_block": path.stem[:2],
-        "animal": DATE_BLOCK_TO_ANIMAL.get(path.stem[:2], "unassigned"),
-        "counts": counts,
-        "is_corr": is_corr,
-        "cue_idx": cue_idx.astype(int),
-        "cue_ang": cue_ang,
-        "n_trials": int(counts.shape[0]),
-        "n_units": int(counts.shape[1]),
-        "n_bins": int(counts.shape[2]),
-        "n_correct": int(is_corr.sum()),
-        "n_error": int((~is_corr).sum()),
-        "outcome_field_dtype": str(is_corr_raw.dtype),
-        "outcome_field_distinct_values": sorted(float(v) for v in np.unique(is_corr_raw)),
-        "outcome_field_n_non_finite": int((~finite).sum()),
-        "outcome_field_length_matches_trials": bool(len(is_corr_raw) == counts.shape[0]),
-        "cue_label_distinct_values": sorted(int(v) for v in np.unique(cue_idx)),
-    }
 
 
 # ============================================================================
@@ -387,38 +310,6 @@ def _paired(a: list[float], b: list[float]) -> dict:
 # Behavioural blocks
 # ============================================================================
 
-def _behaviour_session_arrays(session: dict) -> dict | None:
-    """The rate-free deviation observable, the leading latent's per-trial
-    amplitude, and the two covariates both are gated against, for one
-    session. Trials with no defined state direction (zero total activity)
-    are dropped from every series together so all of them stay aligned."""
-    counts = session["counts"]
-    if counts.shape[0] < 16:
-        return None
-    activity_by_unit = counts.sum(axis=2)
-    deviation = rate_free_state_deviation(activity_by_unit)
-    covariates = trial_amplitude_covariates(counts)
-    if covariates["status"] != "computed":
-        return None
-    finite = np.isfinite(deviation)
-    if finite.sum() < 16:
-        return None
-    # The previous trial's cue angle enters as its sine and cosine so that a circular quantity is
-    # controlled for without imposing an arbitrary cut point on the circle. It is shifted on the
-    # session's full trial sequence first and masked second, for the reason history_labels documents.
-    previous_angle, has_predecessor = history_labels(session["cue_ang"], PRIMARY_HISTORY_LAG)
-    return {
-        "is_corr": session["is_corr"][finite].astype(float),
-        "deviation": deviation[finite],
-        "amplitude": np.asarray(covariates["leading_component_score_gain"])[finite],
-        "spike_count": activity_by_unit.sum(axis=1)[finite],
-        "trial_index": np.arange(counts.shape[0], dtype=float)[finite],
-        "previous_item_sin": np.sin(previous_angle)[finite],
-        "previous_item_cos": np.cos(previous_angle)[finite],
-        "has_predecessor": has_predecessor[finite],
-        "n_trials_total": int(counts.shape[0]),
-        "n_trials_with_defined_direction": int(finite.sum()),
-    }
 
 
 def _corr(outcome: np.ndarray, covariate: np.ndarray, controls: list[np.ndarray], seed_tag: str,
@@ -441,9 +332,6 @@ def _correlation_family(arrays: dict, observable_key: str, session_id: str) -> d
     }
 
 
-def _pool_correlations(per_session: list[dict], key: str) -> dict:
-    values = [s[key]["r"] for s in per_session if s[key].get("status") == "computed"]
-    return slope_across_sessions_test(values, alternative="two-sided") if values else {"status": "not_computed"}
 
 
 def _mdd(per_session: list[dict], key: str) -> dict:
@@ -564,39 +452,6 @@ def _per_animal_effect(included: list[str], rows: dict[str, dict], census: dict)
     return out
 
 
-def _classify_amplitude(pooled: dict, mdd_by_key: dict) -> dict:
-    """Applies the amplitude decision rule: the orthogonality gate, not the
-    analyst, picks which correlation decides, and the detection floor is
-    measured on whichever correlation that is."""
-    gate = pooled["orthogonality_gate"]
-    if gate.get("status") != "tested":
-        return {"branch": "not_computable", "reason": "orthogonality gate not computable"}
-    gate_significant = bool(gate.get("significant"))
-    deciding_key = "partial_controlling_spike_count" if gate_significant else "raw_outcome_vs_observable"
-    deciding = pooled[deciding_key]
-    if deciding.get("status") != "tested":
-        return {"branch": "not_computable", "reason": f"{deciding_key} not computable"}
-    mdd = mdd_by_key.get(deciding_key, {})
-    mdd_value = mdd.get("mdd") if mdd.get("status") == "computed" else None
-    if deciding.get("significant"):
-        branch = "dominant_latent_amplitude_predicts_outcome"
-    elif mdd_value is not None and mdd_value < MEANINGFUL_EFFECT_THRESHOLD_R_UNITS:
-        branch = "dominant_latent_amplitude_does_not_predict_outcome"
-    else:
-        branch = "inconclusive_below_detection_floor"
-    return {
-        "branch": branch,
-        "amplitude_is_separable_from_total_spike_count": not gate_significant,
-        "orthogonality_gate_r": gate.get("mean_value"),
-        "orthogonality_gate_p_value": gate.get("two_sided_p_value", gate.get("p_value")),
-        "deciding_statistic": deciding_key,
-        "deciding_statistic_r": deciding.get("mean_value"),
-        "deciding_statistic_p_value": deciding.get("two_sided_p_value", deciding.get("p_value")),
-        "deciding_statistic_ci": [deciding.get("ci_lower"), deciding.get("ci_upper")],
-        "null_reference": 0.0,
-        "minimum_detectable_paired_difference_at_80pct_power": mdd_value,
-        "meaningful_effect_threshold_r_units": MEANINGFUL_EFFECT_THRESHOLD_R_UNITS,
-    }
 
 
 # ============================================================================
@@ -677,7 +532,7 @@ def main() -> None:
     output: dict = {
         "version": "2026-09-01",
         "scope": {
-            "corpus": "macaque lPFC, Panichello et al. 2024 (Nature 636:422-429, doi:10.1038/s41586-024-08139-9)",
+            "corpus": "macaque lPFC (Nature 636:422-429, doi 10.1038/s41586-024-08139-9)",
             "n_sessions_on_disk": len(paths),
             "delay_epoch_binning": "300-1450 ms after cue onset, 100 ms bins, the corpus's delay window "
                                    "everywhere else in this project",

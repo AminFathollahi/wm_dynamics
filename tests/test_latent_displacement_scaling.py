@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
-from run_latent_displacement_scaling import mean_squared_displacement, summarize_msd
+from info_decoding import mean_squared_displacement, summarize_msd
 
 
 def simulate_ou(n_trials, n_bins, lam, diffusion, rng):

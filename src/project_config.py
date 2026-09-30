@@ -1,8 +1,9 @@
 """Single source of truth for repository paths and shared runtime defaults.
 
 Configuration is read from ``config/project.json`` (or
-``WM_DYNAMICS_CONFIG``). Environment variables declared by that file are
-machine-local overrides, so absolute paths never need to be committed.
+``WM_DYNAMICS_CONFIG``). Machine-local paths go in an uncommitted
+``project.local.json`` beside it, whose sections override the committed ones, or
+in the environment variables the config declares, which override both.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_ENV = "WM_DYNAMICS_CONFIG"
+LOCAL_CONFIG_NAME = "project.local.json"
 
 
 class ConfigurationError(RuntimeError):
@@ -36,6 +38,10 @@ def load_project_config() -> dict[str, Any]:
         raise ConfigurationError(f"Project config not found: {path}") from exc
     if config.get("schema_version") != "1.0.0":
         raise ConfigurationError(f"Unsupported project config schema in {path}")
+    local = path.with_name(LOCAL_CONFIG_NAME)
+    if local.is_file():
+        for section, values in json.loads(local.read_text()).items():
+            config.setdefault(section, {}).update(values)
     return config
 
 

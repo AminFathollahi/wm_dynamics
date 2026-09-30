@@ -19,11 +19,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import run_component_and_content_specific_serial_pull as m  # noqa: E402
-from run_component_and_content_specific_serial_pull import (  # noqa: E402
-    _bias_only_branch, _bias_only_content_pull, _bias_only_reproduces, _content_pull_survival_branch,
-    _content_specific_pull_per_trial, _deviation_survival_branch, _gate_result_for_run, _level_split_stats,
-    _trial_count_weighted,
-)
+from run_component_and_content_specific_serial_pull import _bias_only_branch, _bias_only_content_pull, _content_pull_survival_branch, _content_specific_pull_per_trial, _deviation_survival_branch, _gate_result_for_run, _level_split_stats, _trial_count_weighted
+from statistics import _bias_only_reproduces
 from provenance import _json_safe, restore_checkpoint  # noqa: E402
 
 
@@ -222,8 +219,8 @@ def test_within_level_combination_survives_a_simpsons_reversal():
 
     # Two item-count levels, each with a genuine POSITIVE within-level deviation-outcome slope, but
     # offset so far apart between levels (high deviation / low outcome in level 1, the reverse in
-    # level 2) that the naive pooled-across-level correlation reverses sign -- the exact structure the
-    # mandate names (+0.019673 within-level vs -0.012147 pooled, same sessions, same variable).
+    # level 2) that the naive pooled-across-level correlation reverses sign -- the exact structure that
+    # motivated this test (+0.019673 within-level vs -0.012147 pooled, same sessions, same variable).
     dev1 = rng.normal(10.0, 0.5, n_per_level)
     out1 = -10.0 + 2.0 * (dev1 - 10.0) + rng.normal(0.0, 0.3, n_per_level)
     dev2 = rng.normal(-10.0, 0.5, n_per_level)
@@ -326,7 +323,7 @@ def test_gate_with_no_session_limit_still_reports_genuine_non_reproduction():
 
 
 # ---------------------------------------------------------------------------------------------------
-# Planted recovery / planted independence (mandate's required synthetic tests)
+# Planted recovery / planted independence synthetic tests
 # ---------------------------------------------------------------------------------------------------
 
 def _synthetic_trial_arrays(rng, n, deviation_is_content_pull=True):

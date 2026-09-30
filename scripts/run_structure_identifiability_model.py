@@ -5,11 +5,11 @@ anatomical structure. This models
 identifiability itself as the outcome, on the FULL denominator of every
 attempted fit -- not a comparison of lambda values conditioned on a subset
 that already passed the identifiability filter (a selected quantity, dead-
-ended in run_unit_count_matched_sensitivity.py; see the crack register).
+ended in run_unit_count_matched_sensitivity.py).
 
 Reads three already-fit region-stratified drift artifacts without
 refitting: region_stratified_drift_000469.json, _001187_000673.json (its
-content_axis_battery), _000574.json (Boran, Brainnetome-labelled). Adds one
+content_axis_battery), _000574.json (DANDI 000574, Brainnetome-labelled). Adds one
 covariate none of those artifacts carry: each (patient, session, structure)
 row's mean firing rate in the same delay window used for that row's own
 fit, computed directly from the underlying NWB spike trains.
@@ -42,6 +42,8 @@ from spike_pipeline import (  # noqa: E402
 import run_human_drift_spine_000469 as spine469  # noqa: E402
 import run_human_drift_spine_001187_000673 as spine1187  # noqa: E402
 import run_human_drift_spine_000574 as spine574  # noqa: E402
+from corpus_sessions import MAINT_ONSET_S
+from corpus_sessions import _trial_group
 
 RESULTS = ROOT / "results"
 OUTPUT_PATH = RESULTS / "structure_identifiability_model.json"
@@ -79,7 +81,7 @@ def _rate_001187_000673(primary_path: str, release: str, region: str, window_s: 
     with h5py.File(path, "r") as handle:
         spike_lists = load_spike_times(handle)
         unit_regions = resolve_unit_regions(handle)["region"]
-        onsets = spine1187._trial_group(handle, release)["timestamps_Maintenance"][:]
+        onsets = _trial_group(handle, release)["timestamps_Maintenance"][:]
     spike_lists = filter_units_by_region(spike_lists, unit_regions, region)
     mask = low_rate_unit_mask(spike_lists, onsets, window_s)
     spike_lists = [s for s, k in zip(spike_lists, mask) if k]
@@ -99,7 +101,7 @@ def _rate_000574(path: Path, region: str, window_s: float) -> float | None:
         trials = handle["intervals/trials"]
         artifact = trials["artifact"][:].astype(bool)
         start_time = trials["start_time"][:]
-    onsets = (start_time + spine574.MAINT_ONSET_S)[~artifact]
+    onsets = (start_time + MAINT_ONSET_S)[~artifact]
     spike_lists = filter_units_by_region(spike_lists, unit_regions, region)
     mask = low_rate_unit_mask(spike_lists, onsets, window_s)
     spike_lists = [s for s, k in zip(spike_lists, mask) if k]
@@ -720,8 +722,7 @@ def mechanism_classification(lambda_limits: dict) -> dict:
             "not the numeric lambda_hat, for non-identified folds -- so folds cannot be classified "
             "by proximity to the random-walk (median lambda_hat={:.3f}) vs no-signal (median "
             "lambda_hat={:.3f}) reference fingerprints without a refit that recovers and stores "
-            "lambda_hat regardless of identifiability status. Not yet done; filed as a "
-            "crack (structure_identifiability_mechanism_classification_needs_unfiltered_lambda_hat)."
+            "lambda_hat regardless of identifiability status. Not yet done."
         ).format(rw_median, ns_median),
         "reference_fingerprints": {"random_walk_median_lambda_hat": rw_median, "no_signal_median_lambda_hat": ns_median},
     }
@@ -762,7 +763,7 @@ def main() -> None:
             "Every anatomically-stratified-analysis-eligible corpus with a region-stratified drift "
             "fit already run: DANDI 000469, 001187+000673 (deduplicated via canonical_sessions(), "
             "consuming provenance/canonical_recording_registry.json -- not rebuilt here), 000574 "
-            "Boran (Brainnetome labels). No other corpus in results/anatomical_census.json has a "
+            "DANDI 000574 (Brainnetome labels). No other corpus in results/anatomical_census.json has a "
             "region-stratified unit-level drift fit yet."
         ),
         "model_declaration": (
@@ -824,7 +825,7 @@ def main() -> None:
             ),
             "resolution": (
                 f"OUTCOME, not a denominator, but the specific deciding contrast is {verdict['verdict']}: "
-                "the earlier resolved_as_outcome verdict on this crack was computed from whether "
+                "the earlier resolved_as_outcome verdict on this question was computed from whether "
                 "ANY structure coefficient excluded zero and whether ANY matched-draw pair "
                 "excluded zero -- not the predeclared pre_sma-minus-hippocampus contrast itself. "
                 "Recomputed on that specific contrast (results/structure_identifiability_model.json "
@@ -879,7 +880,7 @@ def main() -> None:
             "crack_id": "structure_identifiability_matched_draws_scope_limited_to_000469",
             "trigger": (
                 "The jointly-matched (unit count + rate + trial count) draw replication is "
-                "wanted in every eligible corpus -- 000469, 001187/000673, 000574 Boran."
+                "wanted in every eligible corpus -- 000469, 001187/000673, 000574."
             ),
             "chase": (
                 "Measured the real cost first: one matched draw (a full 5-fold CV PCA + Gaussian "

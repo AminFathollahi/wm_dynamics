@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""DANDI 001187 (Daume/Cheng/Rutishauser lab) single-unit Sternberg WM pipeline.
+"""DANDI 001187 single-unit Sternberg WM pipeline.
 
 Same lab/task lineage as 000469 and 000673 (see run_000469_pipeline.py,
 run_000673_pipeline.py), with a different NWB schema (``intervals/WM_trials``,
@@ -45,7 +45,6 @@ from spike_pipeline import (load_spike_times, build_psth, fit_pca_psth,
 from statistics import linear_mixed_effects_test, fdr_bh, stouffer_combine, stable_seed
 from provenance import _json_safe
 
-DATA_DIR = dataset_path("dandi_001187")
 RESULTS = ROOT / "results"
 N_PC = 8
 BIN_MS = 100
@@ -61,9 +60,9 @@ CTG_STEP = 3
 CTG_N_SPLITS = 5
 # 50 -> 5000: at 50, the label-shuffle p-floor (c+1)/(n+1) ~= 0.0196 can never
 # survive BH-FDR across ~28 sessions regardless of true effect size -- the same
-# p-floor/N_PERM interaction audit item 1b flags for run_dpca_analysis.py.
+# p-floor/N_PERM interaction that affects run_dpca_analysis.py.
 CTG_N_PERM = 5000
-N_JOBS = -1
+N_WORKERS = -1
 
 
 def _process_session(fp: str):
@@ -89,7 +88,7 @@ def _process_session(fp: str):
 
         if response_acc.mean() < MIN_SESSION_ACCURACY:
             print(f"  SKIP — accuracy {100*response_acc.mean():.1f}% < "
-                  f"{100*MIN_SESSION_ACCURACY:.0f}% (Daume et al. 2024 QC floor)", flush=True)
+                  f"{100*MIN_SESSION_ACCURACY:.0f}% (published QC floor)", flush=True)
             return None
 
         rate_mask = low_rate_unit_mask(spike_lists, t_maint, MAINT_WIN)
@@ -158,10 +157,11 @@ def _process_session(fp: str):
 
 
 def main():
-    files = sorted(glob.glob(str(DATA_DIR / "sub-*" / "*_ecephys*.nwb")))
+    data_dir = dataset_path("dandi_001187")
+    files = sorted(glob.glob(str(data_dir / "sub-*" / "*_ecephys*.nwb")))
     print(f"Found {len(files)} session files")
 
-    results = Parallel(n_jobs=N_JOBS)(delayed(_process_session)(fp) for fp in files)
+    results = Parallel(n_jobs=N_WORKERS)(delayed(_process_session)(fp) for fp in files)
 
     summary = {}
     pooled_drift, pooled_correct, pooled_key = [], [], []

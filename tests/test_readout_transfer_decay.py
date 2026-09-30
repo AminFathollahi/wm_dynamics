@@ -471,19 +471,20 @@ def test_needed_by_corpus_includes_gain_everywhere_and_field_potential_only_for_
 # ---------------------------------------------------------------------------------------------------
 
 @requires_data_root
-def test_main_runs_end_to_end_on_a_small_slice(tmp_path):
+def test_main_runs_end_to_end_on_a_small_slice(tmp_path, monkeypatch):
     from corpus_sessions import data_root
 
     output_path = tmp_path / "readout_transfer_decay.json"
     checkpoint_dir = tmp_path / "checkpoints"
-    sys.argv = [
+    monkeypatch.setenv(decay.MAX_SESSIONS_ENV_VAR, "3")
+    monkeypatch.setattr(sys, "argv", [
         "run_readout_transfer_decay.py",
         "--max-sessions", "3",
         "--output", str(output_path),
         "--checkpoint-dir", str(checkpoint_dir),
         "--calibration-replicates", "5",
         "--calibration-n-perm", "50",
-    ]
+    ])
     decay.main()
     assert output_path.exists()
     import json

@@ -25,73 +25,21 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from drift_dynamics import fit_gaussian_state_space, leave_one_out_condition_residuals  # noqa: E402
 from provenance import git_commit  # noqa: E402
 from statistics import stable_seed  # noqa: E402
-from run_haslacher_phase_omega import (  # noqa: E402
-    ACTIVE_SUBJECTS,
-    CONTROL_SUBJECTS,
-    DATA_DIR,
-    PHASE_CONDITIONS,
-    trial_outcomes,
-)
-from run_haslacher_stimulation_geometry import (  # noqa: E402
-    _preprocess_author_native,
-    _retention_trials,
-)
+from run_haslacher_phase_omega import DATA_DIR, trial_outcomes
+from preprocessing import ACTIVE_SUBJECTS, CONTROL_SUBJECTS
+from preprocessing import PHASE_CONDITIONS
+from run_haslacher_stimulation_geometry import _preprocess_author_native
+from preprocessing import _retention_trials
+from preprocessing import _phase_diffusion, active_control_difference, bin_analog_trials, group_vector_test, BIN_MS, N_PERM  # noqa: E402
+from preprocessing import harmonic_coefficients  # noqa: E402
 
-BIN_MS = 100
 N_COMPONENTS = 3
-N_PERM = 5000
 
 
-def bin_analog_trials(trials: np.ndarray, sampling_rate: float, bin_ms: int = BIN_MS) -> np.ndarray:
-    """Average analog samples into nonoverlapping bins without smoothing."""
-    values = np.asarray(trials, dtype=float)
-    samples = int(round(sampling_rate * bin_ms / 1000.0))
-    n_bins = values.shape[-1] // samples
-    if values.ndim != 3 or samples < 1 or n_bins < 4:
-        raise ValueError("trials must be (trial, channel, time) with at least four bins")
-    return values[..., :n_bins * samples].reshape(values.shape[0], values.shape[1], n_bins, samples).mean(-1)
 
 
-def harmonic_coefficients(values: dict[int, float]) -> dict | None:
-    """Fit one circular harmonic to six phase-condition values."""
-    ordered = sorted(PHASE_CONDITIONS, key=lambda code: PHASE_CONDITIONS[code])
-    if any(code not in values or not np.isfinite(values[code]) for code in ordered):
-        return None
-    phase = np.deg2rad([PHASE_CONDITIONS[code] for code in ordered])
-    y = np.array([values[code] for code in ordered], dtype=float)
-    design = np.column_stack((np.ones(len(y)), np.cos(phase), np.sin(phase)))
-    intercept, cosine, sine = np.linalg.lstsq(design, y, rcond=None)[0]
-    return {"intercept": float(intercept), "cosine": float(cosine), "sine": float(sine),
-            "amplitude": float(np.hypot(cosine, sine)),
-            "optimal_phase_deg": float(np.degrees(np.arctan2(sine, cosine)) % 360.0)}
 
 
-def _phase_diffusion(trials: np.ndarray, center: np.ndarray, scale: np.ndarray,
-                     pca: PCA, sampling_rate: float) -> dict:
-    binned = bin_analog_trials(trials, sampling_rate)
-    latent = pca.transform(((binned.transpose(0, 2, 1) - center) / scale).reshape(-1, len(center)))
-    latent = latent.reshape(len(binned), binned.shape[-1], -1)
-    residuals, _ = leave_one_out_condition_residuals(latent, np.zeros(len(latent), dtype=int))
-    state_rows = []
-    increment_diffusion = []
-    dt = BIN_MS / 1000.0
-    for component in range(latent.shape[-1]):
-        values = residuals[..., component]
-        estimate = fit_gaussian_state_space(values, dt)
-        state_rows.append(estimate.to_dict())
-        increment_diffusion.append(float(np.nanmean(np.diff(values, axis=1) ** 2) / (2.0 * dt)))
-    process = [row["diffusion"] for row in state_rows if row.get("diffusion") is not None
-               and np.isfinite(row["diffusion"])]
-    return {
-        "state_space_total_diffusion": float(np.sum(process)) if process else None,
-        "legacy_increment_total_diffusion": float(np.sum(increment_diffusion)),
-        "state_space_components": state_rows,
-        "n_trials": int(len(trials)),
-        "n_components_estimable": len(process),
-        "n_lambda_precision_identified": sum(
-            row.get("lambda_ci") is not None and row["lambda_ci"][0] > 0 for row in state_rows
-        ),
-    }
 
 
 def _behavior_harmonic(subject: str) -> dict | None:
@@ -164,65 +112,8 @@ def analyze_subject(subject: str, group: str) -> dict:
     }
 
 
-def group_vector_test(rows: list[dict], key_path: tuple[str, ...], seed: str,
-                      n_perm: int = N_PERM) -> dict | None:
-    """Population circular-vector test with participant-level phase rotations."""
-    vectors = []
-    for row in rows:
-        value = row
-        for key in key_path:
-            value = value.get(key) if isinstance(value, dict) else None
-        if value is not None:
-            vectors.append([value["cosine"], value["sine"]])
-    vectors = np.asarray(vectors, dtype=float)
-    if len(vectors) < 3:
-        return None
-    observed = vectors.mean(axis=0)
-    rng = np.random.default_rng(stable_seed(seed))
-    null = np.empty(n_perm)
-    angles = np.arange(6) * np.pi / 3.0
-    for index in range(n_perm):
-        rotations = rng.choice(angles, size=len(vectors))
-        cosine, sine = np.cos(rotations), np.sin(rotations)
-        rotated = np.column_stack((vectors[:, 0] * cosine - vectors[:, 1] * sine,
-                                   vectors[:, 0] * sine + vectors[:, 1] * cosine))
-        null[index] = np.linalg.norm(rotated.mean(axis=0))
-    bootstrap = np.array([vectors[rng.integers(0, len(vectors), len(vectors))].mean(axis=0)
-                          for _ in range(2000)])
-    magnitude = float(np.linalg.norm(observed))
-    return {"mean_cosine": float(observed[0]), "mean_sine": float(observed[1]),
-            "population_amplitude": magnitude,
-            "optimal_phase_deg": float(np.degrees(np.arctan2(observed[1], observed[0])) % 360.0),
-            "participant_bootstrap_cosine_ci": np.quantile(bootstrap[:, 0], [0.025, 0.975]).tolist(),
-            "participant_bootstrap_sine_ci": np.quantile(bootstrap[:, 1], [0.025, 0.975]).tolist(),
-            "circular_rotation_p_value": float((1 + np.sum(null >= magnitude)) / (n_perm + 1)),
-            "n_participants": int(len(vectors))}
 
 
-def active_control_difference(rows: list[dict], key: str, n_perm: int = N_PERM) -> dict | None:
-    groups = {}
-    for group in ("active", "control"):
-        vectors = []
-        for row in rows:
-            harmonic = row.get(key)
-            if row.get("group") == group and harmonic is not None:
-                vectors.append([harmonic["cosine"], harmonic["sine"]])
-        groups[group] = np.asarray(vectors, dtype=float)
-    if min(len(groups["active"]), len(groups["control"])) < 3:
-        return None
-    observed = groups["active"].mean(0) - groups["control"].mean(0)
-    pooled = np.vstack((groups["active"], groups["control"]))
-    rng = np.random.default_rng(stable_seed(f"haslacher_active_control_{key}"))
-    null = np.empty(n_perm)
-    n_active = len(groups["active"])
-    for index in range(n_perm):
-        permuted = pooled[rng.permutation(len(pooled))]
-        null[index] = np.linalg.norm(permuted[:n_active].mean(0) - permuted[n_active:].mean(0))
-    magnitude = float(np.linalg.norm(observed))
-    return {"difference_cosine": float(observed[0]), "difference_sine": float(observed[1]),
-            "difference_amplitude": magnitude,
-            "participant_label_permutation_p_value": float((1 + np.sum(null >= magnitude)) / (n_perm + 1)),
-            "n_active": len(groups["active"]), "n_control": len(groups["control"])}
 
 
 def main() -> None:
@@ -233,13 +124,13 @@ def main() -> None:
     parser.add_argument("--output", type=Path, default=ROOT / "results" / "haslacher_phase_diffusion.json")
     args = parser.parse_args()
     if "__WM_DYNAMICS_DATA_ROOT_NOT_SET__" in str(DATA_DIR) or not DATA_DIR.is_dir():
-        raise SystemExit("Set WM_DYNAMICS_DATA_ROOT; configured Haslacher data directory is unavailable.")
+        raise SystemExit("Set WM_DYNAMICS_DATA_ROOT; configured closed-loop transcranial alternating-current stimulation scalp-EEG corpus (doi:10.1016/j.brs.2024.07.007) data directory is unavailable.")
     active = ACTIVE_SUBJECTS[:args.active] if args.active is not None else ACTIVE_SUBJECTS
     control = CONTROL_SUBJECTS[:args.control] if args.control is not None else CONTROL_SUBJECTS
     rows = []
     for group, subjects in (("active", active), ("control", control)):
         for subject in subjects:
-            print(f"fitting Haslacher phase diffusion {group}:{subject}", flush=True)
+            print(f"fitting closed-loop tACS scalp-EEG corpus phase diffusion {group}:{subject}", flush=True)
             rows.append(analyze_subject(subject, group))
     complete = [row for row in rows if row.get("status") == "complete"]
     groups = {}
@@ -257,7 +148,7 @@ def main() -> None:
                 f"haslacher_behavior_{group}", args.permutations),
         }
     output = {
-        "analysis": "Haslacher CLAM-tACS participant-level phase modulation of diffusion",
+        "analysis": "Closed-loop tACS scalp-EEG participant-level phase modulation of diffusion",
         "git_commit": git_commit(ROOT),
         "parameters": {"bin_ms": BIN_MS, "n_components": N_COMPONENTS,
                        "permutations": args.permutations, "preprocessing":

@@ -49,7 +49,7 @@ Outputs:
   results/ram_stimulation_state_excursion.json
 
 Run:
-    /home/amin/miniconda3/envs/wm_dynamics/bin/python \
+    python \
         scripts/run_ram_stimulation_state_excursion.py [--smoke N]
 """
 from __future__ import annotations
@@ -71,8 +71,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from project_config import data_root  # noqa: E402
-from provenance import canonical_json, checkpoint_safe, git_commit, restore_checkpoint  # noqa: E402
+from project_config import data_root
+from provenance import canonical_json, checkpoint_load, checkpoint_safe, git_commit, restore_checkpoint  # noqa: E402
 from statistics import (  # noqa: E402
     minimum_detectable_paired_difference, paired_sign_flip_test,
     partial_correlation_permutation_test, stable_seed,
@@ -81,16 +81,15 @@ from subspace_identity import block_folds  # noqa: E402
 from preprocessing import band_power, line_noise_notch  # noqa: E402
 from stimulation_response_estimator import cluster_bootstrap_pooled_effect  # noqa: E402
 
-from run_ram_openloop_pipeline import BIN_S, DATA as OPENLOOP_DATA  # noqa: E402
-from run_ram_closedloop_pipeline import DATA as CLOSEDLOOP_DATA  # noqa: E402
-from run_human_stimulation_component_response import channel_condition_masks, load_corpus  # noqa: E402
-from run_stimulation_timing_and_parameter_structure import (  # noqa: E402
-    CLOSEDLOOP_OWNER_MATCH_WINDOW_S, build_trains_closedloop, build_trains_openloop,
-    match_train_owner, overlaps, read_events,
-)
-from run_ram_stimulation_response_latency import (  # noqa: E402
-    _censored_first_recall, contrast_summary, load_corpus as load_recall_latency_corpus,
-)
+from run_ram_openloop_pipeline import BIN_S
+from corpus_sessions import DATA as OPENLOOP_DATA
+from project_config import dataset_path  # noqa: E402
+from run_human_stimulation_component_response import load_corpus
+from stimulation_events import channel_condition_masks
+from run_stimulation_timing_and_parameter_structure import build_trains_closedloop, build_trains_openloop, read_events
+from stimulation_events import match_train_owner, overlaps
+from stimulation_events import CLOSEDLOOP_OWNER_MATCH_WINDOW_S
+from stimulation_events import _censored_first_recall, contrast_summary, load_corpus as load_recall_latency_corpus
 
 RESULTS = ROOT / "results"
 OUTPUT_PATH = RESULTS / "ram_stimulation_state_excursion.json"
@@ -114,10 +113,12 @@ POWER = 0.80
 N_PERM = 10000
 N_BOOT = 5000
 
-CORPORA = {
-    "ram_ds005489_openloop": {"data_dir": OPENLOOP_DATA, "derive_stim_from_stim_on": False, "is_openloop": True},
-    "ram_ds005557_closedloop": {"data_dir": CLOSEDLOOP_DATA, "derive_stim_from_stim_on": True, "is_openloop": False},
-}
+def _corpora() -> dict:
+    return {
+        "ram_ds005489_openloop": {"data_dir": OPENLOOP_DATA, "derive_stim_from_stim_on": False, "is_openloop": True},
+        "ram_ds005557_closedloop": {"data_dir": dataset_path("ram_ds005557_closedloop"),
+                                    "derive_stim_from_stim_on": True, "is_openloop": False},
+    }
 
 
 # ── Checkpointing (per session, schema-versioned) ───────────────────────────
@@ -129,13 +130,8 @@ def _checkpoint_path(unit: str) -> Path:
 
 def load_checkpoint(unit: str) -> dict | None:
     path = _checkpoint_path(unit)
-    if not path.exists():
-        return None
-    try:
-        data = json.loads(path.read_text())
-    except (json.JSONDecodeError, OSError, UnicodeDecodeError):
-        return None
-    if not isinstance(data, dict) or data.get("_schema_version") != SCHEMA_VERSION:
+    data = checkpoint_load(path)
+    if data is None or data.get("_schema_version") != SCHEMA_VERSION:
         return None
     return restore_checkpoint(data["record"])
 
@@ -903,9 +899,10 @@ def main() -> None:
     args = parser.parse_args()
     t0 = time.time()
 
+    corpora = _corpora()
     per_corpus_records: dict[str, list[dict]] = {}
     exclusions: dict[str, dict] = {}
-    for dataset, spec in CORPORA.items():
+    for dataset, spec in corpora.items():
         loaded = load_corpus(dataset, spec["data_dir"], spec["derive_stim_from_stim_on"], args.smoke)
         exclusions[dataset] = dict(loaded["exclusions"])
         records = []
@@ -923,7 +920,7 @@ def main() -> None:
         per_corpus_records[dataset] = records
 
     recall_latency_by_dataset = {dataset: _recall_latency_lists_by_session(dataset, spec["data_dir"])
-                                  for dataset, spec in CORPORA.items()}
+                                  for dataset, spec in corpora.items()}
 
     def _corpus_summary(dataset: str, records: list[dict], exclusions_for_dataset: dict,
                         recall_latency_lookup: dict) -> dict:

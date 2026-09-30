@@ -25,22 +25,10 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from run_human_stimulation_component_response import channel_condition_masks  # noqa: E402
+from stimulation_events import channel_condition_masks
 import run_stimulation_site_targeting_map as targeting  # noqa: E402
-from run_stimulation_site_targeting_map import (  # noqa: E402
-    CORPUS_IS_CAUSAL,
-    _causal_key,
-    _lobe_for_label,
-    _numeric_or_nan,
-    channel_midpoint,
-    classify_targeting_relationship,
-    euclidean,
-    load_admitted_sessions,
-    load_electrode_table,
-    predictor_for_channel_condition,
-    run_non_human_site_evidence_synthesis,
-    run_targeting_relationship,
-)
+from run_stimulation_site_targeting_map import CORPUS_IS_CAUSAL, _causal_key, _lobe_for_label, channel_midpoint, classify_targeting_relationship, euclidean, load_admitted_sessions, predictor_for_channel_condition, run_non_human_site_evidence_synthesis, run_targeting_relationship
+from stimulation_events import _numeric_or_nan, load_electrode_table
 
 
 # ---------------------------------------------------------------------------------------------------

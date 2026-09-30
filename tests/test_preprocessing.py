@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+from project_config import data_asset_path, dataset_path  # noqa: E402
 from preprocessing import (
     bandpass_filter,
     notch_filter,
@@ -25,14 +26,8 @@ from preprocessing import (
     PassbandExceedsNyquistError,
 )
 
-TES1_ZIP = Path(
-    "/media/amin/EXTERNAL_USB/SMAF/Research/Representation/Working Memory"
-    "/data/Tes1/HuangLiu2016dataset.zip"
-)
-BORAN_NWB = Path(
-    "/media/amin/EXTERNAL_USB/SMAF/Research/Representation/Working Memory"
-    "/data/000574/sub-01/sub-01_ses-01.nwb"
-)
+TES1_ZIP = data_asset_path("tes1_zip", required=False) or Path("unset")
+BORAN_NWB = dataset_path("dandi_000574", "sub-01", "sub-01_ses-01.nwb", required=False) or Path("unset")
 
 
 SRATE = 1200
@@ -361,7 +356,7 @@ class TestBoranBaselineNormalize:
         )
 
 
-@pytest.mark.skipif(not TES1_ZIP.exists(), reason="TES1 data not on external drive")
+@pytest.mark.skipif(not TES1_ZIP.exists(), reason="TES1 data not configured")
 class TestTES1Loader:
     def test_load_all_subjects(self):
         data = load_tes1_stimulation(str(TES1_ZIP))
@@ -385,7 +380,7 @@ class TestTES1Loader:
         assert volts.min() > -20.0
 
 
-@pytest.mark.skipif(not TES1_ZIP.exists(), reason="TES1 data not on external drive")
+@pytest.mark.skipif(not TES1_ZIP.exists(), reason="TES1 data not configured")
 class TestBuildTES1InputMatrix:
     def test_output_shape(self):
         d = load_tes1_stimulation(str(TES1_ZIP), subject="P04")
@@ -400,7 +395,7 @@ class TestBuildTES1InputMatrix:
         assert np.all(np.isfinite(B))
 
 
-@pytest.mark.skipif(not BORAN_NWB.exists(), reason="DANDI 000574 data not on external drive")
+@pytest.mark.skipif(not BORAN_NWB.exists(), reason="DANDI 000574 data not configured")
 class TestLoadBoranNWB:
     def test_output_keys(self):
         from preprocessing import load_boran_nwb

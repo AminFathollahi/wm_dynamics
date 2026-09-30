@@ -13,7 +13,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from run_haslacher_phase_omega import PHASE_CONDITIONS  # noqa: E402
+from preprocessing import PHASE_CONDITIONS
 from run_phase_locked_scalp_stimulation_component import (  # noqa: E402
     REFUSED_IMPLEMENTATION_FAILURE,
     _harmonic_permutation_test,

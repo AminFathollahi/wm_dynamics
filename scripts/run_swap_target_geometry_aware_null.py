@@ -78,18 +78,11 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from corpus_sessions import data_root, iter_watters, watters_behaviour  # noqa: E402
 from provenance import _json_safe, git_commit  # noqa: E402
-from run_dissociation_replication_and_counting_noise import _pool_cell  # noqa: E402
-from run_swap_target_and_preceding_trial_item import (  # noqa: E402
-    BRANCH_A_AVOID, BRANCH_A_BOTH_INSEPARABLE, BRANCH_A_INCONCLUSIVE,
-    BRANCH_A_NOT_COVERED, BRANCH_A_POWERED_NULL, BRANCH_A_RESPONSE, BRANCH_A_TARGET,
-    BRANCH_B_INCONCLUSIVE, BRANCH_B_NOT_COVERED, BRANCH_B_NOT_SEPARABLE,
-    BRANCH_B_OPPOSITE, BRANCH_B_POSITIVE, BRANCH_B_POWERED_NULL,
-    PRECEDING_ITEM_BEHAVIOURAL_MDD_POWERED_NULL_THRESHOLD, BRANCH_GATE_FAILED, BRANCH_TOO_FEW_TRIALS,
-    CHECKPOINT_PATH as SOURCE_CHECKPOINT_PATH, DROP_SESSION_ARRAYS, MIN_POOLED_ADMISSIBLE_SWAP_TRIALS,
-    NEAR_SEPARATION_THRESHOLD_DEGREES, SURVIVING, _circular_distance_rad, _residualize,
-    analyse_session,
-)
-from run_watters_state_geometry import PRIMARY_QUALITY_TIER  # noqa: E402
+from state_persistence import _pool_cell
+from run_swap_target_and_preceding_trial_item import BRANCH_A_AVOID, BRANCH_A_BOTH_INSEPARABLE, BRANCH_A_INCONCLUSIVE, BRANCH_A_NOT_COVERED, BRANCH_A_POWERED_NULL, BRANCH_A_RESPONSE, BRANCH_A_TARGET, BRANCH_B_INCONCLUSIVE, BRANCH_B_NOT_COVERED, BRANCH_B_NOT_SEPARABLE, BRANCH_B_OPPOSITE, BRANCH_B_POSITIVE, BRANCH_B_POWERED_NULL, BRANCH_GATE_FAILED, BRANCH_TOO_FEW_TRIALS, CHECKPOINT_PATH as SOURCE_CHECKPOINT_PATH, analyse_session
+from statistics import _residualize
+from statistics import PRECEDING_ITEM_BEHAVIOURAL_MDD_POWERED_NULL_THRESHOLD, DROP_SESSION_ARRAYS, MIN_POOLED_ADMISSIBLE_SWAP_TRIALS, NEAR_SEPARATION_THRESHOLD_DEGREES, SURVIVING, _circular_distance_rad
+from corpus_sessions import PRIMARY_QUALITY_TIER
 from state_persistence import slope_across_sessions_test  # noqa: E402
 from statistics import minimum_detectable_paired_difference, stable_seed  # noqa: E402
 

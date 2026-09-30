@@ -54,7 +54,7 @@ subtracts the gain from the observed side only and is marked withdrawn as
 mis-specified in results/rank1_gain_temporal_profile_closure.json; it is not
 read, quoted or extended by this module.
 
-Corpus: macaque lPFC (Panichello et al. 2024), all 25 sessions. Every
+Corpus: macaque lPFC (doi 10.1038/s41586-024-08139-9), all 25 sessions. Every
 correlation is computed within one session; only per-session coefficients are
 pooled, by the paired sign-flip test.
 """
@@ -80,9 +80,10 @@ if _scripts_dir not in sys.path:
 
 from corpus_sessions import data_root  # noqa: E402
 from io_utils import locked_json_update  # noqa: E402
-from run_rate_free_state_geometry_behavior_link import rate_free_state_deviation  # noqa: E402
-from run_state_behavior_link import _counts_from_spikes, trial_amplitude_covariates  # noqa: E402
-from run_state_latent_identity import session_rank1_and_residual  # noqa: E402
+from stimulation_response_estimator import rate_free_state_deviation
+from state_persistence import trial_amplitude_covariates
+from spike_pipeline import _counts_from_spikes
+from info_decoding import session_rank1_and_residual
 from state_persistence import (  # noqa: E402
     _permute_counts_independently_per_unit, residual_pair_correlations, slope_across_sessions_test,
 )
@@ -94,7 +95,7 @@ RESULTS_DIR = Path(__file__).resolve().parents[1] / "results"
 OUTPUT_PATH = RESULTS_DIR / "state_orthogonality_census.json"
 # The residual-structure arm's 100 same-pipeline permutation replicates per session dominate wall
 # clock (order an hour pooled over 25 sessions, unit-count-dependent). Checkpointed per session so a
-# kill mid-run -- this mandate has already been killed once by an environment quota reset -- resumes
+# kill mid-run -- this job has already been killed once by an environment quota reset -- resumes
 # rather than restarts; a session present in the checkpoint is read back, never refit.
 CHECKPOINT_PATH = RESULTS_DIR / ".checkpoints" / "state_orthogonality_census_checkpoint.json"
 
@@ -947,9 +948,9 @@ def rate_free_observable_corroboration(census: dict) -> dict:
     entry = {
         "corpus": (
             "Multi-object spatial working memory in macaque frontal cortex, two animals, fixed "
-            "1.0 s maintenance delay, continuous saccadic report: 'Working Memory of Multi-Object "
-            "Scenes in Primate Frontal Cortex', Watters, Gabel, Tenenbaum and Jazayeri, bioRxiv "
-            "preprint posted 2026-01-27, DOI 10.64898/2026.01.27.702062, data DANDI 000620. An "
+            "1.0 s maintenance delay, continuous saccadic report: the paper 'Working Memory of "
+            "Multi-Object Scenes in Primate Frontal Cortex', bioRxiv "
+            "preprint posted 2026-01-27, doi 10.64898/2026.01.27.702062, data DANDI 000620. An "
             "unreviewed preprint, cited on that basis."
         ),
         "source_artifact": "results/watters_state_geometry.json",
@@ -960,7 +961,7 @@ def rate_free_observable_corroboration(census: dict) -> dict:
             "count by the same paired sign-flip test over per-session correlations."
         ),
         "this_corpus": {
-            "corpus": "macaque lPFC (Panichello et al. 2024)",
+            "corpus": "macaque lPFC (doi 10.1038/s41586-024-08139-9)",
             "n_sessions": audit["n_sessions"],
             "median_absolute_association": audit["median_absolute_association"],
             "median_shared_variance_per_session": audit["median_shared_variance_per_session"],
@@ -1018,7 +1019,7 @@ def candidate_dispositions(watters_available: bool) -> list[dict]:
         {
             "candidate": "the previous trial's remembered item",
             "status": "under_test_elsewhere",
-            "corpus_that_supports_it": "macaque lPFC (Panichello et al. 2024)",
+            "corpus_that_supports_it": "macaque lPFC (doi 10.1038/s41586-024-08139-9)",
             "disposition": (
                 "The per-trial item label needed for it is on disk in the same files this census "
                 "reads. It is being fitted as its own analysis and is deliberately not duplicated "
@@ -1029,7 +1030,7 @@ def candidate_dispositions(watters_available: bool) -> list[dict]:
             "candidate": "reaction time",
             "status": "available_but_not_yet_run" if not watters_available else "runnable_now",
             "corpus_that_supports_it": (
-                "the multi-object primate corpus (Watters et al.), whose per-trial event timestamps "
+                "the multi-object primate corpus (doi 10.64898/2026.01.27.702062), whose per-trial event timestamps "
                 "give a response time directly"),
             "disposition": (
                 "Not derivable in the macaque lPFC corpus this census runs on: its session files carry "
@@ -1190,7 +1191,7 @@ def main() -> None:
     output = {
         "version": "2026-08-14",
         "scope": (
-            "Macaque lPFC (Panichello et al. 2024), all 25 deposited sessions, delay epoch, 100 ms "
+            "Macaque lPFC (doi 10.1038/s41586-024-08139-9), all 25 deposited sessions, delay epoch, 100 ms "
             "bins, deciding window width 3 bins. Every correlation is computed within one session and "
             "only per-session coefficients are pooled across sessions, by the paired sign-flip test. "
             "Nulls already on disk are read as stored and are not refitted; the same-observable census "

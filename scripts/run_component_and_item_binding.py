@@ -48,7 +48,7 @@ SCOPE. Multi-object corpus only -- swaps are undefined with a single item,
 which is a property of the other corpora in this project, not a null result
 in them. Only the primary "single_and_multi_unit" unit-quality tier (every
 recorded unit, the tier the corpus's own delivered branch is decided on) is
-analysed; the sensitivity tiers other mandates in this project sweep are not
+analysed; the other unit-quality sensitivity tiers are not
 repeated here; this is a scope choice, stated once, not a gap.
 
 ITEM-COUNT CONFOUND. Swap rate rises with item count and the deviation may
@@ -120,22 +120,18 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from corpus_sessions import data_root, iter_watters, watters_behaviour  # noqa: E402
 from provenance import _json_safe, checkpoint_safe, git_commit, restore_checkpoint  # noqa: E402
-from run_state_behavior_link import trial_amplitude_covariates  # noqa: E402
+from state_persistence import trial_amplitude_covariates
 from run_watters_load_decomposition import _delivered_gate_lookup, _delivered_raw_pooled_coefficient  # noqa: E402
 from run_watters_source_replication import CORRECT_REPORT_DISTANCE_THRESHOLD  # noqa: E402
-from run_watters_state_geometry import (  # noqa: E402
-    MIN_TRIALS_FOR_BEHAVIOURAL_CORRELATION,
-    PRIMARY_QUALITY_TIER,
-    _behaviour_observables,
-    _corr,
-    _pool_correlations,
-    _pool_values,
-    behaviour_arm,
-)
+from run_watters_state_geometry import _corr, _pool_correlations, behaviour_arm
+from state_persistence import _pool_values
+from corpus_sessions import MIN_TRIALS_FOR_BEHAVIOURAL_CORRELATION, PRIMARY_QUALITY_TIER, _behaviour_observables
 from statistics import minimum_detectable_paired_difference, paired_sign_flip_test, stable_seed  # noqa: E402
+from statistics import FAMILY_STAT_KEYS, _sig, _predicts, _mdd, build_disclosures  # noqa: E402
+from corpus_sessions import _object_geometry  # noqa: E402
 
 OUTPUT_PATH = ROOT / "results" / "component_and_item_binding.json"
-CHECKPOINT_PATH = ROOT / "results" / ".checkpoints" / "component_and_item_binding_checkpoint.json"
+CHECKPOINT_PATH = ROOT / "results" / ".checkpoints" / "component_and_item_binding_checkpoint_v2.json"
 WATTERS_LOAD_DECOMPOSITION_PATH = ROOT / "results" / "watters_load_decomposition.json"
 ANALYSIS_VERSION = "2026-08-15"
 REPRODUCTION_TOLERANCE = 1e-6
@@ -151,10 +147,6 @@ MIN_SWAPS_POOLED_TO_TEST = 20
 OUTCOMES = ("swap_primary", "swap_strict", "imprecision")
 OBSERVABLES = ("deviation", "amplitude")
 ESTIMATORS = ("within_item_count_level", "pooled_mixed")
-FAMILY_STAT_KEYS = (
-    "raw", "partial_controlling_spike_count", "partial_controlling_trial_index",
-    "joint_partial_controlling_spike_count_and_trial_index",
-)
 
 BRANCH_SWAPS_ONLY = "accuracy_predicting_component_tracks_which_item_is_reported_not_how_precisely"
 BRANCH_IMPRECISION_ONLY = "accuracy_predicting_component_tracks_report_precision_not_item_binding"
@@ -191,7 +183,7 @@ DECISION_RULE_DECLARED_BEFORE_FITTING = (
     "association results/watters_load_decomposition.json already established as significant for this "
     "corpus, +0.019673, p=0.00030, read live from that artifact rather than copied here) -- splitting an "
     "outcome costs power and this is a real possible result, not a failure of the analysis.\n"
-    "If an outcome occurs that this six-way list does not cover, that is a defect in this rule: it is "
+    "If an outcome occurs that this six-way list does not cover, that is a gap in this rule: it is "
     "reported in writing with the numbers, never forced onto the nearest label, and this rule is not "
     "amended after the fact."
 )
@@ -212,8 +204,8 @@ def _read_json(path: Path) -> dict:
 
 def _delivered_within_load_reference() -> dict:
     """The corpus's own established, significant within-item-count deviation-behaviour association,
-    read live from results/watters_load_decomposition.json -- the "whole-corpus effect size" this
-    mandate's own text names as the reference for a 'predicts neither' verdict, since the RAW pooled
+    read live from results/watters_load_decomposition.json -- the "whole-corpus effect size" used
+    as the reference for a 'predicts neither' verdict, since the RAW pooled
     coefficient in results/watters_state_geometry.json is not itself significant (p=0.0723)."""
     delivered = _read_json(WATTERS_LOAD_DECOMPOSITION_PATH)
     node = delivered["results"][PRIMARY_QUALITY_TIER]["pooled"]["within_load_trial_count_weighted"]
@@ -275,57 +267,6 @@ def reproduction_gate(loaded_sessions: list[dict]) -> dict:
 # Swap / imprecision geometry
 # ============================================================================
 
-def _object_geometry(behaviour, session: dict) -> dict:
-    """Per-trial swap (primary and strict) and imprecision, aligned to session['counts']'s own trial
-    order, computed from the corpus's raw per-object and per-response Cartesian coordinates (no
-    re-derivation from the polar columns, and no dependence on the corpus loader's own
-    report_deviation beyond a sanity check against it)."""
-    rows = behaviour.loc[(session["animal"], session["session_date"])]
-    trial_rows = rows.loc[session["trial_num"].tolist()]
-
-    object_x = trial_rows[[f"object_{i}_x" for i in range(3)]].to_numpy(dtype=float)
-    object_y = trial_rows[[f"object_{i}_y" for i in range(3)]].to_numpy(dtype=float)
-    response_x = trial_rows["response_x"].to_numpy(dtype=float)
-    response_y = trial_rows["response_y"].to_numpy(dtype=float)
-    target = trial_rows["target_object_index"].to_numpy(dtype=int)
-    n = len(target)
-
-    distances = np.hypot(object_x - response_x[:, None], object_y - response_y[:, None])
-    all_undefined = np.all(np.isnan(distances), axis=1)
-
-    # Identity check: the distance to the CUED object, computed here from raw Cartesian columns,
-    # must equal the corpus loader's own report_deviation (computed independently from polar columns).
-    target_col = np.clip(target, 0, 2)
-    target_distance = distances[np.arange(n), target_col]
-    reported_deviation = np.asarray(session["report_deviation"], dtype=float)
-    finite_both = np.isfinite(target_distance) & np.isfinite(reported_deviation)
-    identity_diff = np.abs(target_distance[finite_both] - reported_deviation[finite_both])
-
-    landed = np.full(n, -1, dtype=int)
-    ok = ~all_undefined
-    landed[ok] = np.nanargmin(distances[ok], axis=1)
-    landed_distance = np.full(n, np.nan)
-    landed_distance[ok] = distances[ok, landed[ok]]
-
-    swap_primary = np.zeros(n, dtype=bool)
-    swap_primary[ok] = landed[ok] != target[ok]
-
-    is_target_column = np.arange(3)[None, :] == target_col[:, None]
-    uncued_distances = np.where(is_target_column, np.nan, distances)
-    with np.errstate(invalid="ignore"), warnings.catch_warnings():
-        # An item-count-1 trial has no uncued object at all, so its row is all-NaN by construction --
-        # numpy's own expected warning for that case, not a sign of a missing value elsewhere.
-        warnings.filterwarnings("ignore", message="All-NaN slice encountered")
-        uncued_min_distance = np.nanmin(uncued_distances, axis=1)
-    swap_strict = uncued_min_distance < CORRECT_REPORT_DISTANCE_THRESHOLD  # NaN comparisons are False
-
-    return {
-        "swap_primary": swap_primary, "swap_strict": swap_strict, "imprecision": landed_distance,
-        "n_trials_all_object_positions_undefined": int(all_undefined.sum()),
-        "identity_check_max_abs_diff_target_distance_vs_report_deviation":
-            float(identity_diff.max()) if identity_diff.size else None,
-        "identity_check_n_compared": int(finite_both.sum()),
-    }
 
 
 # ============================================================================
@@ -503,41 +444,6 @@ def _paired_collect(rows: list[dict], outcome_a: str, outcome_b: str, observable
     return np.array(a_vals, dtype=float), np.array(b_vals, dtype=float)
 
 
-def _paired_collect_observables(rows: list[dict], outcome: str, stat: str = "raw") -> tuple[np.ndarray, np.ndarray]:
-    """Per-session (deviation, amplitude) pairs for the SAME outcome -- the direct paired comparison
-    between the two observables' own within-item-count-level associations, distinct from
-    _paired_collect's same-observable, two-outcome pairing."""
-    a_vals, b_vals = [], []
-    for r in rows:
-        if r.get("status") != "computed":
-            continue
-        va = r.get(outcome, {}).get("deviation", {}).get("within_item_count_level_trial_count_weighted", {}).get(stat)
-        vb = r.get(outcome, {}).get("amplitude", {}).get("within_item_count_level_trial_count_weighted", {}).get(stat)
-        if va is not None and vb is not None:
-            a_vals.append(va)
-            b_vals.append(vb)
-    return np.array(a_vals, dtype=float), np.array(b_vals, dtype=float)
-
-
-def _sig(pooled: dict) -> bool | None:
-    if pooled.get("status") != "tested":
-        return None
-    return bool(pooled.get("significant"))
-
-
-def _predicts(pooled: dict) -> bool | None:
-    raw_sig = _sig(pooled["within_item_count_level"]["raw"])
-    joint_sig = _sig(pooled["within_item_count_level"]["joint_partial_controlling_spike_count_and_trial_index"])
-    if raw_sig is None or joint_sig is None:
-        return None
-    return bool(raw_sig and joint_sig)
-
-
-def _mdd(pooled_raw: dict) -> float | None:
-    mdd = pooled_raw.get("minimum_detectable_paired_difference_at_80pct_power", {})
-    return mdd.get("mdd") if mdd.get("status") == "computed" else None
-
-
 def build_pooled_table(rows: list[dict]) -> dict:
     table: dict = {}
     for outcome in OUTCOMES:
@@ -574,7 +480,7 @@ def decide_branch(gate_status: str, total_swaps_primary: int, pooled: dict,
             "branch": "inconclusive_below_detection_floor",
             "note": "an outcome not covered by the six pre-declared branches: at least one of the two "
                     "pooled statistics deciding 'predicts' did not reach the paired-test floor even though "
-                    "the swap-count floor was cleared; reported as a defect in the rule, not forced onto "
+                    "the swap-count floor was cleared; reported as a gap in the rule, not forced onto "
                     "any of the six named branches",
             "predicts_swap": predicts_swap, "predicts_imprecision": predicts_imprecision,
         }
@@ -616,103 +522,6 @@ def decide_branch(gate_status: str, total_swaps_primary: int, pooled: dict,
                 "status": "not_computable", "reason": "fewer than 2 sessions with both within-item-count "
                                                         "values computed"}
     return result
-
-
-def build_disclosures(pooled: dict, load1_deviation_raw: dict, rows: list[dict]) -> dict:
-    """Three reporting-only disclosures, computed purely from already-fitted pooled statistics and
-    already-checkpointed per-session records: no fit is re-run and no branch above is moved. (a) the
-    load-1 control's own detection floor and point estimate set against the swap effect it is being
-    used to argue against; (b) the dominant-mode amplitude's own detection floor against that same
-    swap effect, plus a direct paired session-level test against the deviation's own swap association
-    where one is computable; (c) whether the imprecision null's own detection floor sits below the
-    swap effect -- the single comparison that distinguishes a genuine dissociation between the two
-    outcomes from a shared power artifact."""
-    swap_effect = pooled["swap_primary"]["deviation"]["within_item_count_level"]["raw"]
-    swap_effect_magnitude = abs(swap_effect["mean_value"]) if swap_effect.get("status") == "tested" else None
-
-    load1_disclosure = None
-    load1_point = load1_deviation_raw.get("mean_value") if load1_deviation_raw.get("status") == "tested" else None
-    load1_mdd = _mdd(load1_deviation_raw)
-    if swap_effect_magnitude is not None and load1_point is not None and load1_mdd is not None:
-        load1_disclosure = {
-            "swap_effect_magnitude_within_item_count_level": swap_effect_magnitude,
-            "load1_point_estimate": load1_point,
-            "load1_point_estimate_same_direction_as_swap_effect": bool(
-                (load1_point > 0) == (swap_effect["mean_value"] > 0)),
-            "load1_point_estimate_exceeds_swap_effect_magnitude": bool(abs(load1_point) > swap_effect_magnitude),
-            "load1_minimum_detectable_paired_difference_at_80pct_power": load1_mdd,
-            "load1_null_is_underpowered_against_the_swap_effect": bool(load1_mdd > swap_effect_magnitude),
-            "statement": (
-                f"The load-1 control's minimum detectable paired difference at 80% power ({load1_mdd:.6f}) "
-                f"exceeds the within-item-count swap effect it is being used to argue against ("
-                f"{swap_effect_magnitude:.6f}), and its own point estimate ({load1_point:+.6f}) is itself "
-                "larger in magnitude than that swap effect and in the same direction. The pre-declared "
-                "significance criterion (identification_is_partial_if_significant) is correctly false by "
-                "that criterion and stays false, but this cell cannot exclude an association of the swap "
-                "effect's own magnitude at item count 1, so this artifact does not establish the component "
-                "as a purely binding signal."
-            ),
-        }
-
-    amplitude_disclosure = None
-    swap_amplitude = pooled["swap_primary"]["amplitude"]["within_item_count_level"]["raw"]
-    amplitude_mdd = _mdd(swap_amplitude)
-    if swap_effect_magnitude is not None and amplitude_mdd is not None:
-        a_vals, b_vals = _paired_collect_observables(rows, "swap_primary")
-        if len(a_vals) >= 2:
-            rng = np.random.default_rng(
-                stable_seed("component_and_item_binding|disclosure_paired_deviation_vs_amplitude_swap"))
-            paired = paired_sign_flip_test(a_vals, b_vals, alternative="two-sided", rng=rng)
-            direct_test = {
-                "status": "computed", "n_sessions_paired": len(a_vals),
-                "mean_diff_deviation_minus_amplitude": paired["mean_diff"], "p_value": paired["p_value"],
-                "ci_lower": paired["ci_lower"], "ci_upper": paired["ci_upper"],
-                "significant": bool(paired["p_value"] < 0.05),
-            }
-        else:
-            direct_test = {"status": "not_computable",
-                            "reason": "fewer than 2 sessions with both observables' within-item-count "
-                                      "swap association computed"}
-        amplitude_disclosure = {
-            "amplitude_swap_association_within_item_count_level": swap_amplitude.get("mean_value"),
-            "amplitude_swap_association_p_value": swap_amplitude.get("p_value"),
-            "amplitude_minimum_detectable_paired_difference_at_80pct_power": amplitude_mdd,
-            "deviation_swap_effect_magnitude": swap_effect_magnitude,
-            "amplitude_mdd_exceeds_deviation_swap_effect": bool(amplitude_mdd > swap_effect_magnitude),
-            "direct_paired_test_deviation_vs_amplitude_swap_association": direct_test,
-            "statement": (
-                "Both observables failing to reach significance on an outcome is not a demonstrated "
-                "difference between them: two significance verdicts are not a difference. The dominant-"
-                f"mode amplitude's own minimum detectable paired difference against swap incidence "
-                f"({amplitude_mdd:.6f}) is ABOVE the deviation's own within-item-count swap effect "
-                f"({swap_effect_magnitude:.6f}), so the amplitude cell is not powered to the effect size "
-                "in question, independent of whether the direct paired test above reaches significance."
-            ),
-        }
-
-    imprecision_disclosure = None
-    imprecision_mdd = _mdd(pooled["imprecision"]["deviation"]["within_item_count_level"]["raw"])
-    if swap_effect_magnitude is not None and imprecision_mdd is not None:
-        imprecision_disclosure = {
-            "imprecision_minimum_detectable_paired_difference_at_80pct_power": imprecision_mdd,
-            "swap_effect_magnitude_within_item_count_level": swap_effect_magnitude,
-            "imprecision_mdd_below_swap_effect_magnitude": bool(imprecision_mdd < swap_effect_magnitude),
-            "statement": (
-                f"The imprecision null's own minimum detectable paired difference at 80% power "
-                f"({imprecision_mdd:.6f}) sits BELOW the within-item-count swap effect "
-                f"({swap_effect_magnitude:.6f}): the imprecision test had the power to detect an "
-                "association as small as the one found for swap incidence and did not find one. This "
-                "single comparison is what makes a swap-only verdict a genuine dissociation between the "
-                "two outcomes rather than a shared power artifact, stated here as a field rather than left "
-                "for a reader to derive from two separate minimum-detectable-difference tables."
-            ),
-        }
-
-    return {
-        "load1_cannot_exclude_the_swap_effect": load1_disclosure,
-        "amplitude_versus_deviation_swap_association": amplitude_disclosure,
-        "imprecision_detection_floor_versus_swap_effect": imprecision_disclosure,
-    }
 
 
 # ============================================================================
@@ -769,8 +578,8 @@ def main() -> None:
 
     output: dict = {
         "version": ANALYSIS_VERSION,
-        "corpus": "Multi-object spatial working memory in macaque frontal cortex, DANDI 000620 (Watters, "
-                  "Gabel, Tenenbaum and Jazayeri; bioRxiv preprint posted 2026-01-27, DOI "
+        "corpus": "Multi-object spatial working memory in macaque frontal cortex, DANDI 000620 ("
+                  "bioRxiv preprint posted 2026-01-27, DOI "
                   "10.64898/2026.01.27.702062, unreviewed).",
         "sign_convention": "Every coefficient here is against the continuous graded report ERROR, or "
                             "against the binary swap indicator (1 = swap). No sign flip is applied.",

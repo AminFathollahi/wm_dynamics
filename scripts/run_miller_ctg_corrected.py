@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Corrected Miller CTG: PCA folded into CV, label-shuffle permutation null,
+"""Corrected ECoG n-back corpus CTG: PCA folded into CV, label-shuffle permutation null,
 a dynamic-code negative control, a condition-independent/-dependent variance
 decomposition (dPCA-lite), and a trial-count confound check for subject 'al'.
 
@@ -37,7 +37,7 @@ from provenance import _json_safe
 
 RESULTS = ROOT / "results"
 SUBJECTS = ["al", "ca", "cc", "ug"]
-N_JOBS = -1
+N_WORKERS = -1
 
 MAINT_WINDOW = (0.3, 1.4)     # claimed stable/"square" period
 TRANSIENT_WINDOW = (0.0, 0.3)  # early post-stimulus evoked transient — dynamic-code control
@@ -67,7 +67,7 @@ def run_ctg_on_window(epochs_ct: np.ndarray, y: np.ndarray, times: np.ndarray,
 
 def _process_subject(subj: str) -> tuple[str, tuple, dict]:
     with threadpool_limits(limits=1):
-        print(f"\n{'='*55}\n  Miller CTG (corrected): {subj}\n{'='*55}", flush=True)
+        print(f"\n{'='*55}\n  ECoG n-back corpus CTG (corrected): {subj}\n{'='*55}", flush=True)
         dat = np.load(RESULTS / f"01_epochs_{subj}.npz", allow_pickle=True)
         epochs, times, task_id = dat["epochs"], dat["times"], dat["task_id"]  # (N,T,C)
 
@@ -128,7 +128,7 @@ def _process_subject(subj: str) -> tuple[str, tuple, dict]:
 
 
 def main():
-    results = Parallel(n_jobs=N_JOBS)(delayed(_process_subject)(s) for s in SUBJECTS)
+    results = Parallel(n_jobs=N_WORKERS)(delayed(_process_subject)(s) for s in SUBJECTS)
     # Preserve SUBJECTS order regardless of parallel completion order, so
     # downstream FDR / dict iteration order matches the original sequential
     # run exactly (BH-FDR is order-invariant given the same p-value set, but
@@ -141,7 +141,7 @@ def main():
     fdr = fdr_bh(p_vals, alpha=0.05)
     for subj, q in zip(summary.keys(), fdr["q_values"]):
         summary[subj]["maintenance"]["q_value_fdr"] = float(q)
-    print(f"\n  FDR (BH) across {len(SUBJECTS)} Miller subjects: "
+    print(f"\n  FDR (BH) across {len(SUBJECTS)} ECoG n-back corpus subjects: "
           f"{fdr['n_reject']}/{len(p_vals)} survive q<0.05")
 
     # Trial-count confound: does subsampling cc/ug/ca to al's N=50/condition
@@ -195,7 +195,7 @@ def main():
     stats["miller_trial_count_confound"] = subsample_results
     # Overwrite the legacy "ctg" key (same schema consumed throughout
     # generate_paper_figures.py) with the corrected values, so the headline
-    # Miller CTG numbers everywhere in the paper come from the nested-CV +
+    # ECoG n-back corpus CTG numbers everywhere in the paper come from the nested-CV +
     # label-permutation pipeline rather than the old fixed-PCA + t-test one.
     stats["ctg"] = {
         subj: {

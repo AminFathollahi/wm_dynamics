@@ -44,7 +44,9 @@ for _sub in ("src", "scripts"):
 
 from corpus_sessions import data_root  # noqa: E402
 from provenance import _json_safe  # noqa: E402
-from run_deviation_axis_structure import CORPORA, _collect_axis_entries, leading_eigenvector  # noqa: E402
+from info_decoding import _collect_axis_entries
+from subspace_identity import leading_eigenvector
+from info_decoding import CORPORA
 from run_occupied_subspace_rank_estimation import permutation_eigenvalue_rank  # noqa: E402
 from run_occupied_subspace_rank_selection_repair import _load_corpora_and_accounting  # noqa: E402
 from statistics import stable_seed  # noqa: E402

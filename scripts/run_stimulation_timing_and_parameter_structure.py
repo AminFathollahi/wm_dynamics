@@ -49,7 +49,7 @@ Three questions, each answered by measurement, not assumption:
 Output: results/stimulation_timing_and_parameter_structure.json
 
 Run:
-    /home/amin/miniconda3/envs/wm_dynamics/bin/python \
+    python \
         scripts/run_stimulation_timing_and_parameter_structure.py
 """
 from __future__ import annotations
@@ -74,20 +74,19 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 from project_config import data_root, dataset_path, executable, project_path
 
-from provenance import canonical_json, git_commit  # noqa: E402
+from provenance import canonical_json, checkpoint_store, git_commit  # noqa: E402
 from statistics import (  # noqa: E402
     minimum_detectable_paired_difference,
     paired_sign_flip_test,
     stable_seed,
 )
+from stimulation_events import CLOSEDLOOP_CORPUS, CLOSEDLOOP_OWNER_MATCH_WINDOW_S, OPENLOOP_CORPUS  # noqa: E402
+from stimulation_events import match_train_owner, overlaps, ITEMS_PER_TRAIN_SPAN_THRESHOLD, pool_item_attributability, pool_parameter_census  # noqa: E402
 
 RESULTS = ROOT / "results"
 CHECKPOINT_DIR = RESULTS / ".checkpoints" / "run_stimulation_timing_and_parameter_structure"
 OUT_PATH = RESULTS / "stimulation_timing_and_parameter_structure.json"
 
-DATA_ROOT = data_root()
-OPENLOOP_CORPUS = "ds005489-download"
-CLOSEDLOOP_CORPUS = "ds005557-download"
 
 ALPHA = 0.05
 POWER = 0.80
@@ -100,7 +99,6 @@ N_BOOT = 5000
 # window already established by this project's other closed-loop
 # derivation (scripts/run_ram_openloop_pipeline.py's `_derive_word_stimulation`,
 # `derive_stim_from_stim_on=True`) rather than inventing a new value here.
-CLOSEDLOOP_OWNER_MATCH_WINDOW_S = 2.0
 
 # Item attributability decision: an "item presentation" is the interval a WORD is on
 # screen, [onset, onset + duration]. A pulse train "spans several items" if,
@@ -108,7 +106,6 @@ CLOSEDLOOP_OWNER_MATCH_WINDOW_S = 2.0
 # all, the mean number of item presentations one train overlaps exceeds 1 --
 # the literal reading of "one train covers more than one item". Frozen
 # before the corpus was scanned.
-ITEMS_PER_TRAIN_SPAN_THRESHOLD = 1.0
 
 # Position interaction: minimum stimulated and minimum control item trials a subject must
 # contribute for their own position-interaction regression to be attempted.
@@ -144,17 +141,15 @@ def read_events(path: Path) -> list[dict]:
 
 
 def discover_sessions(corpus_dir: str) -> list[Path]:
-    return sorted((DATA_ROOT / corpus_dir).glob("sub-*/ses-*/ieeg/*_events.tsv"))
+    return sorted((data_root() / corpus_dir).glob("sub-*/ses-*/ieeg/*_events.tsv"))
 
 
 def discover_subject_dirs(corpus_dir: str) -> list[str]:
-    return sorted(p.name for p in (DATA_ROOT / corpus_dir).glob("sub-*") if p.is_dir())
+    return sorted(p.name for p in (data_root() / corpus_dir).glob("sub-*") if p.is_dir())
 
 
 # ── Interval geometry ────────────────────────────────────────────────────────
 
-def overlaps(a0: float, a1: float, b0: float, b1: float) -> bool:
-    return a0 < b1 and b0 < a1
 
 
 def group_words_by_list(words: list[dict]) -> dict[str, list[dict]]:
@@ -223,14 +218,6 @@ def build_trains_closedloop(rows: list[dict]) -> tuple[list[dict], int]:
     return trains, 0
 
 
-def match_train_owner(train_start: float, word_onsets: list[float], window_s: float) -> int | None:
-    """Nearest preceding word within window_s of the train's own onset, or
-    None. Matches scripts/run_ram_openloop_pipeline.py's
-    `_derive_word_stimulation` convention exactly."""
-    candidates = [(train_start - w, i) for i, w in enumerate(word_onsets) if 0 <= train_start - w <= window_s]
-    if not candidates:
-        return None
-    return min(candidates)[1]
 
 
 # ── Item attributability: can a train be localised to a single item's presentation ─────
@@ -420,17 +407,8 @@ def load_checkpoint(session_id: str) -> dict | None:
 
 
 def save_checkpoint(session_id: str, record: dict) -> None:
-    CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
     path = _checkpoint_path(session_id)
-    payload = {"_complete": True, "record": record}
-    fd, tmp_name = tempfile.mkstemp(dir=str(CHECKPOINT_DIR), prefix="._tmp_")
-    try:
-        with os.fdopen(fd, "w") as f:
-            f.write(canonical_json(payload))
-        os.replace(tmp_name, path)
-    finally:
-        if os.path.exists(tmp_name):
-            os.remove(tmp_name)
+    checkpoint_store(path, {"_complete": True, "record": record})
 
 
 # ── Position interaction: stimulation x serial-position effect on recall ─────
@@ -534,7 +512,7 @@ def run_corpus(corpus_dir: str, processor, corpus_label: str) -> dict:
     subjects_seen = set(subject_dirs)
     subjects_with_events = {r["subject"] for r in records.values()} | \
         {p.parts[-4] for p in session_paths} if False else set()
-    subjects_with_session_files = {p.relative_to(DATA_ROOT / corpus_dir).parts[0] for p in session_paths}
+    subjects_with_session_files = {p.relative_to(data_root() / corpus_dir).parts[0] for p in session_paths}
     subjects_without_ieeg = sorted(s for s in subjects_seen if s not in subjects_with_session_files)
 
     included_records = {k: v for k, v in records.items() if v.get("status") != "excluded"}
@@ -550,165 +528,8 @@ def run_corpus(corpus_dir: str, processor, corpus_label: str) -> dict:
     }
 
 
-def pool_item_attributability(records: dict, corpus_label: str) -> dict:
-    per_session = {}
-    all_items_per_train, all_spacing, all_train_durations = [], [], []
-    n_prev = n_next = n_any = n_total = n_unmatched = 0
-    n_trains_pooled = 0
-    for sid, r in records.items():
-        per_session[sid] = {
-            "n_words": r["n_words"], "n_trains": r["n_trains"],
-            "spacing_s_median": float(np.median(r["spacing_s"])) if r["spacing_s"] else None,
-            "spacing_s_mean": float(np.mean(r["spacing_s"])) if r["spacing_s"] else None,
-            "spacing_s_sd": float(np.std(r["spacing_s"], ddof=1)) if len(r["spacing_s"]) > 1 else None,
-            "train_duration_s_median": float(np.median(r["train_duration_s"])) if r["train_duration_s"] else None,
-            "train_duration_s_mean": float(np.mean(r["train_duration_s"])) if r["train_duration_s"] else None,
-            "items_per_train_mean": float(np.mean(r["items_per_train"])) if r["items_per_train"] else None,
-            "neighbor_coverage": r["neighbor_coverage"],
-        }
-        all_items_per_train.extend(r["items_per_train"])
-        all_spacing.extend(r["spacing_s"])
-        all_train_durations.extend(r["train_duration_s"])
-        nb = r["neighbor_coverage"]
-        n_prev += nb["n_prev_covered"]; n_next += nb["n_next_covered"]
-        n_any += nb["n_any_covered"]; n_total += nb["n_stim_items"]
-        n_unmatched += nb["n_train_unmatched_to_owning_item"]
-        n_trains_pooled += r["n_trains"]
-
-    attributable = [n for n in all_items_per_train if n >= 1]
-    zero_overlap = len(all_items_per_train) - len(attributable)
-    mean_items_per_train = float(np.mean(attributable)) if attributable else None
-
-    if mean_items_per_train is None:
-        branch = "underpowered_to_ask"
-    elif mean_items_per_train > ITEMS_PER_TRAIN_SPAN_THRESHOLD:
-        branch = "the_intervention_spans_more_than_one_item_and_cannot_be_attributed_to_one"
-    else:
-        branch = "the_intervention_is_confined_to_a_single_item"
-
-    return {
-        "per_session": per_session,
-        "pooled": {
-            "n_trains_total": n_trains_pooled,
-            "n_trains_overlapping_zero_items": zero_overlap,
-            "n_trains_overlapping_at_least_one_item": len(attributable),
-            "items_per_train_distribution": {str(k): int(v) for k, v in
-                                             zip(*np.unique(attributable, return_counts=True))} if attributable else {},
-            "mean_items_per_train_among_attributable_trains": mean_items_per_train,
-            "span_decision_threshold": ITEMS_PER_TRAIN_SPAN_THRESHOLD,
-            "item_presentation_spacing_s_median": float(np.median(all_spacing)) if all_spacing else None,
-            "item_presentation_spacing_s_mean": float(np.mean(all_spacing)) if all_spacing else None,
-            "item_presentation_spacing_s_sd": float(np.std(all_spacing, ddof=1)) if len(all_spacing) > 1 else None,
-            "train_duration_s_median": float(np.median(all_train_durations)) if all_train_durations else None,
-            "train_duration_s_mean": float(np.mean(all_train_durations)) if all_train_durations else None,
-            "n_stimulated_items": n_total,
-            "n_stimulated_items_train_unmatched": n_unmatched,
-            "fraction_stimulated_items_train_covers_preceding_item": (n_prev / n_total) if n_total else None,
-            "fraction_stimulated_items_train_covers_following_item": (n_next / n_total) if n_total else None,
-            "fraction_stimulated_items_train_covers_either_neighbor": (n_any / n_total) if n_total else None,
-        },
-        "branch": branch,
-    }
 
 
-def pool_parameter_census(records: dict, corpus_label: str) -> dict:
-    amp_counts = defaultdict(int)
-    pair_amps = defaultdict(set)
-    pair_trials = defaultdict(int)
-    freqs, widths, durs = set(), set(), set()
-    pair_freqs, pair_widths = defaultdict(set), defaultdict(set)
-    n_stim_trials = 0
-    subjects = set()
-    for sid, r in records.items():
-        subj = r["subject"]
-        subjects.add(subj)
-        for amp in r["amplitudes"]:
-            amp_counts[amp] += 1
-            n_stim_trials += 1
-        freqs.update(r["pulse_freqs"]); widths.update(r["pulse_widths"]); durs.update(r["stim_durations_ms"])
-        for (anode, cathode) in r["electrode_pairs"]:
-            pair_key = (subj, anode, cathode)
-            pair_trials[pair_key] += 1
-        # per-pair amplitude/freq/width sets need per-train granularity, not just the
-        # per-session unique-value set, so recover it from the parallel per-session lists
-        # (amplitudes list is per-train; electrode_pairs is per-corpus unique -- re-derive
-        # per-pair amplitude sets from records that carry per-train pair identity below).
-
-    # Second pass: per-train (amplitude, pair) association is not retained per-session
-    # above (only per-session unique sets), so re-open a lighter per-pair accumulation
-    # using each session's amplitude list matched 1:1 against its own single stim
-    # electrode pair -- true for both corpora (one stimulated bipolar pair per session).
-    for sid, r in records.items():
-        subj = r["subject"]
-        pairs = r["electrode_pairs"]
-        if len(pairs) != 1:
-            continue  # a session with zero or >1 distinct stim pairs contributes no
-                      # unambiguous per-pair amplitude assignment; counted in the
-                      # pooled amplitude census above regardless.
-        anode, cathode = pairs[0]
-        key = (subj, anode, cathode)
-        for amp in r["amplitudes"]:
-            pair_amps[key].add(amp)
-        for f in r["pulse_freqs"]:
-            pair_freqs[key].add(f)
-        for w in r["pulse_widths"]:
-            pair_widths[key].add(w)
-
-    multi_amp_pairs = {k: sorted(v) for k, v in pair_amps.items() if len(v) > 1}
-    subjects_multi_amp = sorted({k[0] for k in multi_amp_pairs})
-    multi_freq_within_pair = {str(k): sorted(v) for k, v in pair_freqs.items() if len(v) > 1}
-    multi_width_within_pair = {str(k): sorted(v) for k, v in pair_widths.items() if len(v) > 1}
-
-    # Same accumulation, but over every STIM_ON/STIM_OFF-derived train regardless of
-    # whether it could be matched to an owning WORD item -- surfaces amplitude values
-    # that only ever appear on pre-task titration/calibration pulses (never near an
-    # item), so that number is reported rather than silently absorbed into, or
-    # silently absent from, the item-linked count above.
-    pair_amps_all = defaultdict(set)
-    for sid, r in records.items():
-        subj = r["subject"]
-        pairs_all = r.get("electrode_pairs_all_trains", r["electrode_pairs"])
-        if len(pairs_all) != 1:
-            continue
-        anode, cathode = pairs_all[0]
-        for amp in r.get("amplitudes_all_trains", r["amplitudes"]):
-            pair_amps_all[(subj, anode, cathode)].add(amp)
-    multi_amp_pairs_all_trains = {k: sorted(v) for k, v in pair_amps_all.items() if len(v) > 1}
-
-    return {
-        "n_subjects_with_stimulated_trials": len(subjects),
-        "n_stimulated_trials_total": n_stim_trials,
-        "stimulated_trials_by_amplitude_microamps": {str(k): v for k, v in sorted(amp_counts.items())},
-        "n_electrode_pairs": len(pair_trials),
-        "n_electrode_pairs_with_more_than_one_amplitude": len(multi_amp_pairs),
-        "subjects_with_a_multi_amplitude_electrode_pair": subjects_multi_amp,
-        "electrode_pairs_with_more_than_one_amplitude": {str(k): v for k, v in multi_amp_pairs.items()},
-        "constant_across_corpus": {
-            "pulse_freq_hz": sorted(freqs) if len(freqs) == 1 else None,
-            "pulse_width_us": sorted(widths) if len(widths) == 1 else None,
-            "stim_duration_ms": sorted(durs) if len(durs) == 1 else None,
-            "amplitude_microamps": sorted(amp_counts.keys()) if len(amp_counts) == 1 else None,
-        },
-        "unique_values_seen": {
-            "pulse_freq_hz": sorted(freqs), "pulse_width_us": sorted(widths),
-            "stim_duration_ms": sorted(durs), "amplitude_microamps": sorted(amp_counts.keys()),
-        },
-        "electrode_pairs_with_more_than_one_pulse_freq": multi_freq_within_pair,
-        "electrode_pairs_with_more_than_one_pulse_width": multi_width_within_pair,
-        "n_electrode_pairs_with_more_than_one_amplitude_including_unmatched_pulses":
-            len(multi_amp_pairs_all_trains),
-        "electrode_pairs_with_more_than_one_amplitude_including_unmatched_pulses":
-            {str(k): v for k, v in multi_amp_pairs_all_trains.items()},
-        "note_on_unmatched_pulse_amplitude": (
-            "the item-linked counts above use only STIM_ON/STIM_OFF trains matched to an "
-            "owning WORD item; a small number of STIM_ON rows in this corpus (e.g. a single "
-            "pulse at recording onset, long before any word is shown) cannot be matched to any "
-            "item and are excluded from them. The "
-            "'..._including_unmatched_pulses' fields fold those back in, so a widening gap "
-            "between the two flags amplitude variation coming from pre-task device "
-            "titration/calibration rather than genuine within-task dose variation."
-        ),
-    }
 
 
 def main():
@@ -833,7 +654,7 @@ def main():
                 "excluded_sessions": closedloop["excluded_sessions"],
             },
         },
-        "data_root": str(DATA_ROOT),
+        "data_root": str(data_root()),
         "alpha": ALPHA, "power": POWER, "n_perm": N_PERM, "n_boot": N_BOOT,
         "closedloop_owner_match_window_s": CLOSEDLOOP_OWNER_MATCH_WINDOW_S,
         "items_per_train_span_decision_threshold": ITEMS_PER_TRAIN_SPAN_THRESHOLD,

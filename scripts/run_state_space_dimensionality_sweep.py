@@ -54,7 +54,7 @@ the two coincide in a noiseless synthetic linear scenario, which is the sense in
 cross-validated restatement reduces to the delivered linear quantity.
 
 Run:
-    /home/amin/miniconda3/envs/wm_dynamics/bin/python \
+    python \
         scripts/run_state_space_dimensionality_sweep.py [--n-perm N] [--sessions-limit N]
 """
 from __future__ import annotations
@@ -88,15 +88,18 @@ from geometry import (  # noqa: E402
 from dynamics import fit_retention_dynamics  # noqa: E402
 from control import energy_accuracy_pareto, stimulation_input_alignment  # noqa: E402
 from statistics import minimum_detectable_paired_difference, permutation_pvalue, stable_seed  # noqa: E402
-from provenance import canonical_json  # noqa: E402
+from provenance import canonical_json, checkpoint_store  # noqa: E402
 from run_macaque_pfc_microstimulation_pipeline import SESSIONS as CAUSAL_MICROSTIM_SESSIONS  # noqa: E402
-from run_macaque_pfc_microstimulation_pipeline import BIN_S as CAUSAL_MICROSTIM_BIN_S  # noqa: E402
-from run_macaque_pfc_microstimulation_pipeline import crop_trial  # noqa: E402
+from spike_pipeline import BIN_S as CAUSAL_MICROSTIM_BIN_S
+from spike_pipeline import crop_trial
 from run_macaque_pfc_microstimulation_pipeline import load_macaque_pfc_microstimulation_session as load_causal_microstim_session  # noqa: E402
 
 from sklearn.decomposition import FactorAnalysis  # noqa: E402
 from sklearn.linear_model import Ridge  # noqa: E402
 from sklearn.model_selection import KFold  # noqa: E402
+from info_decoding import CAUSAL_MICROSTIM_ENERGY_ACCURACY_Q, CAUSAL_MICROSTIM_GRAMIAN_HORIZON, CTG_N_SPLITS, CTG_STEP  # noqa: E402
+from corpus_sessions import load_human_session_arrays  # noqa: E402
+from info_decoding import DELIVERED_RANK, HUMAN_BIN_MS, claim_control_model, condition_mean_subspace, claim_memorandum_subspace, fit_linear_representation, claim_occupied_manifold, component_direction, CV_FOLDS, cross_validated_predictable_fraction, in_sample_linear_fraction, leave_one_out_cosine_deviation, load_causal_microstim_dynamics_inputs, restatement_reduction_synthetic_check  # noqa: E402
 
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=RuntimeWarning)
@@ -111,21 +114,13 @@ SHARD_VARIABLE = "WM_DYNAMICS_SESSION_SHARD"
 # projection's typical use) -- called out explicitly below as DELIVERED_RANK so every table can
 # mark where it sits relative to the principled selectors.
 RANK_GRID = (2, 3, 4, 6, 8, 12, 16, 24)
-DELIVERED_RANK = 8
 
-HUMAN_BIN_MS = 200.0  # coarser than the project's publication convention (100 ms) so the CTG
                        # permutation null, refit at every rank in the grid, stays within budget;
                        # a robustness sweep needs relative comparability across rank, not
                        # publication time resolution.
-HUMAN_DELAY_WINDOW_S = 2.3
-CTG_STEP = 2
-CTG_N_SPLITS = 4
 CTG_N_PERM_DEFAULT = 100
 SUBSPACE_N_PERM_DEFAULT = 200
-CV_FOLDS = 5
 
-CAUSAL_MICROSTIM_ENERGY_ACCURACY_Q = (0.01, 0.1, 1.0, 10.0, 100.0)
-CAUSAL_MICROSTIM_GRAMIAN_HORIZON = 20
 
 
 # ── Checkpointing (atomic, per-session, temp-file-then-replace; same idiom as
@@ -151,17 +146,8 @@ def load_checkpoint(key: str) -> dict | None:
 
 
 def save_checkpoint(key: str, record: dict) -> None:
-    CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
     path = _checkpoint_path(key)
-    payload = {"_complete": True, "record": record}
-    fd, tmp_name = tempfile.mkstemp(dir=str(CHECKPOINT_DIR), prefix="._tmp_")
-    try:
-        with os.fdopen(fd, "w") as f:
-            f.write(canonical_json(payload))
-        os.replace(tmp_name, path)
-    finally:
-        if os.path.exists(tmp_name):
-            os.remove(tmp_name)
+    checkpoint_store(path, {"_complete": True, "record": record})
 
 
 def run_checkpointed(key: str, fit_fn) -> dict:
@@ -175,75 +161,10 @@ def run_checkpointed(key: str, fit_fn) -> dict:
 
 # ── Shared representation, deviation score, and predictable-fraction machinery ──
 
-def fit_linear_representation(X: np.ndarray, rank: int, labels: np.ndarray | None = None) -> dict:
-    """PCA representation of an (n_trials, n_features) array at the given rank.
-
-    The one function every claim's verdict routine consumes: swapping this for a differently fitted
-    (including nonlinear) representation of the same ``scores``/``components`` shape changes no
-    downstream claim code. That is exactly why the label refusal belongs here rather than only in
-    prose -- this is the single fitting entry point a later nonlinear embedding is reached through,
-    and any embedding trained with a label or behavioural outcome as its fitting objective is
-    circular for every behaviour claim that consumes it. ``labels`` exists only so that passing one
-    raises; this project forbids label- or behaviour-conditioned representation fitting everywhere.
-    """
-    if labels is not None:
-        raise ValueError(
-            "fit_linear_representation refuses a non-null label argument -- label- or "
-            "behaviour-conditioned representation fitting is forbidden project-wide for any "
-            "behaviour claim")
-    rank_eff = int(max(1, min(rank, X.shape[0] - 1, X.shape[1])))
-    scores, components, var_ratio = pca_decompose(X, rank_eff)
-    return {"kind": "pca", "rank": rank_eff, "scores": scores, "components": components,
-            "var_ratio": var_ratio, "fitting_objective": "unsupervised_pca_reconstruction_no_labels"}
 
 
-def _require_linear_representation(representation: dict) -> None:
-    """A subspace-angle projector (components @ components.T) has no meaning without a canonical
-    orthonormal basis, which a nonlinear embedding does not have. Every code path that builds such a
-    projector must call this first, so a future nonlinear representation cannot be fed to it by
-    accident -- the estimator-invariant restatement (``cross_validated_predictable_fraction``) is the
-    only route to a claim's verdict once the representation is nonlinear."""
-    if representation.get("kind") != "pca":
-        raise ValueError(
-            f"subspace-angle projector requested on a non-linear representation (kind="
-            f"{representation.get('kind')!r}); a subspace angle has no canonical basis in a "
-            "nonlinear embedding -- use cross_validated_predictable_fraction instead")
 
 
-def cross_validated_predictable_fraction(y: np.ndarray, Z: np.ndarray, n_splits: int = CV_FOLDS,
-                                          alpha: float = 1.0, rng: np.random.Generator | None = None) -> dict:
-    """Cross-validated fraction of scalar ``y``'s variance predictable by ridge regression on
-    representation coordinates ``Z``.
-
-    Defined identically whether ``Z`` came from a linear projection or a nonlinear embedding -- ridge
-    regression from a fixed set of per-trial coordinates onto a scalar target makes no reference to
-    how those coordinates were produced. Held-out predictions are concatenated across folds before
-    the single R^2 is computed, rather than averaging per-fold R^2, so a fold with little residual
-    variance cannot dominate the summary.
-    """
-    y = np.asarray(y, dtype=float)
-    Z = np.asarray(Z, dtype=float)
-    mask = np.isfinite(y) & np.all(np.isfinite(Z), axis=1)
-    y, Z = y[mask], Z[mask]
-    n = len(y)
-    if n < max(6, n_splits + 1):
-        return {"status": "not_computable", "reason": "fewer trials than folds require", "n_trials": n}
-    n_splits_eff = min(n_splits, n)
-    kf = KFold(n_splits=n_splits_eff, shuffle=True,
-               random_state=int(rng.integers(0, 2**31 - 1)) if rng is not None else 0)
-    y_true_held, y_pred_held = [], []
-    for train_idx, test_idx in kf.split(Z):
-        model = Ridge(alpha=alpha)
-        model.fit(Z[train_idx], y[train_idx])
-        y_pred_held.append(model.predict(Z[test_idx]))
-        y_true_held.append(y[test_idx])
-    y_true_held = np.concatenate(y_true_held)
-    y_pred_held = np.concatenate(y_pred_held)
-    ss_res = float(np.sum((y_true_held - y_pred_held) ** 2))
-    ss_tot = float(np.sum((y_true_held - y_true_held.mean()) ** 2))
-    fraction = 1.0 - ss_res / ss_tot if ss_tot > 1e-12 else float("nan")
-    return {"status": "computed", "predictable_fraction": fraction, "n_trials": n,
-            "n_dims": int(Z.shape[1]), "alpha": alpha, "n_splits": n_splits_eff}
 
 
 def predictable_fraction_restatement(y: np.ndarray, X: np.ndarray, representations: dict[str, np.ndarray | None],
@@ -267,53 +188,8 @@ def predictable_fraction_restatement(y: np.ndarray, X: np.ndarray, representatio
     return out
 
 
-def in_sample_linear_fraction(y: np.ndarray, Z: np.ndarray) -> dict:
-    """Non-cross-validated (in-sample, ordinary-least-squares) fraction of ``y``'s variance
-    explained by ``Z`` -- the naive linear quantity this project's existing subspace-projection
-    metrics are instances of, reported beside the cross-validated version for comparison."""
-    y = np.asarray(y, dtype=float)
-    Z = np.asarray(Z, dtype=float)
-    mask = np.isfinite(y) & np.all(np.isfinite(Z), axis=1)
-    y, Z = y[mask], Z[mask]
-    n = len(y)
-    if n < Z.shape[1] + 2:
-        return {"status": "not_computable", "n_trials": n}
-    Zc = Z - Z.mean(axis=0)
-    yc = y - y.mean()
-    coef, *_ = np.linalg.lstsq(Zc, yc, rcond=None)
-    fitted = Zc @ coef
-    ss_res = float(np.sum((yc - fitted) ** 2))
-    ss_tot = float(np.sum(yc ** 2))
-    fraction = 1.0 - ss_res / ss_tot if ss_tot > 1e-12 else float("nan")
-    return {"status": "computed", "linear_fraction": fraction, "n_trials": n, "n_dims": int(Z.shape[1])}
 
 
-def restatement_reduction_synthetic_check(rng: np.random.Generator) -> dict:
-    """Numeric verification, run as part of this artifact rather than only in the test suite, that
-    ``cross_validated_predictable_fraction`` and ``in_sample_linear_fraction`` reduce to the delivered
-    subspace-projection quantity ``(||P_S w|| / ||w||) ** 2`` in a noiseless linear scenario: ``y = X @
-    w`` exactly, ``X`` isotropic, ``S`` an orthonormal basis unrelated to ``w``. Reported with the
-    exact discrepancy numbers, not only a pass/fail assertion."""
-    n, d, k = 4000, 10, 3
-    X = rng.standard_normal((n, d))
-    S, _ = np.linalg.qr(rng.standard_normal((d, k)))
-    w = rng.standard_normal(d)
-    w /= np.linalg.norm(w)
-    y = X @ w
-    Z = X @ S
-    cv = cross_validated_predictable_fraction(y, Z, alpha=1e-6, rng=rng)
-    naive = in_sample_linear_fraction(y, Z)
-    P = S @ S.T
-    delivered = float((np.linalg.norm(P @ w) / np.linalg.norm(w)) ** 2)
-    return {
-        "scenario": "noiseless linear generator y = X @ w, isotropic X (n=4000, d=10), rank-3 "
-                    "orthonormal basis S unrelated to w, delivered quantity = (||P_S w||/||w||)**2",
-        "delivered_subspace_quantity": delivered,
-        "cross_validated_predictable_fraction": cv["predictable_fraction"],
-        "in_sample_linear_fraction": naive["linear_fraction"],
-        "discrepancy_cross_validated_vs_subspace": abs(cv["predictable_fraction"] - delivered),
-        "discrepancy_in_sample_vs_subspace": abs(naive["linear_fraction"] - delivered),
-    }
 
 
 def restatement_reduction_on_delivered_human_data(human_sessions: list[dict]) -> dict:
@@ -359,46 +235,10 @@ def restatement_reduction_on_delivered_human_data(human_sessions: list[dict]) ->
     }
 
 
-def l2_normalize_rows(X: np.ndarray) -> np.ndarray:
-    norm = np.linalg.norm(X, axis=1, keepdims=True)
-    norm = np.where(norm > 1e-12, norm, 1.0)
-    return X / norm
 
 
-def leave_one_out_cosine_deviation(X: np.ndarray, condition: np.ndarray) -> np.ndarray:
-    """Per-trial deviation score needing no dimensionality reduction: one minus the cosine
-    similarity between a trial's L2-normalised feature vector and the L2-normalised leave-one-out
-    mean of its own condition. NaN for trials whose condition has fewer than two members."""
-    Xn = l2_normalize_rows(np.asarray(X, dtype=float))
-    labels = np.asarray(condition)
-    deviation = np.full(Xn.shape[0], np.nan)
-    for label in np.unique(labels):
-        idx = np.flatnonzero(labels == label)
-        if len(idx) < 2:
-            continue
-        total = Xn[idx].sum(axis=0)
-        for i in idx:
-            loo_mean = (total - Xn[i]) / (len(idx) - 1)
-            loo_norm = np.linalg.norm(loo_mean)
-            if loo_norm < 1e-12:
-                continue
-            deviation[i] = 1.0 - float(Xn[i] @ loo_mean) / loo_norm
-    return deviation
 
 
-def component_direction(X: np.ndarray, deviation: np.ndarray, alpha: float = 1.0) -> np.ndarray:
-    """Unit-norm ridge-regression direction in feature space along which trial-to-trial variation
-    best predicts the leave-one-out cosine deviation -- a concrete axis for the two subspace-
-    projection claims (the predictable-fraction restatement needs no such direction, only the
-    scalar deviation itself)."""
-    mask = np.isfinite(deviation)
-    Xc = X[mask] - X[mask].mean(axis=0)
-    yc = deviation[mask] - deviation[mask].mean()
-    model = Ridge(alpha=alpha, fit_intercept=False)
-    model.fit(Xc, yc)
-    w = model.coef_
-    n = np.linalg.norm(w)
-    return w / n if n > 1e-12 else w
 
 
 # ── Rank-selection criteria ──────────────────────────────────────────────────────
@@ -503,72 +343,12 @@ def rank_selection_report(X: np.ndarray, rank_grid, rng: np.random.Generator) ->
 
 # ── Claim 1: memorandum coding subspace vs. the deviation direction ─────────────
 
-def condition_mean_subspace(X: np.ndarray, labels: np.ndarray, rank: int) -> np.ndarray | None:
-    """Top ``rank`` PCA axes of the between-condition mean matrix -- the linear subspace a
-    memorandum-content label occupies."""
-    classes = np.unique(labels)
-    if len(classes) < 2:
-        return None
-    means = np.stack([X[labels == c].mean(axis=0) for c in classes])
-    means_c = means - means.mean(axis=0)
-    d = int(min(rank, means_c.shape[0] - 1, means_c.shape[1]))
-    if d < 1:
-        return None
-    _, _, Vt = np.linalg.svd(means_c, full_matrices=False)
-    return Vt[:d].T
 
 
-def claim_memorandum_subspace(X: np.ndarray, labels: np.ndarray, deviation: np.ndarray, w: np.ndarray,
-                               rank: int, rng: np.random.Generator, n_perm: int) -> dict:
-    """Does the deviation direction lie inside the memorandum's coding subspace at this rank?
-    Effect size: the observed projection fraction minus its label-permutation null."""
-    S = condition_mean_subspace(X, labels, rank)
-    if S is None:
-        return {"status": "not_computable", "rank": rank}
-    P = S @ S.T
-    w_norm = np.linalg.norm(w) + 1e-12
-    within = float(np.linalg.norm(P @ w) / w_norm)
-    null_vals = []
-    for _ in range(n_perm):
-        perm_labels = rng.permutation(labels)
-        Sp = condition_mean_subspace(X, perm_labels, rank)
-        if Sp is None:
-            continue
-        null_vals.append(float(np.linalg.norm((Sp @ Sp.T) @ w) / w_norm))
-    null_vals = np.asarray(null_vals)
-    p_value = permutation_pvalue(null_vals >= within) if len(null_vals) else float("nan")
-    null_mean = float(np.mean(null_vals)) if len(null_vals) else float("nan")
-    return {"status": "computed", "rank": int(S.shape[1]), "within_frac": within,
-            "null_mean_within_frac": null_mean, "effect_size": within - null_mean,
-            "p_value": p_value, "n_null": int(len(null_vals)), "n_trials": int(X.shape[0])}
 
 
 # ── Claim 2: occupied manifold decomposition ─────────────────────────────────────
 
-def claim_occupied_manifold(X: np.ndarray, w: np.ndarray, rank: int, rng: np.random.Generator,
-                             n_perm: int) -> dict:
-    """Decomposition of the deviation direction against the top-``rank`` occupied manifold, against
-    a random-direction null in the same ambient feature space -- the same within/outside-fraction
-    construction the delivered causal-microstimulation manifold-constraint analysis uses, generalised
-    from a fixed rank to a swept one."""
-    representation = fit_linear_representation(X, rank)
-    _require_linear_representation(representation)
-    comps = representation["components"]
-    r_eff = comps.shape[1]
-    C = X.shape[1]
-    P = comps @ comps.T
-    w_norm = np.linalg.norm(w) + 1e-12
-    within = float(np.linalg.norm(P @ w) / w_norm)
-    outside = float(np.linalg.norm((np.eye(C) - P) @ w) / w_norm)
-    rand = rng.standard_normal((n_perm, C))
-    rand /= np.linalg.norm(rand, axis=1, keepdims=True) + 1e-12
-    null_within = np.linalg.norm(rand @ P, axis=1)
-    p_value = permutation_pvalue(null_within >= within)
-    null_mean = float(np.mean(null_within))
-    return {"status": "computed", "rank": int(r_eff), "within_frac": within, "outside_frac": outside,
-            "null_mean_within_frac": null_mean, "effect_size": within - null_mean,
-            "p_value": p_value, "n_null": int(n_perm), "n_trials": int(X.shape[0]),
-            "fitting_objective": representation["fitting_objective"]}
 
 
 # ── Claim 3: cross-temporal generalisation ───────────────────────────────────────
@@ -597,21 +377,6 @@ def claim_cross_temporal_generalization(psth_z: np.ndarray, labels: np.ndarray, 
 
 # ── Human corpus pipeline (claims 1-3) ───────────────────────────────────────────
 
-def load_human_session_arrays(entry: dict) -> dict | None:
-    """From one corpus_sessions.iter_dandi_000469 entry, build the delay-epoch trial-by-feature
-    array (trial-mean firing rate per unit, for the deviation score and the two subspace claims) and
-    the full delay-epoch PSTH tensor (for cross-temporal generalisation)."""
-    spike_lists = entry["spike_lists"]
-    onsets = entry["epoch_onsets"]["delay"]
-    n_trials = len(onsets)
-    if n_trials < 20 or len(spike_lists) < 8:
-        return None
-    psth = build_psth(spike_lists, onsets, bin_ms=HUMAN_BIN_MS, smooth_ms=0.0,
-                       window_s=HUMAN_DELAY_WINDOW_S)  # (n_trials, n_units, n_bins)
-    X_flat = psth.mean(axis=2)  # (n_trials, n_units) -- native trial-by-feature array
-    item_ids = entry["item_ids"]
-    times = np.arange(psth.shape[2]) * (HUMAN_BIN_MS / 1000.0)
-    return {"psth": psth, "X_flat": X_flat, "item_ids": item_ids, "times": times}
 
 
 def run_human_session(entry: dict, rank_grid, n_perm_subspace: int, n_perm_ctg: int) -> dict:
@@ -668,84 +433,10 @@ def run_human_session(entry: dict, rank_grid, n_perm_subspace: int, n_perm_ctg: 
 
 # ── Causal microstimulation corpus pipeline (claims 4-5) ─────────────────────────
 
-def load_causal_microstim_dynamics_inputs(prefix: str) -> dict | None:
-    corr = load_causal_microstim_session(prefix, correct=True)
-    if corr is None or corr["control_idx"] is None:
-        return None
-    err = load_causal_microstim_session(prefix, correct=False)
-    control_idx = corr["control_idx"]
-    channel_ids = corr["channel_ids"]
-    C = len(channel_ids)
-
-    ctrl_epochs = [crop_trial(tr["spikerate"]) for tr in corr["trials"] if tr["stim_cond"] == control_idx]
-    ctrl_epochs = [e for e in ctrl_epochs if e is not None]
-    if len(ctrl_epochs) < 10:
-        return None
-    trials = np.stack(ctrl_epochs, axis=0).transpose(0, 2, 1)  # (n_trials, C, n_bins)
-
-    n_correct_control = len(ctrl_epochs)
-    n_error_control = sum(1 for tr in err["trials"] if tr["stim_cond"] == control_idx) if err else 0
-
-    cond_info = {}
-    for c in range(len(corr["stim_channels"])):
-        if c == control_idx:
-            continue
-        chan_ids = corr["stim_channels"][c]
-        idx = [i for i, cid in enumerate(channel_ids) if cid in chan_ids]
-        if len(idx) != len(chan_ids):
-            continue
-        b_chan = np.zeros(C)
-        b_chan[idx] = 1.0 / len(idx)
-        n_correct = sum(1 for tr in corr["trials"] if tr["stim_cond"] == c)
-        n_error = sum(1 for tr in err["trials"] if tr["stim_cond"] == c) if err else 0
-        accuracy = n_correct / (n_correct + n_error) if (n_correct + n_error) > 0 else None
-        cond_info[c] = {"b_chan": b_chan, "n_correct": n_correct, "n_error": n_error, "accuracy": accuracy}
-
-    return {"trials": trials, "n_channels": int(C), "cond_info": cond_info,
-            "control_accuracy": {
-                "n_correct": n_correct_control, "n_error": n_error_control,
-                "accuracy": n_correct_control / (n_correct_control + n_error_control)
-                if (n_correct_control + n_error_control) > 0 else None}}
 
 
-def _energy_error_slope(energies: np.ndarray, errors: np.ndarray) -> float | None:
-    if len(energies) < 2 or np.std(energies) < 1e-12:
-        return None
-    return float(np.polyfit(energies, errors, 1)[0])
 
 
-def claim_control_model(fit: dict, cond_info: dict, rng: np.random.Generator) -> dict:
-    """Controllability, the stimulation-input-alignment targeting quantity, and the energy-accuracy
-    trade-off, at the rank ``fit`` was estimated at. The energy-accuracy sweep targets each real
-    stimulation direction scaled to unit displacement in the fitted latent space with a fully
-    actuatable (identity) input matrix -- this asks how the trade-off itself shifts with rank, not a
-    reproduction of any single delivered causal-displacement measurement."""
-    A, components, v_star, v_stable = fit["A"], fit["components"], fit["v_star"], fit["v_stable"]
-    k = A.shape[0]
-    per_condition = {}
-    x0_list, xf_list = [], []
-    for c, info in cond_info.items():
-        alignment = stimulation_input_alignment(A, components, info["b_chan"], v_star, v_stable, rng,
-                                                  gramian_horizon=CAUSAL_MICROSTIM_GRAMIAN_HORIZON)
-        per_condition[str(c)] = {**alignment, "accuracy": info["accuracy"],
-                                  "n_correct": info["n_correct"], "n_error": info["n_error"]}
-        b_lat = components.T @ info["b_chan"]
-        b_hat = b_lat / (np.linalg.norm(b_lat) + 1e-12)
-        x0_list.append(np.zeros(k))
-        xf_list.append(b_hat)
-
-    energy_accuracy = None
-    if x0_list:
-        B_identity = np.eye(k)
-        pareto = energy_accuracy_pareto(A, B_identity, x0_list, xf_list,
-                                         np.array(CAUSAL_MICROSTIM_ENERGY_ACCURACY_Q), T=20)
-        energy_accuracy = {
-            "q_values": pareto["q_values"].tolist(), "energies": pareto["energies"].tolist(),
-            "errors": pareto["errors"].tolist(),
-            "energy_error_slope": _energy_error_slope(pareto["energies"], pareto["errors"]),
-        }
-    return {"status": "computed", "rank": int(k), "n_conditions": int(len(cond_info)),
-            "per_condition": per_condition, "energy_accuracy": energy_accuracy}
 
 
 def run_causal_microstim_session(prefix: str, rank_grid) -> dict:

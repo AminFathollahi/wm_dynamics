@@ -25,6 +25,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT / "src"))
 
+from provenance import checkpoint_safe, restore_checkpoint  # noqa: E402
+
 from run_component_binding_bias_only_control import (  # noqa: E402
     BRANCH_BELOW_FLOOR,
     BRANCH_SURVIVES,
@@ -284,7 +286,7 @@ def test_artifact_diagnostic_cross_check_matches_delivered_sibling_control(artif
 
 
 def test_artifact_bias_only_statistic_is_not_the_real_effect_size(artifact):
-    """Guards the exact failure mode named in this module's brief: if the bias-only pathway were
+    """Guards the failure mode where, if the bias-only pathway were
     accidentally wired to the real per-session-pooled statistic instead of the collapsed-session-mean
     one, the two numbers would come out identical. They are different estimators on different scales
     by construction, so they must differ materially wherever both are defined."""
@@ -318,3 +320,15 @@ def test_artifact_branch_matches_its_own_recorded_voiding_flags(artifact):
 
 def test_artifact_levels_pooled_are_two_and_three(artifact):
     assert artifact["levels_pooled_for_the_within_item_count_level_composite"] == list(LEVELS_2_AND_3)
+
+
+def test_qualifying_levels_survives_a_checkpoint_round_trip():
+    """analyse_session (imported from run_component_and_item_binding) stores per_level keyed by
+    str(level). A resumed session's row comes back through restore_checkpoint before
+    _qualifying_levels ever sees it -- round-trip a row shaped the same way the checkpoint stores it
+    and confirm the str(lv) lookup still finds both computed levels, not an empty list."""
+    row = {"swap_primary": {"deviation": {"per_level": {
+        "2": {"status": "computed"}, "3": {"status": "computed"},
+    }}}}
+    restored_row = restore_checkpoint(json.loads(json.dumps(checkpoint_safe(row))))
+    assert _qualifying_levels(restored_row, "swap_primary") == [2, 3]

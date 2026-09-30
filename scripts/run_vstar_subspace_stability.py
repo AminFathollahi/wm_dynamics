@@ -30,7 +30,7 @@ Two stability measures, mirroring the existing v* anchor conventions:
 Output: results/vstar_subspace_stability.json.
 
 Run:
-    /home/amin/miniconda3/envs/wm_dynamics/bin/python scripts/run_vstar_subspace_stability.py
+    python scripts/run_vstar_subspace_stability.py
 """
 from __future__ import annotations
 

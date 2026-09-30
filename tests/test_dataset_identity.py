@@ -2,8 +2,8 @@
 
 001187 and 000673 share 31 patients across 37 recording sessions (verified by
 direct NWB identity checks -- see scripts/audit_dataset_identity.py and
-provenance/dataset_overlap_report.json). This was corrected 2026-08-03 from a
-prior 16-patient/19-session count: the audit originally grouped overlaps on
+provenance/dataset_overlap_report.json). An earlier
+version produced a 16-patient/19-session count: the audit originally grouped overlaps on
 the raw NWB ``identifier`` string, which embeds a release-local upload-order
 folder number ahead of the patient code (e.g. 000673's "sub-1_ses-1_P55CS" vs
 001187's "sub-2_ses-1_P55CS" for the identical patient/session), so any
@@ -20,10 +20,14 @@ an already-canonical 001187 session.
 """
 
 import json
+import subprocess
 import sys
+import textwrap
 from collections import defaultdict
 from pathlib import Path
 
+import h5py
+import numpy as np
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -70,7 +74,7 @@ def test_overlap_logic_rederived_from_raw_registry_finds_every_known_overlap():
     comparison over the persisted recording registry (not the finished report),
     so a future regression in the audit script's grouping logic itself -- not
     just a stale output file -- fails this test. Grouping on the raw
-    ``native_identifier`` string instead (the pre-2026-08-03 method) would
+    ``native_identifier`` string instead (the earlier method) would
     fail this test: it recovers only the 16 patients whose release-local
     upload-order folder number happened to agree between releases.
     """
@@ -88,7 +92,7 @@ def test_overlap_logic_rederived_from_raw_registry_finds_every_known_overlap():
 
 
 def test_raw_identifier_string_grouping_undercounts_the_overlap():
-    """Documents a fixed defect: grouping on the raw identifier
+    """Documents a fixed error: grouping on the raw identifier
     string alone recovers fewer than the true 31 shared patients, because it
     embeds a release-local upload-order folder number ahead of the patient
     code. If this test starts failing, the fixture data changed in a way that
@@ -159,3 +163,41 @@ def test_pooling_drops_linked_duplicate_view_before_stouffer_combine():
 
     assert len(p_pool_naive) == 2, "sanity check on the fixture, not the fix"
     assert len(p_pool_dedup) == 1, "the linked 000673 view must be dropped before pooling"
+
+
+def _compact_hash_in_subprocess(h5_path: Path, group_name: str) -> str:
+    script = textwrap.dedent(f"""
+        import sys
+        sys.path.insert(0, {str(ROOT / "scripts")!r})
+        import h5py
+        from audit_dataset_identity import compact_hash
+        with h5py.File({str(h5_path)!r}, "r") as handle:
+            print(compact_hash(handle[{group_name!r}]))
+        """)
+    result = subprocess.run(
+        [sys.executable, "-c", script], capture_output=True, text=True, check=True,
+    )
+    return result.stdout.strip()
+
+
+def test_compact_hash_of_object_fields_is_stable_across_processes(tmp_path):
+    """Object-dtype HDF5 fields (variable-length strings) hold Python-object
+    pointers once read into NumPy; hashing their raw bytes hashes memory
+    addresses that differ every process start. compact_hash must decode
+    content instead, so the digest agrees across separate interpreters.
+    """
+    h5_path = tmp_path / "sample.h5"
+    str_dtype = h5py.special_dtype(vlen=str)
+    with h5py.File(h5_path, "w") as handle:
+        group = handle.create_group("data")
+        group.create_dataset("labels", data=["alpha", "beta", "gamma"], dtype=str_dtype)
+        compound_dtype = np.dtype([("idx_start", "<i4"), ("count", "<i4"), ("note", str_dtype)])
+        compound = np.zeros(2, dtype=compound_dtype)
+        compound["idx_start"] = [0, 3]
+        compound["count"] = [3, 2]
+        compound["note"] = ["first", "second"]
+        group.create_dataset("timeseries", data=compound)
+
+    digests = {_compact_hash_in_subprocess(h5_path, "data") for _ in range(2)}
+    assert len(digests) == 1
+    assert None not in digests

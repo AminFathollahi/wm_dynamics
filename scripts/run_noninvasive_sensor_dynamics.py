@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Participant-level confinement rate achievable from our own scalp EEG.
 
-Re-reads the already-staged Wolff (impulse, delay task) and
-Haslacher (visual WM, tACS) EEG lambda fits at the sensor level -- no new
+Re-reads the already-staged impulse-perturbation scalp-EEG corpus (impulse, delay task) and
+closed-loop transcranial alternating-current stimulation scalp-EEG corpus (doi:10.1016/j.brs.2024.07.007; visual WM, tACS) lambda fits at the sensor level -- no new
 download, no new fit -- and reports lambda with participant intervals. This is
 the non-invasive power calibration: what confinement rate can scalp EEG
 resolve at all, before any claim is made about recovering an intracranial
@@ -98,17 +98,17 @@ def main() -> None:
 
     datasets = {
         "wolff_2017_impulse_voltage": _summarize(
-            "Wolff et al. 2017, impulse task, scalp voltage",
+            "Impulse-perturbation task, scalp voltage",
             _wolff_lambda(wolff_participants, "voltage"),
             len(wolff_participants),
         ),
         "wolff_2017_impulse_alpha_power": _summarize(
-            "Wolff et al. 2017, impulse task, 8-12 Hz alpha power",
+            "Impulse-perturbation task, 8-12 Hz alpha power",
             _wolff_lambda(wolff_participants, "alpha_power"),
             len(wolff_participants),
         ),
         "haslacher_clam_tacs_pca": _summarize(
-            "Haslacher CLAM-tACS, visual WM, sensor-level PCA components",
+            "Closed-loop tACS, visual WM, sensor-level PCA components",
             _haslacher_lambda(haslacher_participants),
             len(haslacher_participants),
         ),
@@ -121,8 +121,8 @@ def main() -> None:
         "code_commit": git_commit(ROOT),
         "method": (
             "No new fit. Aggregates the participant-level confined-drift lambda "
-            "already estimated directly on sensor-level EEG (Wolff: 12-bin circular "
-            "Mahalanobis tuning score, cue-to-impulse endogenous window; Haslacher: "
+            "already estimated directly on sensor-level EEG (impulse-perturbation corpus: 12-bin circular "
+            "Mahalanobis tuning score, cue-to-impulse endogenous window; closed-loop tACS corpus: "
             "leading 3 PCA components of the stimulation-off-frozen sensor coordinate "
             "frame) by the fitted scalar Gaussian state-space model in "
             "src/drift_dynamics.py. Participant is the resampling unit."

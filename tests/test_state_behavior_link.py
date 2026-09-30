@@ -1,6 +1,6 @@
 """Smoke tests for scripts/run_state_behavior_link.py's core statistics
 (the trial-count-matching machinery and the deciding contrast), run against
-small synthetic populations rather than the real Panichello .mat files so
+small synthetic populations rather than the real macaque prefrontal spatial working-memory corpus (Dryad doi:10.5061/dryad.kkwh70sct) .mat files so
 they run in well under a second."""
 
 from __future__ import annotations
@@ -13,9 +13,8 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from run_state_behavior_link import (  # noqa: E402
-    LAG_RANGE_BINS, cheap_first_look, full_statistic, matched_correct_draws,
-)
+from run_state_behavior_link import LAG_RANGE_BINS, full_statistic, matched_correct_draws
+from state_persistence import cheap_first_look
 from state_persistence import simulate_planted_population  # noqa: E402
 
 BIN_WIDTH_S = 0.1

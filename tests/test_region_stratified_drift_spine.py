@@ -88,7 +88,7 @@ class TestRegionThresholdShortCircuit001187000673:
 
 
 def _write_boran_nwb(path, n_hippocampus, n_amygdala, n_trials=30):
-    """Enough of a 000574-shaped (Boran) NWB for analyze_session's region
+    """Enough of a 000574-shaped (DANDI 000574) NWB for analyze_session's region
     filter and unit-count gate to run, deliberately too few set-size levels
     to ever reach the expensive fold-fitting code."""
     n_units = n_hippocampus + n_amygdala

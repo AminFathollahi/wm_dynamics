@@ -38,8 +38,23 @@ def test_missing_optional_data_root_is_explicit(monkeypatch, tmp_path):
         project_config.data_root()
 
 
-def test_production_code_has_no_machine_specific_data_paths():
-    forbidden = "/media/amin/EXTERNAL_USB"
-    for directory in (project_config.REPO_ROOT / "src", project_config.REPO_ROOT / "scripts"):
-        for path in directory.glob("*.py"):
-            assert forbidden not in path.read_text(), path
+def test_local_config_overrides_committed_sections(monkeypatch, tmp_path):
+    config = json.loads((project_config.REPO_ROOT / "config" / "project.json").read_text())
+    (tmp_path / "project.json").write_text(json.dumps(config))
+    local = {"paths": {"data_root": str(tmp_path)}, "executables": {"ssm_python": "/opt/ssm/python"}}
+    (tmp_path / project_config.LOCAL_CONFIG_NAME).write_text(json.dumps(local))
+    monkeypatch.setenv("WM_DYNAMICS_CONFIG", str(tmp_path / "project.json"))
+    monkeypatch.delenv("WM_DYNAMICS_DATA_ROOT", raising=False)
+    monkeypatch.delenv("WM_DYNAMICS_SSM_PYTHON", raising=False)
+    assert project_config.data_root() == tmp_path
+    assert project_config.executable("ssm_python") == "/opt/ssm/python"
+    assert project_config.project_path("results") == project_config.REPO_ROOT / "results"
+
+
+def test_committed_files_have_no_machine_specific_paths():
+    root = project_config.REPO_ROOT
+    paths = [*(root / "src").glob("*.py"), *(root / "scripts").glob("*.py"),
+             root / "config" / "project.json", *(root / "provenance").glob("*.json")]
+    for path in paths:
+        text = path.read_text()
+        assert "/media/" not in text and "/home/" not in text, path

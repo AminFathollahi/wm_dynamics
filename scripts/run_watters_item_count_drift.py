@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Test whether Watters multi-object diffusion scales with item count.
+"""Test whether diffusion in the macaque multi-object working-memory corpus (doi:10.64898/2026.01.27.702062) scales with item count.
 
 The analysis uses the exact source-included trials and source-filtered units
 from the released Gain fits, but estimates dynamics from the staged raw
@@ -53,7 +53,7 @@ def data_directories() -> tuple[Path, Path, Path]:
     models = figures / "modeling" / "main"
     behavior = figures / "behavior_processing"
     if not spikes.is_dir() or not models.is_dir() or not behavior.is_dir():
-        raise SystemExit(f"Watters processed caches are incomplete under {watters}")
+        raise SystemExit(f"macaque multi-object corpus processed caches are incomplete under {watters}")
     return spikes, models, behavior
 
 
@@ -255,7 +255,7 @@ def main() -> None:
     sessions = {}
     for task, animal, session, run in entries:
         key = f"{task}:{animal}:{session}"
-        print(f"fitting Watters item-count drift {key}", flush=True)
+        print(f"fitting macaque multi-object corpus item-count drift {key}", flush=True)
         row = {"task": task, "animal": animal, "session": session, "analyses": {}}
         for bin_ms in ANALYSIS_BIN_MS:
             counts, trials, metadata = load_session_counts(spikes, run, animal, session, bin_ms)
@@ -278,7 +278,7 @@ def main() -> None:
     output = {
         "schema_version": "1.0.0",
         "analysis_id": "watters_2026_item_count_drift",
-        "dataset": "Watters et al. 2026 OSF vyw49 processed spike cache",
+        "dataset": "macaque multi-object corpus OSF vyw49 processed spike cache",
         "code_commit": git_commit(ROOT),
         "source_hash": sha256_file(Path(__file__)),
         "metadata_decision": {

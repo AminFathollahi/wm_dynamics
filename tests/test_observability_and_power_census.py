@@ -103,7 +103,7 @@ class TestExcludedCellsCarryThreeNumbers:
 
 
 class TestCensusHeadlineFailsLoudOnMissingKey:
-    """The defect this class of test guards against: a pre-declared branch
+    """The error this class of test guards against: a pre-declared branch
     resolved by a dict lookup that silently returns nothing for a missing
     admission-matrix key, so an empty set gets compared as though it were a
     measurement. See census.admission_matrix_key_lookup_defect for the full

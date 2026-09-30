@@ -26,25 +26,13 @@ from drift_dynamics import (  # noqa: E402
     neighbouring_trial_prediction_advantage,
 )
 from provenance import canonical_json, git_commit, sha256_file  # noqa: E402
-from run_human_drift_spine_000469 import (  # noqa: E402
-    AXIS_WINDOW,
-    BIN_MS,
-    MIN_UNITS,
-    N_COMPONENTS,
-    N_SPLITS,
-    WINDOW_S,
-    data_directory as data_directory_000469,
-    discriminant_direction,
-    iid_log_likelihood,
-    matched_complement_direction,
-    projected_residuals,
-)
-from run_human_drift_spine_000574 import (  # noqa: E402
-    MAINT_ONSET_S,
-    MAINT_WIN,
-    MIN_TRIALS,
-    data_directory as data_directory_000574,
-)
+from run_human_drift_spine_000469 import data_directory as data_directory_000469
+from corpus_sessions import AXIS_WINDOW, MIN_UNITS, N_COMPONENTS, N_SPLITS, WINDOW_S
+from run_human_drift_spine_000469 import BIN_MS  # noqa: E402
+from drift_dynamics import discriminant_direction, iid_log_likelihood, matched_complement_direction, projected_residuals
+from run_human_drift_spine_000574 import data_directory as data_directory_000574
+from corpus_sessions import MIN_TRIALS
+from corpus_sessions import MAINT_ONSET_S, MAINT_WIN
 from spike_pipeline import (  # noqa: E402
     FrozenPSTHTransform,
     MIN_SESSION_ACCURACY,
@@ -696,7 +684,7 @@ def run_region_stratified() -> None:
     M2 minus scale-mixture M0 and M2 minus free-variance AR(1),
     per region, plus the hippocampus-minus-amygdala paired difference.
     This function only loops 000469's regions; 000574's region-stratified fit
-    is a separate estimand (Boran multi-structure pooling) run by
+    is a separate estimand (DANDI 000574 multi-structure pooling) run by
     scripts/run_000574_units_pipeline.py --region-stratified, not here.
     """
     region_analyses: dict[str, Any] = {}

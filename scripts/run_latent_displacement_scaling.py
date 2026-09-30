@@ -18,7 +18,7 @@ msd_at_K_state_units_sq (per-structure only, never compared across
 structures since PCA units are not shared across fits).
 
 Corpora: DANDI 000469, the canonical 001187/000673 dedup, and DANDI 000574
-(Boran) via src/corpus_sessions.py -- see that module's docstring for why
+(DANDI 000574) via src/corpus_sessions.py -- see that module's docstring for why
 DANDI 000004 is not yet included.
 """
 
@@ -43,6 +43,7 @@ from geometry import phase_scrambled_null  # noqa: E402
 from provenance import canonical_json, git_commit, sha256_file  # noqa: E402
 from spike_pipeline import FrozenPSTHTransform, build_psth  # noqa: E402
 from statistics import fdr_bh, paired_sign_flip_test, stable_seed  # noqa: E402
+from info_decoding import mean_squared_displacement, summarize_msd  # noqa: E402
 
 SEED = 20260808
 BIN_MS = 100
@@ -78,34 +79,8 @@ def fold_latents(psth: np.ndarray, seed: int) -> list[np.ndarray | None]:
     return folds
 
 
-def mean_squared_displacement(latent: np.ndarray) -> np.ndarray:
-    """latent: (n_trials, n_bins, k) -> msd[lag-1] for lag = 1..n_bins-1."""
-    n_bins = latent.shape[1]
-    max_lag = n_bins - 1
-    msd = np.zeros(max_lag)
-    for lag in range(1, max_lag + 1):
-        diffs = latent[:, lag:, :] - latent[:, :-lag, :]
-        msd[lag - 1] = np.mean(np.sum(diffs**2, axis=2))
-    return msd
 
 
-def summarize_msd(msd: np.ndarray) -> dict:
-    max_lag = len(msd)
-    half = max(1, max_lag // 2)
-    saturation_ratio = float(msd[-1] / msd[half - 1]) if msd[half - 1] > 0 else None
-    lags = np.arange(1, max_lag + 1)
-    valid = msd > 0
-    if valid.sum() >= 3:
-        slope, _ = np.polyfit(np.log(lags[valid]), np.log(msd[valid]), 1)
-        log_log_slope = float(slope)
-    else:
-        log_log_slope = None
-    return {
-        "saturation_ratio": saturation_ratio,
-        "log_log_slope": log_log_slope,
-        "msd_at_K_state_units_sq": float(msd[-1]),
-        "msd_curve": msd.tolist(),
-    }
 
 
 def analyze_fold(latent: np.ndarray, rng: np.random.Generator) -> dict:

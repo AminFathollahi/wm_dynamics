@@ -171,7 +171,7 @@ def _write(per_patient: dict, final: bool) -> None:
         "scope": (
             "DANDI 000469, hippocampus vs pre_sma only -- the deciding pair. "
             "Extending to every ordered structure pair in every eligible dataset "
-            "is deferred; see the crack register."
+            "is deferred."
         ),
         "predeclared_decision": PREDECLARED_DECISION,
         "unmatched_sign_pre_sma_minus_hippocampus": UNMATCHED_SIGN,

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Continuous circular Wolff EEG analysis addressing both published readings.
+"""Continuous circular impulse-perturbation EEG analysis addressing both published readings.
 
 This replaces the legacy six-class/window shortcut with cross-validated
 circular Mahalanobis tuning on the doubled orientation angle.  Voltage and
@@ -31,44 +31,18 @@ from drift_dynamics import (  # noqa: E402
     leave_one_out_condition_residuals,
 )
 from provenance import canonical_json, git_commit, sha256_file  # noqa: E402
+from corpus_sessions import data_directory  # noqa: E402
+from preprocessing import prepare_epoch, valid_mask  # noqa: E402
 
 N_ANGLE_BINS = 12
 N_SPLITS = 5
-TARGET_HZ = 100.0
 SEED = 20260731
 
 
-def data_directory() -> Path:
-    root = os.environ.get("WM_DYNAMICS_DATA_ROOT")
-    if not root:
-        raise SystemExit("Set WM_DYNAMICS_DATA_ROOT to the external data root.")
-    path = Path(root) / "Wolff" / "data"
-    if not path.is_dir():
-        raise SystemExit(f"Wolff data not staged at {path}")
-    return path
 
 
-def valid_mask(epoch, n_trials: int) -> np.ndarray:
-    mask = np.ones(n_trials, dtype=bool)
-    bad = np.atleast_1d(epoch.bad_trials)
-    if bad.size and np.all(np.isfinite(bad)):
-        mask[bad.astype(int) - 1] = False
-    return mask
 
 
-def prepare_epoch(epoch, measure: str) -> tuple[np.ndarray, np.ndarray, float]:
-    data = np.asarray(epoch.trial, dtype=float)
-    time = np.asarray(epoch.time, dtype=float)
-    native_hz = float(1.0 / np.median(np.diff(time)))
-    data = data - data.mean(axis=1, keepdims=True)
-    if measure == "alpha_power":
-        sos = butter(4, [8.0, 12.0], btype="bandpass", fs=native_hz, output="sos")
-        data = np.log(np.abs(hilbert(sosfiltfilt(sos, data, axis=2), axis=2)) ** 2 + 1e-12)
-        data = data - data.mean(axis=1, keepdims=True)
-    elif measure != "voltage":
-        raise ValueError(f"unknown measure: {measure}")
-    stride = max(1, int(round(native_hz / TARGET_HZ)))
-    return data[:, :, ::stride], time[::stride], native_hz / stride
 
 
 def angle_bins(theta: np.ndarray) -> np.ndarray:
@@ -281,18 +255,18 @@ def main() -> None:
     exp2_files = sorted(directory.glob("Dynamic_hidden_states_exp2_*.mat"), key=lambda path: int(path.stem.rsplit("_", 1)[1]))
     subjects = []
     for path in exp1_files:
-        print(f"fitting Wolff experiment 1 subject {path.stem.rsplit('_', 1)[1]}", flush=True)
+        print(f"fitting impulse-perturbation experiment 1 subject {path.stem.rsplit('_', 1)[1]}", flush=True)
         subjects.append(analyze_subject(path))
     two_ping = []
     for path in exp2_files:
-        print(f"checking Wolff experiment 2 subject {path.stem.rsplit('_', 1)[1]}", flush=True)
+        print(f"checking impulse-perturbation experiment 2 subject {path.stem.rsplit('_', 1)[1]}", flush=True)
         two_ping.append({"subject": int(path.stem.rsplit("_", 1)[1]), **two_ping_linearity(path)})
     output = {
         "schema_version": "1.0.0",
         "analysis_id": "wolff_continuous_circular_impulse",
         "code_commit": git_commit(ROOT),
         "source_hash": sha256_file(Path(__file__)),
-        "dataset": "Wolff et al. 2017 experiments 1 and 2",
+        "dataset": "Impulse-perturbation scalp-EEG experiments 1 and 2",
         "method": "continuous doubled-orientation 12-bin circular Mahalanobis tuning; five-fold participant-local CV; voltage and 8-12 Hz alpha power",
         "participants": subjects,
         "group": {

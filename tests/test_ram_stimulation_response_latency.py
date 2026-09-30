@@ -9,13 +9,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from run_ram_stimulation_response_latency import (  # noqa: E402
-    _censored_first_recall,
-    _is_zero_recall_list,
-    censored_first_recall_contrast,
-    contrast_summary,
-    per_subject_contrast,
-)
+from run_ram_stimulation_response_latency import _is_zero_recall_list, censored_first_recall_contrast, per_subject_contrast
+from stimulation_events import _censored_first_recall, contrast_summary
 
 
 def _entry(stim_list, rec_word_rt, recall_period_s=30.0):

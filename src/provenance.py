@@ -15,6 +15,7 @@ import os
 import platform
 import subprocess
 import sys
+import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -58,6 +59,7 @@ def _json_safe(value: Any) -> Any:
 
 
 _CHECKPOINT_ARRAY_TAG = "__provenance_ndarray__"
+_CHECKPOINT_STRING_KEY_PREFIX = "\u0000str:"
 
 
 def checkpoint_safe(value: Any) -> Any:
@@ -75,6 +77,13 @@ def checkpoint_safe(value: Any) -> Any:
     canonical_json and write_immutable_artifact keep calling _json_safe unchanged,
     so no existing artifact hash or byte layout is affected by this function's
     existence. See restore_checkpoint for the paired reader.
+
+    JSON has no int dict keys, so a dict keyed by the string "2" and a dict keyed
+    by the int 2 both become the JSON key "2" and are indistinguishable on
+    reload. Every digit-only string key is escaped here to "\\u0000str:2", a form
+    no producer in this codebase writes on its own (confirmed by grep), so
+    restore_checkpoint can tell the two apart and only convert the unescaped
+    (genuinely int-keyed) case back to int.
     """
     if isinstance(value, np.ndarray):
         return {
@@ -84,7 +93,11 @@ def checkpoint_safe(value: Any) -> Any:
             "data": _json_safe(value.tolist()),
         }
     if isinstance(value, dict):
-        return {key: checkpoint_safe(item) for key, item in value.items()}
+        return {
+            (_CHECKPOINT_STRING_KEY_PREFIX + key if isinstance(key, str) and key.isdigit() else key):
+                checkpoint_safe(item)
+            for key, item in value.items()
+        }
     if isinstance(value, (list, tuple)):
         return [checkpoint_safe(item) for item in value]
     return _json_safe(value)
@@ -128,6 +141,9 @@ def restore_checkpoint(value: Any) -> Any:
     from json.loads keyed by its str(). Every digit-only key is restored to int
     here, so a caller that indexes a restored dict with the same ints it wrote
     (e.g. a per-chunk-size lookup table) does not have to convert at every call site.
+    A digit-only key that checkpoint_safe escaped (it was a string in memory, e.g.
+    str(level)) is un-escaped back to that same string instead, so it round-trips
+    as the string it started as.
     """
     if isinstance(value, dict):
         if value.get(_CHECKPOINT_ARRAY_TAG) is True and "dtype" in value and "data" in value:
@@ -136,10 +152,16 @@ def restore_checkpoint(value: Any) -> Any:
             array = np.array(data, dtype=dtype)
             shape = tuple(value.get("shape", array.shape))
             return array.reshape(shape) if array.shape != shape and array.size == np.prod(shape) else array
-        return {
-            (int(key) if isinstance(key, str) and key.isdigit() else key): restore_checkpoint(item)
-            for key, item in value.items()
-        }
+        restored = {}
+        for key, item in value.items():
+            if isinstance(key, str) and key.startswith(_CHECKPOINT_STRING_KEY_PREFIX):
+                restored_key = key[len(_CHECKPOINT_STRING_KEY_PREFIX):]
+            elif isinstance(key, str) and key.isdigit():
+                restored_key = int(key)
+            else:
+                restored_key = key
+            restored[restored_key] = restore_checkpoint(item)
+        return restored
     if isinstance(value, list):
         if _is_bool_leaf_list(value):
             return np.array(value, dtype=bool)
@@ -153,6 +175,32 @@ def restore_checkpoint(value: Any) -> Any:
                 return restored
         return restored
     return value
+
+
+def checkpoint_load(path: str | Path) -> dict | None:
+    """Decoded checkpoint object, or None if the file is missing, unreadable or not a JSON object."""
+    path = Path(path)
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text())
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def checkpoint_store(path: str | Path, payload: dict) -> None:
+    """Write a checkpoint atomically."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=".tmp_")
+    try:
+        with os.fdopen(fd, "w") as handle:
+            handle.write(canonical_json(payload))
+        os.replace(tmp_name, path)
+    finally:
+        if os.path.exists(tmp_name):
+            os.remove(tmp_name)
 
 
 def canonical_json(value: Any) -> str:

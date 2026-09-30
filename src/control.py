@@ -10,14 +10,6 @@ Implements:
 The LQR framework operationalizes the theoretical BCI application:
 given the failing neural state identified by geometric biomarkers,
 what is the minimum-energy perturbation that rescues the trajectory?
-
-References
-----------
-Stengel RF (1994) Optimal Control and Estimation. Dover.
-  Chapters 3-4 (LQR derivation) and Ch. 5 (DARE).
-Kirk DE (1970) Optimal Control Theory. Dover.
-Brunton SL & Kutz JN (2022) Data-Driven Science and Engineering. Ch. 8.
-Gu S et al. (2015) Controllability of structural brain networks. Nat Commun.
 """
 
 from __future__ import annotations
@@ -355,7 +347,7 @@ def stimulation_input_alignment(
 
 def _normalize_adjacency(W: NDArray) -> NDArray:
     """Symmetrize and rescale a weighted adjacency matrix to spectral radius
-    < 1 (Gu et al. 2015 Nat Commun, Methods): required for the closed-form
+    < 1 (the network-controllability normalization): required for the closed-form
     average/modal controllability below, which assumes a stable, symmetric
     (orthogonally diagonalizable) system matrix."""
     Ws = (W + W.T) / 2.0
@@ -364,8 +356,8 @@ def _normalize_adjacency(W: NDArray) -> NDArray:
 
 
 def average_controllability(W: NDArray) -> NDArray:
-    """Average controllability of every node (Gu et al. 2015 Nat Commun, Eq
-    1): ease of steering the network with average input energy, in closed
+    """Average controllability of every node (network-controllability
+    theory, Eq 1): ease of steering the network with average input energy, in closed
     form from the eigendecomposition of the normalized (symmetric) adjacency:
 
         y_avg(i) = sum_k v_k(i)^2 / (1 - lambda_k^2)
@@ -383,8 +375,8 @@ def average_controllability(W: NDArray) -> NDArray:
 
 
 def modal_controllability(W: NDArray) -> NDArray:
-    """Modal controllability of every node (Gu et al. 2015 Nat Commun, Eq 2):
-    ability to steer the network into its hardest-to-reach (weakly-coupled)
+    """Modal controllability of every node (network-controllability theory,
+    Eq 2): ability to steer the network into its hardest-to-reach (weakly-coupled)
     modes, in closed form from the same eigendecomposition:
 
         phi(i) = sum_k (1 - lambda_k^2) * v_k(i)^2

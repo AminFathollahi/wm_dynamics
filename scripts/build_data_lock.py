@@ -13,7 +13,7 @@ for part in ("src", "scripts"):
         sys.path.insert(0, path)
 
 from data_integrity import corpus_inventory, load_datasets_config  # noqa: E402
-from project_config import data_root  # noqa: E402
+from project_config import data_root
 from provenance import _json_safe  # noqa: E402
 
 OUTPUT_PATH = ROOT / "provenance" / "data_lock.json"

@@ -55,7 +55,7 @@ class TestFitTau:
         assert tau > 0
 
     def test_lag0_inclusion_collapses_tau_regardless_of_truth(self):
-        """The defect this fix corrects: including lag 0 (the total variance,
+        """The error this fix corrects: including lag 0 (the total variance,
         contaminated by Poisson counting noise) in the exponential fit makes
         the recovered tau insensitive to the true timescale. Excluding lag 0
         (the default) must still distinguish a short from a long true tau;

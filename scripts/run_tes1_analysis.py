@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Comprehensive TES1 (Huang et al. 2017 eLife) utilisation.
+"""Comprehensive TES1 utilisation.
 
-For each Miller subject:
+For each ECoG n-back corpus subject:
   1. Load actual electrode MNI coordinates from .mat files.
   2. Re-run PCA on the maintenance-window epochs → V matrix (n_ch, n_pc).
   3. For each of the 17 TES1 subjects: build B_electrode via Gaussian interpolation
@@ -10,11 +10,11 @@ For each Miller subject:
   5. Run LQR with mean TES1 B, best-matched B, and worst-matched B.
   6. Compute Controllability Gramian trace per TES1 subject.
 
-For each Boran subject:
+For each DANDI 000574 subject:
   - Extract iEEG MNI coordinates from NWB.
   - Build B_electrode from TES1 (Gaussian interpolation at electrode positions).
   - Report B statistics; note that latent projection requires saving V in the
-    Boran pipeline (boran_geometry files do not currently store V).
+    DANDI 000574 pipeline (boran_geometry files do not currently store V).
 
 Saves:
   results/tes1_comprehensive.npz
@@ -45,10 +45,6 @@ from provenance import _json_safe
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 RESULTS   = ROOT / "results"
-EXT_DATA  = data_root()
-TES1_ZIP  = EXT_DATA / "Tes1" / "HuangLiu2016dataset.zip"
-MILLER_LOCS = EXT_DATA / "kai miller" / "memory_nback" / "memory_nback" / "locs"
-BORAN_DIR   = EXT_DATA / "000574"
 
 MILLER_SUBJECTS = ["al", "ca", "cc", "ug"]
 BORAN_SUBJECTS  = [f"sub-{i:02d}" for i in range(1, 10)]
@@ -111,15 +107,15 @@ def get_A_from_mean_trajectory(Z_geo: np.ndarray, times: np.ndarray,
     return A_dmd
 
 
-# ── Miller subjects ───────────────────────────────────────────────────────────
+# ── ECoG n-back corpus subjects ───────────────────────────────────────────────────────────
 
-def run_miller(all_tes1: list[dict]) -> dict:
-    """Full TES1 B-matrix analysis + LQR for all 4 Miller subjects."""
+def run_miller(all_tes1: list[dict], miller_locs: Path) -> dict:
+    """Full TES1 B-matrix analysis + LQR for all 4 ECoG n-back corpus subjects."""
     miller_results = {}
     n_tes1 = len(all_tes1)
 
     for subj in MILLER_SUBJECTS:
-        print(f"\n  Miller {subj}")
+        print(f"\n  ECoG n-back corpus {subj}")
 
         # Load epoch data
         ep_file = RESULTS / f"01_epochs_{subj}.npz"
@@ -133,7 +129,7 @@ def run_miller(all_tes1: list[dict]) -> dict:
         good_ch  = ep["good_channels"]
 
         # Load actual electrode MNI coordinates
-        loc_file = MILLER_LOCS / f"{subj}_electrodes.mat"
+        loc_file = miller_locs / f"{subj}_electrodes.mat"
         if not loc_file.exists():
             print(f"    SKIP: electrode file {loc_file} not found")
             continue
@@ -233,10 +229,10 @@ def run_miller(all_tes1: list[dict]) -> dict:
     return miller_results
 
 
-# ── Boran subjects ────────────────────────────────────────────────────────────
+# ── DANDI 000574 subjects ────────────────────────────────────────────────────────────
 
 def run_boran(all_tes1: list[dict]) -> dict:
-    """Full TES1 B-matrix analysis + LQR for all 9 Boran subjects.
+    """Full TES1 B-matrix analysis + LQR for all 9 DANDI 000574 subjects.
 
     Uses V and electrode_mni saved in boran_geometry_{subj}.npz.
     Requires that run_boran_pipeline.py has been run after the V-saving update.
@@ -248,7 +244,7 @@ def run_boran(all_tes1: list[dict]) -> dict:
     for subj in BORAN_SUBJECTS:
         geo_file = RESULTS / f"boran_geometry_{subj}.npz"
         if not geo_file.exists():
-            print(f"  Boran {subj}: geometry file not found — skipping")
+            print(f"  DANDI 000574 {subj}: geometry file not found — skipping")
             continue
 
         geo = np.load(geo_file, allow_pickle=True)
@@ -261,7 +257,7 @@ def run_boran(all_tes1: list[dict]) -> dict:
         has_coords = "electrode_mni" in geo
 
         n_ch_good = int(geo["n_channels_good"])
-        print(f"  Boran {subj}: {n_ch_good} good channels, V={'yes' if has_V else 'NO'}, "
+        print(f"  DANDI 000574 {subj}: {n_ch_good} good channels, V={'yes' if has_V else 'NO'}, "
               f"coords={'yes' if has_coords else 'NO'}")
 
         if not (has_V and has_coords):
@@ -273,7 +269,7 @@ def run_boran(all_tes1: list[dict]) -> dict:
         target_mni = geo["electrode_mni"].astype(np.float64)  # (C_good, 3)
 
         # A matrix from DMD on mean maintenance trajectory (all correct trials)
-        # Boran maintenance window spans the full times range
+        # DANDI 000574 maintenance window spans the full times range
         correct = geo.get("correct", np.ones(Z_geo.shape[0], dtype=bool))
         mask_correct = correct.astype(bool)
         Z_maint = Z_geo[mask_correct].mean(axis=0).T   # (8, T)
@@ -373,7 +369,7 @@ def run_boran(all_tes1: list[dict]) -> dict:
 # ── Summaries for stats ────────────────────────────────────────────────────────
 
 def _subj_summary(r: dict) -> dict:
-    """Build per-subject stats dict for Miller or Boran result."""
+    """Build per-subject stats dict for ECoG n-back corpus or DANDI 000574 result."""
     if r.get("status") in ("needs_pipeline_rerun",):
         return {"status": r["status"]}
     traces = r["gramian_traces"]
@@ -451,11 +447,13 @@ def build_stats_summary(miller_results: dict, boran_results: dict,
 # ── Main ───────────────────────────────────────────────────────────────────────
 
 def main():
-    if not TES1_ZIP.exists():
-        raise FileNotFoundError(f"TES1 data not found: {TES1_ZIP}")
+    ext_data = data_root()
+    tes1_zip = ext_data / "Tes1" / "HuangLiu2016dataset.zip"
+    if not tes1_zip.exists():
+        raise FileNotFoundError(f"TES1 data not found: {tes1_zip}")
 
     print("Loading all 17 TES1 subjects...")
-    all_tes1 = load_tes1_stimulation(str(TES1_ZIP))
+    all_tes1 = load_tes1_stimulation(str(tes1_zip))
     print(f"  {len(all_tes1)} TES1 subjects loaded")
 
     # Print basic TES1 stats
@@ -464,10 +462,11 @@ def main():
     print(f"  Voltage: min={all_volts.min():.2f}, max={all_volts.max():.2f}, "
           f"std={all_volts.std():.2f} mV/mA")
 
-    print("\n=== Miller subjects ===")
-    miller_results = run_miller(all_tes1)
+    print("\n=== ECoG n-back corpus subjects ===")
+    miller_locs = ext_data / "kai miller" / "memory_nback" / "memory_nback" / "locs"
+    miller_results = run_miller(all_tes1, miller_locs)
 
-    print("\n=== Boran subjects ===")
+    print("\n=== DANDI 000574 subjects ===")
     boran_results = run_boran(all_tes1)
 
     # ── Save comprehensive NPZ ─────────────────────────────────────────────────
@@ -492,7 +491,7 @@ def main():
         **out_miller,
     )
 
-    # Save Boran TES1 results (latent space, mirrors Miller format)
+    # Save DANDI 000574 TES1 results (latent space, mirrors ECoG n-back corpus format)
     boran_complete = {s: r for s, r in boran_results.items()
                       if r.get("status") == "complete"}
     if boran_complete:
@@ -508,7 +507,7 @@ def main():
             out_boran[f"{subj}_B_mean"]            = r["B_mean"]
         np.savez_compressed(str(RESULTS / "tes1_boran_B.npz"), **out_boran)
     elif boran_results:
-        print("  Boran geometry missing V — re-run run_boran_pipeline.py first")
+        print("  DANDI 000574 geometry missing V — re-run run_boran_pipeline.py first")
 
     # ── Update all_statistics.json ─────────────────────────────────────────────
     stats_path = RESULTS / "all_statistics.json"
@@ -524,7 +523,7 @@ def main():
         json.dump(_json_safe(stats), f, indent=2, allow_nan=False)
 
     # ── Print summary ──────────────────────────────────────────────────────────
-    print("\n=== Miller Summary ===")
+    print("\n=== ECoG n-back corpus Summary ===")
     for subj, r in miller_results.items():
         lqr = r["lqr_results"]
         print(f"\n  {subj}:")
@@ -542,7 +541,7 @@ def main():
     boran_complete = {s: r for s, r in boran_results.items()
                       if r.get("status") == "complete"}
     if boran_complete:
-        print("\n=== Boran Summary ===")
+        print("\n=== DANDI 000574 Summary ===")
         for subj, r in boran_complete.items():
             lqr = r["lqr_results"]
             fold = r["B_norms"].max() / (r["B_norms"].min() + 1e-10)
@@ -552,16 +551,16 @@ def main():
                 if label in lqr and "reduction_pct" in lqr[label]:
                     print(f"    LQR ({label}): {lqr[label]['reduction_pct']:.1f}% reduction")
     elif boran_results:
-        print("\n  Boran: V not saved — re-run run_boran_pipeline.py first")
+        print("\n  DANDI 000574: V not saved — re-run run_boran_pipeline.py first")
 
     summary_stats = build_stats_summary(miller_results, boran_results, all_tes1)
     print(f"\n  Global B fold-range (naive, single-donor-sensitive): "
           f"mean={summary_stats['mean_fold_range']:.1f}×  max={summary_stats['max_fold_range']:.1f}×")
     print(f"  Global B norm robust dispersion: IQR ratio={summary_stats['global_B_norm_iqr_ratio']:.2f}×  "
           f"MAD={summary_stats['global_B_norm_mad']:.3g}  median={summary_stats['global_B_norm_median']:.3g}")
-    print(f"  Miller LQR (mean B): {summary_stats['miller_lqr_mean_pct']:.1f}% reduction")
+    print(f"  ECoG n-back corpus LQR (mean B): {summary_stats['miller_lqr_mean_pct']:.1f}% reduction")
     if not np.isnan(summary_stats["boran_lqr_mean_pct"]):
-        print(f"  Boran LQR (mean B): {summary_stats['boran_lqr_mean_pct']:.1f}% reduction")
+        print(f"  DANDI 000574 LQR (mean B): {summary_stats['boran_lqr_mean_pct']:.1f}% reduction")
     print(f"  Results saved to results/tes1_comprehensive.npz")
     print("Done.")
 

@@ -12,6 +12,7 @@ outcome must fire rather than a dissociation being claimed from the null combina
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -21,6 +22,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from provenance import checkpoint_safe, restore_checkpoint  # noqa: E402
 from run_component_and_item_binding import _family, _outcome_arm  # noqa: E402
 from run_swap_versus_imprecision_by_item_count import (  # noqa: E402
     BRANCH_HOLDS_EVERY_LEVEL,
@@ -183,6 +185,33 @@ def _make_synthetic_row(name: str, rng: np.random.Generator, n_per_level: int, s
 N_SESSIONS = 6  # the paired sign-flip test's own minimum-attainable-p floor needs n >= 5 to ever reach p<=0.05
 
 
+def test_per_level_lookups_survive_a_checkpoint_round_trip_of_a_resumed_session():
+    """analyse_session's row (imported from run_component_and_item_binding, reused here) nests
+    per_level and n_trials_by_item_count / n_swap_primary_by_item_count, all keyed by str(level).
+    _fit checkpoints the whole row; on a resumed run it comes back through restore_checkpoint before
+    per_level_pooled_association_table and per_level_trial_and_swap_counts ever see it. Round-trip
+    one real synthetic row (simulating a resumed session) and pool it with one fresh row: both must
+    contribute to every level's counts and association cells, not just the fresh one."""
+    rng = np.random.default_rng(99)
+    fresh_row = _make_synthetic_row("fresh", rng, n_per_level=200, swap_coef=3.0,
+                                     imprecision_coef_by_level={}, seed_tag="round_trip_test")
+    resumed_raw = _make_synthetic_row("resumed", rng, n_per_level=200, swap_coef=3.0,
+                                       imprecision_coef_by_level={}, seed_tag="round_trip_test")
+    resumed_row = restore_checkpoint(json.loads(json.dumps(checkpoint_safe(resumed_raw))))
+    assert list(resumed_row["n_trials_by_item_count"]) == list(fresh_row["n_trials_by_item_count"])
+
+    rows = [fresh_row, resumed_row]
+    counts = per_level_trial_and_swap_counts(rows)
+    for level in (1, 2, 3):
+        expected_trials = fresh_row["n_trials_by_item_count"][str(level)] + resumed_row["n_trials_by_item_count"][str(level)]
+        assert counts[str(level)]["n_trials"] == expected_trials
+
+    table = per_level_pooled_association_table(rows)
+    for level in (2, 3):
+        cell = table["swap_primary"]["deviation"][str(level)]["raw"]
+        assert cell["n_sessions"] == 2  # both the fresh and the resumed row contributed, not just one
+
+
 def test_per_level_ladder_recovers_a_swap_only_component_synthetic():
     """Deviation drives the swap indicator strongly and positively at every level >= 2, and is pure
     noise against imprecision at every level including item count 1. The per-level pooled association
@@ -283,7 +312,7 @@ def test_mixing_branch_fires_when_opposite_sign_levels_combine_to_a_null_synthet
 
 
 def test_a_bias_only_reproduced_swap_cell_cannot_carry_a_branch():
-    """A regression test for a real defect: a level whose swap association is both real-significant and
+    """A regression test for a real error: a level whose swap association is both real-significant and
     reproduced by its own bias-only control must not be allowed to fire a positive branch from that
     level, even though the raw significance numbers alone would read as a clean dissociation. Reuses
     the swap-only synthetic rows from the per-level ladder test (which, un-voided, fires

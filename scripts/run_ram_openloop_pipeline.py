@@ -9,7 +9,7 @@ later recall grow with the stimulation's geometric alignment to the
 unstable eigenvector v* of the encoding-period population dynamics?
 
 SCOPE BOUNDARY: stimulation here is delivered at ENCODING, not during a
-WM maintenance/delay period (unlike macaque PFC microstimulation/Rutishauser/Boran). This
+WM maintenance/delay period (unlike macaque PFC microstimulation/human single-unit DANDI corpora/DANDI 000574). This
 dataset therefore speaks to Q4/Q5 (site/actuation dependence) and Q6
 (state-vs-behavior) at encoding, not to the delay-period control claim
 directly -- state this explicitly wherever these results are reported.
@@ -67,8 +67,9 @@ from statistics import stable_seed
 from control import canonicalize_eigenvector_phase
 from io_utils import locked_json_update
 from preprocessing import high_gamma_power, line_noise_notch
+from corpus_sessions import DATA  # noqa: E402
+from stimulation_events import _derive_word_stimulation, _float_or_nan, _load_events  # noqa: E402
 
-DATA = dataset_path("ram_ds005489_openloop")
 RESULTS = ROOT / "results"
 
 PRE_S, POST_S = 0.3, 1.6   # epoch window relative to word onset (word on-screen 1.6s)
@@ -87,52 +88,10 @@ def _find_stim_sessions() -> list[Path]:
     return sorted(DATA.glob("sub-*/ses-*/ieeg/*_acq-bipolar_ieeg.json"))
 
 
-def _load_events(events_tsv: Path) -> list[dict]:
-    with open(events_tsv) as f:
-        return list(csv.DictReader(f, delimiter="\t"))
 
 
-def _derive_word_stimulation(words: list[dict], stim_on: list[dict], stim_off: list[dict],
-                             window_s: float = 2.0) -> None:
-    """Mutate `words` in place, setting each event's 'stimulation' field from
-    STIM_ON/STIM_OFF timestamp overlap rather than trusting the WORD event's
-    own field. Some closed-loop RAM releases (e.g. ds005557) record real
-    STIM_ON/STIM_OFF events but leave every WORD event's own `stimulation`
-    field at "0" -- the online classifier's trigger timing is not backfilled
-    onto the word row it applies to. A word is marked stimulated if any
-    STIM_ON falls within [onset, onset + window_s] of it (word presentation
-    plus a margin for triggering/pulse-train latency), matched to the closest
-    such word if a STIM_ON is nearer to more than one.
-
-    Also copies the matched STIM_ON event's own dose fields (amplitude,
-    pulse_freq, n_pulses, pulse_width) onto the word row: unlike ds005489,
-    this release does not carry those fields on the WORD row itself, only on
-    the STIM_ON event that triggered delivery."""
-    if not stim_on:
-        return
-    word_onsets = [float(w["onset"]) for w in words]
-    for stim_event in sorted(stim_on, key=lambda s: float(s["onset"])):
-        stim_t = float(stim_event["onset"])
-        candidates = [(abs(stim_t - w_on), i) for i, w_on in enumerate(word_onsets)
-                     if 0 <= stim_t - w_on <= window_s]
-        if not candidates:
-            continue
-        _, best_i = min(candidates)
-        words[best_i]["stimulation"] = "1"
-        for field in ("amplitude", "pulse_freq", "n_pulses", "pulse_width"):
-            if field in stim_event:
-                words[best_i][field] = stim_event[field]
 
 
-def _float_or_nan(value) -> float:
-    """Parse a BIDS TSV field (always a string from csv.DictReader) that may
-    be a number, 'n/a', or empty -- never raises."""
-    try:
-        if value in (None, "", "n/a"):
-            return float("nan")
-        return float(value)
-    except (TypeError, ValueError):
-        return float("nan")
 
 
 def build_session_features(ieeg_json: Path, data_root: Path = DATA,

@@ -27,73 +27,13 @@ from drift_dynamics import (  # noqa: E402
 )
 from provenance import canonical_json, git_commit, sha256_file  # noqa: E402
 from spike_pipeline import ANATOMICAL_REGIONS  # noqa: E402
+from statistics import DATASETS, extract_folds  # noqa: E402
 
 
-DATASETS = {
-    "DANDI 000469": "human_drift_spine_000469.json",
-    "DANDI 000574": "human_drift_spine_000574.json",
-    "DANDI 001187/000673": "human_drift_spine_001187_000673.json",
-    "Miller N-back": "miller_drift_spine.json",
-    "Panichello 2024": "panichello_2024_drift_switching.json",
-}
 
 
-def _record(entity: str, fold: dict[str, Any], dt: float) -> dict[str, Any]:
-    state = fold["state_space"]
-    switching = fold.get("switching_two_state", fold.get("switching_two"))
-    n_time = int(state.get("diagnostics", {}).get("n_time", 0))
-    return {
-        "entity": entity,
-        "fold": fold,
-        "state": state,
-        "switching": switching,
-        "dt": float(dt),
-        "n_time": n_time,
-        "n_train": int(fold["n_train"]),
-        "n_test": int(fold["n_test"]),
-    }
 
 
-def extract_folds(name: str, artifact: dict[str, Any]) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    if name in {"DANDI 000469", "DANDI 000574"}:
-        for entity, session in sorted(artifact["sessions"].items()):
-            if session.get("status") == "complete":
-                independent_entity = (
-                    entity.split("_ses-", maxsplit=1)[0]
-                    if name == "DANDI 000574"
-                    else entity
-                )
-                dt = float(session.get("dt", artifact.get("bin_ms", 50) / 1000.0))
-                rows.extend(
-                    _record(independent_entity, fold, dt) for fold in session["folds"]
-                )
-    elif name == "DANDI 001187/000673":
-        for entity, session in sorted(artifact["sessions"].items()):
-            independent_entity = str(session.get("patient", entity))
-            for view in (
-                session["unit_based_primary_fit"],
-                session.get("lfp_linked_sensitivity_fit"),
-            ):
-                if view is None or view.get("status") != "complete":
-                    continue
-                for load, fit in sorted(view["by_load"].items()):
-                    if fit.get("status") == "complete":
-                        rows.extend(
-                            _record(independent_entity, fold, float(fit["dt"]))
-                            for fold in fit["folds"]
-                        )
-    elif name == "Miller N-back":
-        for entity, patient in sorted(artifact["patients"].items()):
-            if patient.get("status") == "complete":
-                fit = patient["drift"]
-                rows.extend(_record(entity, fold, float(fit["dt"])) for fold in fit["folds"])
-    elif name == "Panichello 2024":
-        for session_name, session in sorted(artifact["sessions"].items()):
-            if session.get("status") == "complete":
-                entity = str(session.get("animal", session_name))
-                rows.extend(_record(entity, fold, 0.05) for fold in session["folds"])
-    return rows
 
 
 def _finite_number(value: Any) -> bool:
@@ -556,7 +496,7 @@ def main() -> None:
             "trigger": (
                 "Re-run the switching-vs-drift adjudication per anatomical "
                 "region on DANDI 000469 and the linked 001187/000673 view, to test whether the "
-                "pooled CRACK-7 null is a genuine null or a region-mixture artifact."
+                "pooled switching null is a genuine null or a region-mixture artifact."
             ),
             "chase": (
                 "Reused extract_folds and the full symmetric-rule adjudication (variance floor, "
@@ -568,7 +508,7 @@ def main() -> None:
                 f"{len(estimable)}/10 region x dataset-group cells were estimable "
                 f"(non-identified cells lacked a complete region-session fold, expected given "
                 f"MIN_UNITS_PER_REGION sparsity). Controlled dynamics-switching support: "
-                f"{', '.join(supported) or 'none'}. This does not close CRACK-7: an "
+                f"{', '.join(supported) or 'none'}. This does not settle the pooled result: an "
                 f"underpowered per-region null is not evidence against the pooled result, "
                 f"only a report of what is identifiable at this n. See "
                 f"results/switching_adjudication.json's region_stratified block for full "

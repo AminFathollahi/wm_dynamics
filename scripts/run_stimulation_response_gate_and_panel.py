@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Two deliverables in one script, run in order.
 
-PART 1 -- a reproduction gate. results/human_stimulation_component_response.json's
+The first deliverable is a reproduction gate. results/human_stimulation_component_response.json's
 block_b reports a stimulation-induced displacement of the rate-normalized
 angular-deviation biomarker (rate_free_state_deviation), pooled across
 sessions, for three channel conditions (full channel set; excluding the
@@ -13,9 +13,9 @@ against the delivered artifact under a tolerance declared before the run.
 This project has previously found delivered stimulation artifacts that no
 longer reproduce because shared analysis code drifted underneath them, so
 this gate is expected to be capable of failing; a failure is reported and
-the dependent human-arm panel work in Part 2 is skipped, not repaired.
+the dependent human-arm panel work below is skipped, not repaired.
 
-PART 2 -- a common time-resolved stimulation-response interface
+The second deliverable is a common time-resolved stimulation-response interface
 (src/stimulation_response_estimator.py) applied to the two stimulation arms
 results/stimulation_design_census.json certifies have all three of a
 randomized/experimenter-scheduled stimulation action, a measured
@@ -35,7 +35,7 @@ Outputs:
   results/stimulation_response_gate_and_panel.json
 
 Run:
-    /home/amin/miniconda3/envs/wm_dynamics/bin/python \
+    python \
         scripts/run_stimulation_response_gate_and_panel.py
 """
 from __future__ import annotations
@@ -59,6 +59,8 @@ from stimulation_response_estimator import (  # noqa: E402
     rate_free_state_deviation,
     window_treatment_effect,
 )
+from stimulation_events import _human_session_windows, _specificity_check  # noqa: E402
+from stimulation_response_estimator import _pool_arm  # noqa: E402
 
 RESULTS = ROOT / "results"
 OUTPUT_PATH = RESULTS / "stimulation_response_gate_and_panel.json"
@@ -74,7 +76,7 @@ def _flush(output: dict) -> None:
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# PART 1 -- reproduction gate on results/human_stimulation_component_response.json's block_b
+# Reproduction gate on results/human_stimulation_component_response.json's block_b
 # ══════════════════════════════════════════════════════════════════════════
 
 # Tolerance declared BEFORE the reproduction run, per the three different quantities being compared:
@@ -110,10 +112,12 @@ def _relclose(observed: float, delivered: float, rtol: float) -> bool:
 
 
 def run_reproduction_gate() -> dict:
-    from run_human_stimulation_component_response import (
-        CLOSEDLOOP_DATA, N_PERM, OPENLOOP_DATA, load_corpus, run_stimulation_displacement,
-        _stimulation_displacement_session, CHECKPOINT_DIR, load_checkpoint,
-    )
+    from run_human_stimulation_component_response import load_corpus, run_stimulation_displacement, CHECKPOINT_DIR, load_checkpoint
+    from corpus_sessions import _stimulation_displacement_session
+    from stimulation_events import N_PERM
+    from project_config import dataset_path
+    from corpus_sessions import DATA as OPENLOOP_DATA
+    CLOSEDLOOP_DATA = dataset_path("ram_ds005557_closedloop")
 
     if not DELIVERED_DISPLACEMENT_PATH.exists():
         return {"status": "not_computable", "reason": "results/human_stimulation_component_response.json is absent"}
@@ -173,8 +177,9 @@ def run_reproduction_gate() -> dict:
     # epoching, rate_free_state_deviation, the fixed-reference scoring) is normally read back from a
     # non-deleted checkpoint cache keyed only by session identity, not by code version -- a real
     # per-session code drift could be silently masked by a stale cache hit and never show up in the
-    # pooled comparison above. Never deleting results/.checkpoints/ (standing rule) forecloses forcing
-    # a full fresh recomputation here, so this spot check instead recomputes a handful of sessions'
+    # pooled comparison above. Checkpoints under results/.checkpoints/ are kept as immutable provenance
+    # and are never deleted, which forecloses forcing a full fresh recomputation here, so this spot check
+    # instead recomputes a handful of sessions'
     # per-session displacement directly (bypassing the checkpoint) and diffs them against what the
     # cache is currently returning, to catch drift in that per-session path specifically.
     spot_check_sessions = all_records[:5] + all_records[-5:]
@@ -207,8 +212,8 @@ def run_reproduction_gate() -> dict:
         "checkpoint_scope_disclosure": (
             "Every one of the 103 sessions block_b pools already has a results/.checkpoints/"
             "run_human_stimulation_component_response/blockB__*.json checkpoint from the original "
-            "delivery run. Standing project rule forbids deleting anything under results/.checkpoints/, "
-            "so this reproduction cannot force the per-session feature-extraction code (band-pass "
+            "delivery run. Checkpoints under results/.checkpoints/ are kept as immutable provenance of that "
+            "original run and are never deleted, so this reproduction cannot force the per-session feature-extraction code (band-pass "
             "filtering, epoching, the fixed-reference scoring) to re-execute from raw iEEG for every "
             "session -- run_checkpointed reuses the cached per-session record whenever the checkpoint "
             "key (session identity only, not a code hash) is present. What this reproduction genuinely "
@@ -216,7 +221,7 @@ def run_reproduction_gate() -> dict:
             "collapsing to subject-level means, the seeded sign-flip permutation test, and the seeded "
             "bootstrap CI) plus corpus loading and session admission. The 10-session spot check below "
             "additionally re-executes the per-session numeric path itself, bypassing the checkpoint, "
-            "for 5 first and 5 last records, to give the drift concern in this ticket's Part 1 some "
+            "for 5 first and 5 last records, to give the drift concern raised above some "
             "direct coverage beyond the pooling layer."
         ),
         "per_session_spot_check": {"sessions": spot_check, "drift_detected": spot_check_drift},
@@ -233,7 +238,7 @@ def run_reproduction_gate() -> dict:
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# PART 2 -- the shared time-resolved interface, applied to the two admissible arms
+# The shared time-resolved interface, applied to the two admissible arms
 # ══════════════════════════════════════════════════════════════════════════
 
 def _read_census_row(corpus_id: str) -> dict:
@@ -244,21 +249,6 @@ def _read_census_row(corpus_id: str) -> dict:
     raise KeyError(f"{corpus_id} not found in {CENSUS_PATH}")
 
 
-def _human_session_windows(rec: dict, pre_bins: int, mask: np.ndarray) -> dict:
-    arrays = rec["arrays"]
-    epochs = arrays["epochs_log"][:, :, mask]  # (n_trials, n_bins, n_channels_kept)
-    pre_activity, post_activity = epochs[:, :pre_bins, :].mean(axis=1), epochs[:, pre_bins:, :].mean(axis=1)
-    stim = arrays["stim_flag"].astype(bool)
-    return {
-        "pre_stimulation_window": {
-            "control_activity": pre_activity[~stim], "treated_activity": pre_activity[stim],
-            "control_total": pre_activity[~stim].sum(axis=1), "treated_total": pre_activity[stim].sum(axis=1),
-        },
-        "post_stimulation_window": {
-            "control_activity": post_activity[~stim], "treated_activity": post_activity[stim],
-            "control_total": post_activity[~stim].sum(axis=1), "treated_total": post_activity[stim].sum(axis=1),
-        },
-    }
 
 
 def _macaque_session_windows(prefix: str, pre_bins: int) -> tuple[dict | None, str | None]:
@@ -267,9 +257,9 @@ def _macaque_session_windows(prefix: str, pre_bins: int) -> tuple[dict | None, s
     control_idx is computed from -- the error-trial file enumerates its own
     conditions separately and is not merged in here, to avoid reconciling
     two files' potentially different condition orderings."""
-    from run_macaque_pfc_microstimulation_pipeline import (
-        BIN_S as MACAQUE_BIN_S, crop_trial, load_macaque_pfc_microstimulation_session,
-    )
+    from run_macaque_pfc_microstimulation_pipeline import load_macaque_pfc_microstimulation_session
+    from spike_pipeline import crop_trial
+    from spike_pipeline import BIN_S as MACAQUE_BIN_S
     corr = load_macaque_pfc_microstimulation_session(prefix, correct=True)
     if corr is None or corr["control_idx"] is None:
         return None, "no_usable_correct_trial_file_or_no_control_condition"
@@ -300,97 +290,18 @@ def _macaque_session_windows(prefix: str, pre_bins: int) -> tuple[dict | None, s
     return {"windows": windows, "n_trials_seen": n_trials_seen, "n_trials_used": len(pre_rows)}, None
 
 
-def _pool_arm(arm_id: str, per_session_rows: list[dict], counterfactual_label: str, windows_measured: dict) -> dict:
-    """Windows come only from the census (`windows_measured`, one entry per
-    window keyed exactly as the census row spells it); a window whose census
-    status is not 'measured' is never computed here and is carried into the
-    artifact as a structural void with the census's own reason -- this
-    corpus never gets a window forced onto it that its own design row does
-    not certify."""
-    result: dict = {"arm_id": arm_id, "windows": {}}
-    for window_name, census_field in windows_measured.items():
-        if census_field.get("status") != "measured":
-            result["windows"][window_name] = {"status": "structural_void", "reason": census_field.get("reason")}
-            continue
-        per_session_summary, dev_vals, dev_ids, nuis_vals, nuis_ids = {}, [], [], [], []
-        for row in per_session_rows:
-            w = row["windows"].get(window_name)
-            if w is None:
-                per_session_summary[row["session_key"]] = {"status": "window_not_available_for_this_session"}
-                continue
-            eff = window_treatment_effect(w["control_activity"], w["treated_activity"])
-            nuis = nuisance_treatment_effect(w["control_total"], w["treated_total"])
-            per_session_summary[row["session_key"]] = {
-                "cluster_id": row["cluster_id"],
-                "rate_free_deviation_status": eff.get("status"),
-                "rate_free_deviation_normalised_displacement": eff.get("normalised_displacement"),
-                "nuisance_status": nuis.get("status"),
-                "nuisance_normalised_change": nuis.get("normalised_change"),
-            }
-            if eff.get("status") == "computed" and eff.get("normalised_displacement") is not None:
-                dev_vals.append(eff["normalised_displacement"]); dev_ids.append(row["cluster_id"])
-            if nuis.get("status") == "computed" and nuis.get("normalised_change") is not None:
-                nuis_vals.append(nuis["normalised_change"]); nuis_ids.append(row["cluster_id"])
-        pooled_dev = (cluster_bootstrap_pooled_effect(np.array(dev_vals), dev_ids, f"panel|{arm_id}|{window_name}|deviation")
-                      if dev_vals else {"status": "not_computable", "reason": "no session produced a finite normalised displacement"})
-        pooled_nuis = (cluster_bootstrap_pooled_effect(np.array(nuis_vals), nuis_ids, f"panel|{arm_id}|{window_name}|nuisance")
-                       if nuis_vals else {"status": "not_computable", "reason": "no session produced a finite nuisance change"})
-        result["windows"][window_name] = {
-            "status": "computed", "window_seconds": census_field.get("value"), "counterfactual": counterfactual_label,
-            "n_sessions_contributing_deviation": len(dev_vals), "n_sessions_contributing_nuisance": len(nuis_vals),
-            "rate_free_deviation_biomarker": {"role": "candidate", "pooled": pooled_dev},
-            "nuisance_total_activity_biomarker": {"role": "nuisance_control_not_a_candidate", "pooled": pooled_nuis},
-            "per_session": per_session_summary,
-        }
-    return result
 
 
-def _specificity_check(result: dict) -> dict:
-    """Compares the pre-stimulation-window cell (before stimulation has
-    begun -- by construction, no true treatment effect can exist there) to
-    the post-stimulation-window cell (the actual test). A pre-window
-    displacement that is itself significant means the post-window number
-    cannot be read as cleanly attributable to that trial's own stimulation
-    -- it is reported here as a finding, not smoothed into the post-window
-    headline."""
-    windows = result["windows"]
-    pre, post = windows.get("pre_stimulation_window", {}), windows.get("post_stimulation_window", {})
-    if pre.get("status") != "computed" or post.get("status") != "computed":
-        return {"status": "not_computable", "reason": "one or both windows are a structural void for this arm"}
-    pre_dev = pre["rate_free_deviation_biomarker"]["pooled"]
-    post_dev = post["rate_free_deviation_biomarker"]["pooled"]
-    if pre_dev.get("status") != "computed" or post_dev.get("status") != "computed":
-        return {"status": "not_computable", "reason": "pooled deviation not computed in one or both windows"}
-    pre_significant = pre_dev["p_value"] <= 0.05
-    return {
-        "status": "computed",
-        "pre_window_mean": pre_dev["mean_value"], "pre_window_p_value": pre_dev["p_value"],
-        "post_window_mean": post_dev["mean_value"], "post_window_p_value": post_dev["p_value"],
-        "pre_window_significant": pre_significant,
-        "reading": (
-            "The pre-stimulation window is itself significant, at a magnitude comparable to the "
-            "post-stimulation window. Direct measurement of the release's own event tables shows why: "
-            "the delivered pulse train begins before the word it accompanies appears, by a fixed "
-            "trigger lead of approximately 0.211 s, so both the pre- and the post-stimulation window "
-            "lie inside an already-running train for every stimulated word without exception. This "
-            "corpus therefore contains no stimulation-free pre-window, and the pre/post comparison is "
-            "consequently not a specificity contrast: a significant pre-window cannot be resolved into "
-            "a preferred causal account, only bounded in magnitude."
-            if pre_significant else
-            "The pre-stimulation window is not significant, unlike the post-stimulation window -- the "
-            "specificity pattern a genuine treatment effect predicts (no effect before treatment begins, "
-            "an effect after)."
-        ),
-    }
 
 
 def run_stimulation_response_panel() -> dict:
-    from run_human_stimulation_component_response import OPENLOOP_DATA, channel_condition_masks
+    from stimulation_events import channel_condition_masks
+    from corpus_sessions import DATA as OPENLOOP_DATA
     from run_human_stimulation_component_response import load_corpus as load_human_corpus
     from run_ram_openloop_pipeline import BIN_S as HUMAN_BIN_S, PRE_S as HUMAN_PRE_S
-    from run_macaque_pfc_microstimulation_pipeline import PRE_S as MACAQUE_PRE_S
+    from spike_pipeline import PRE_S as MACAQUE_PRE_S
     from run_macaque_pfc_microstimulation_pipeline import SESSIONS as MACAQUE_SESSIONS
-    from run_macaque_pfc_microstimulation_pipeline import BIN_S as MACAQUE_BIN_S
+    from spike_pipeline import BIN_S as MACAQUE_BIN_S
 
     panel = {}
 
@@ -460,7 +371,7 @@ def run_stimulation_response_panel() -> dict:
         "bipolar-pair corpus, stimulation site varies within every session (11/11 sessions, per the "
         "census's own stimulation_site field), so a single fixed channel mask does not generalise the "
         "same way; excluding each trial's own condition-specific stimulated channel(s) was out of scope "
-        "for this ticket and is disclosed here rather than silently applied or silently skipped."
+        "for this analysis and is disclosed here rather than silently applied or silently skipped."
     )
     macaque_result["session_admission"] = {
         "n_sessions_seen": len(MACAQUE_SESSIONS), "n_sessions_used": len(per_session_rows_m),

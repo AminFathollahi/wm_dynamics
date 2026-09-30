@@ -10,19 +10,10 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from run_ds005034_tacs_aftereffect import (  # noqa: E402
-    CELLS,
-    MIN_CLEAN_PER_CELL,
-    balanced_condition_summary,
-    condition_summary,
-    exact_vector_sign_flip,
-    load_events,
-    paired_inventory,
-    periodogram_band_power,
-    robust_high_outliers,
-    spectral_features,
-    transient_bad_channels,
-)
+from run_ds005034_tacs_aftereffect import MIN_CLEAN_PER_CELL, balanced_condition_summary, condition_summary, exact_vector_sign_flip, robust_high_outliers, spectral_features, transient_bad_channels
+from preprocessing import load_events, periodogram_band_power
+from corpus_sessions import paired_inventory
+from preprocessing import CELLS
 
 
 def test_paired_inventory_partitions_registered_participants(tmp_path):

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Panichello et al. 2024 source-style reproduction and drift/switching test.
+"""Source-style reproduction of the macaque lPFC corpus (doi 10.1038/s41586-024-08139-9)
+and drift/switching test.
 
 The public Dryad release contains 25 simultaneous lPFC sessions.  This runner
 first records the released inclusion counts and transparent operational
@@ -39,6 +40,7 @@ from drift_dynamics import (  # noqa: E402
 from provenance import canonical_json, git_commit, sha256_file  # noqa: E402
 from spike_pipeline import FrozenPSTHTransform  # noqa: E402
 from selectivity_test import two_stage_selectivity_test  # noqa: E402
+from corpus_sessions import monkey_for_session  # noqa: E402
 
 BIN_MS = 50
 DELAY_WINDOW_MS = (300, 1450)
@@ -56,13 +58,10 @@ def data_directory() -> Path:
         raise SystemExit("Set WM_DYNAMICS_DATA_ROOT to the configured external data root.")
     path = Path(root) / config["datasets"]["panichello_2024"]["local_path"]
     if not path.is_dir():
-        raise SystemExit(f"Panichello 2024 data not staged at {path}")
+        raise SystemExit(f"macaque prefrontal spatial working-memory corpus (Dryad doi:10.5061/dryad.kkwh70sct) data not staged at {path}")
     return path
 
 
-def monkey_for_session(stem: str) -> str:
-    year = int(stem[:2])
-    return {21: "A", 22: "H", 24: "J"}.get(year, "unknown")
 
 
 def bin_spikes(spikes: np.ndarray, time_ms: np.ndarray) -> np.ndarray:
@@ -325,11 +324,11 @@ def main() -> None:
     files = sorted(directory.glob("*.mat"))
     sessions = {}
     for path in files:
-        print(f"fitting Panichello {path.stem}", flush=True)
+        print(f"fitting macaque spatial working-memory corpus {path.stem}", flush=True)
         sessions[path.stem] = analyze_session(path)
     complete = {key: row for key, row in sessions.items() if row["status"] == "complete"}
     if not complete:
-        raise SystemExit("no Panichello session completed")
+        raise SystemExit("no macaque spatial working-memory corpus session completed")
     rng = np.random.default_rng(SEED)
     metrics = {}
     for name in (
@@ -374,7 +373,7 @@ def main() -> None:
     output = {
         "schema_version": "1.0.0",
         "analysis_id": "panichello_2024_drift_switching",
-        "dataset": "Panichello et al. 2024 Dryad 10.5061/dryad.kkwh70sct",
+        "dataset": "doi 10.1038/s41586-024-08139-9, Dryad 10.5061/dryad.kkwh70sct",
         "code_commit": git_commit(ROOT),
         "source_hash": sha256_file(Path(__file__)),
         "metadata_decision": {
@@ -392,7 +391,7 @@ def main() -> None:
         "adjudication": adjudication,
         "model_status": {
             "M0": "scored",
-            "M1": "not scored -- rotation adjudication is prespecified for DANDI 000469, DANDI 000574, and Miller",
+            "M1": "not scored -- rotation adjudication is prespecified for DANDI 000469, DANDI 000574, and the ECoG n-back corpus",
             "M2": "scored",
             "M3": "not scored -- M1 is outside this external switching falsification arm",
             "M4": "scored as free- and tied-variance probabilistic two-state Gaussian AR-HMM fits, with a heteroscedastic one-state drift control; fitted-model recovery is reported separately",

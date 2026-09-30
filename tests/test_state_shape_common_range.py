@@ -2,14 +2,14 @@
 component slopes (r_obs and the permutation-null r_null) present as
 siblings in the same result block.
 
-This is a standing rule in this project's review process (any claim about a
+Rule: any claim about a
 d_perm level, slope or sign must carry the observed correlation and the
 permutation null it is measured against, because d_perm = r_obs - r_null is
-an arithmetic contrast whose arithmetic alone explains nothing) -- easy to
+an arithmetic contrast whose arithmetic alone explains nothing. It is easy to
 satisfy by construction when a field is written, easy to silently break
 later when a result block is refactored or a new one is added and someone
 forgets the sibling fields. :func:`find_d_perm_slope_violations` catches
-that mechanically instead of relying on a reviewer noticing.
+that mechanically instead of relying on manual inspection.
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ def find_d_perm_slope_violations(obj, path: str = "") -> list[str]:
     float siblings (e.g. scripts/run_state_behavior_link.json's per_lag
     tables) is a different, already-compliant shape and is not what this
     checker is looking for; it targets the one place a slope summary could
-    be written without its components, which is exactly where the defect
+    be written without its components, which is exactly where the error
     this rule guards against actually occurred.
     """
     violations: list[str] = []

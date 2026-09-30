@@ -30,7 +30,7 @@ SUBJECTS = ["al", "ca", "cc", "ug"]
 SUBJ_LABELS = {"al": "S1 (al)", "ca": "S2 (ca)", "cc": "S3 (cc)", "ug": "S4 (ug)"}
 LOAD_COLORS = [PALETTE["zero_back"], PALETTE["one_back"], PALETTE["two_back"]]
 
-# Rutishauser subjects that passed the ≥15-unit threshold
+# human single-unit DANDI corpora subjects that passed the ≥15-unit threshold
 RUSHI_SUBS = [f"sub-{n}" for n in [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,18,21]]
 DATASET_COLORS = {"Miller": "#4E79A7", "Boran": "#E15759", "Rutishauser": "#59A14F"}
 SUBJ_COLORS = ["#4E79A7", "#E15759", "#59A14F", "#B07AA1"]
@@ -155,7 +155,7 @@ def simulate_lqr_targeted(A, x0, xf, n_steps=150, q=1.0):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def make_figure1():
-    """Fig 1 -- the closed-loop schematic (Inagaki Fig 1 style: flat, small-
+    """Fig 1 -- the closed-loop schematic (flat, small-
     multiple, iconographic line-art; no data-driven panels, no dataset poster
     -- the per-dataset cohort table lives in Table 1). Panels: (a) the WM
     task as a labeled epoch timeline; (b) the two coexisting DECODING codes
@@ -268,7 +268,7 @@ def make_figure1():
     panel_label(ax_c, "c", x=-0.06, y=1.08)
 
     # Inset in the open center of the cycle: a thin, schematic "drifts
-    # (loop-off) vs held (loop-on)" trajectory preview of R4 -- iconographic,
+    # (loop-off) vs held (loop-on)" trajectory preview of the closed-loop figure -- iconographic,
     # not data-driven, matching the rest of Fig 1 (the real simulated
     # trajectories are Figure 8).
     axins = ax_c.inset_axes([0.335, 0.395, 0.33, 0.24])
@@ -348,14 +348,14 @@ def make_figure2(stats_data):
     ax_a = fig.add_subplot(gs[0, 0])
     _plot_pr_panel(ax_a, miller_pr, [0, 1, 2], DATASET_COLORS["Miller"],
                   ["0-back", "1-back", "2-back"],
-                  f"Miller ECoG (N=4)\nβ={lme['miller']['beta']:.3f}, p={lme['miller']['p_value']:.2f}",
+                  f"ECoG n-back (N=4)\nβ={lme['miller']['beta']:.3f}, p={lme['miller']['p_value']:.2f}",
                   "A")
 
     boran_ieeg_pr = _pr_records_from_stats(stats_data["boran_ctg"], "pr_per_set", [4, 6, 8])
     ax_b = fig.add_subplot(gs[0, 1])
     _plot_pr_panel(ax_b, boran_ieeg_pr, [4, 6, 8], DATASET_COLORS["Boran"],
                   ["4", "6", "8"],
-                  f"Boran iEEG (N=9)\nβ={lme['boran_ieeg']['beta']:.3f}, p={lme['boran_ieeg']['p_value']:.2f}",
+                  f"DANDI 000574 iEEG (N=9)\nβ={lme['boran_ieeg']['beta']:.3f}, p={lme['boran_ieeg']['p_value']:.2f}",
                   "B")
     ax_b.set_xlabel("Set size", fontsize=6)
 
@@ -372,7 +372,7 @@ def make_figure2(stats_data):
     ax_c = fig.add_subplot(gs[0, 2])
     _plot_pr_panel(ax_c, boran_units_pr, [4, 6, 8], "#F1CE63",
                   ["4", "6", "8"],
-                  f"Boran units (N={len(boran_units_pr)} sess.)\n"
+                  f"DANDI 000574 units (N={len(boran_units_pr)} sess.)\n"
                   f"β={lme['boran_units']['beta']:.3f}, p={lme['boran_units']['p_value']:.2f}",
                   "C")
 
@@ -408,7 +408,7 @@ def make_figure2(stats_data):
     # ── F: cross-dataset summary — every dataset's slope is small & non-significant
     ax_f = fig.add_subplot(gs[1, 2])
     order = ["miller", "boran_ieeg", "boran_units", "dandi000469", "dandi001187", "dandi000673"]
-    labels = ["Miller\nECoG", "Boran\niEEG", "Boran\nunits", "000469", "001187", "000673"]
+    labels = ["ECoG\nn-back", "000574\niEEG", "000574\nunits", "000469", "001187", "000673"]
     cols = [DATASET_COLORS["Miller"], DATASET_COLORS["Boran"], "#F1CE63",
             DATASET_COLORS["Rutishauser"], "#76B7B2", "#B07AA1"]
     betas = [lme[k]["beta"] for k in order]
@@ -588,10 +588,10 @@ def make_figure3(stats_data):
     # ── G: Negative controls — maintenance vs. comparison/baseline epoch ─────
     ax_g = fig.add_subplot(gs_bot[0])
     ctrl_specs = [
-        ("Miller\n(transient)", DATASET_COLORS["Miller"],
+        ("ECoG n-back\n(transient)", DATASET_COLORS["Miller"],
          [(v["maintenance"]["offdiag_effect"], v["negative_control_transient"]["offdiag_effect"])
           for v in stats_data["miller_ctg_corrected"].values()]),
-        ("Boran\n(baseline)", DATASET_COLORS["Boran"],
+        ("000574\n(baseline)", DATASET_COLORS["Boran"],
          [(v["offdiag_effect"], v["negative_control_baseline"]["offdiag_effect"])
           for v in stats_data["boran_ctg"].values()]),
         ("000469\n(encoding)", DATASET_COLORS["Rutishauser"],
@@ -633,11 +633,11 @@ def make_figure3(stats_data):
         ax_h.set_xticklabels(band_lbls, fontsize=5)
         ax_h.set_ylim(0.0, 1.15)
         ax_h.set_ylabel("Temporal stability τ (raw-AUC ratio)", fontsize=6)
-        ax_h.set_title("H  Band generality (Miller, N=4)\nτ<1 in every band — no band is privileged",
+        ax_h.set_title("H  Band generality (ECoG n-back corpus, N=4)\nτ<1 in every band — no band is privileged",
                        loc="left", fontsize=6, fontweight="bold")
         ax_h.legend(frameon=False, fontsize=5, loc="lower right")
     else:
-        ax_h.set_title("H  Band generality (Miller, N=4)", loc="left",
+        ax_h.set_title("H  Band generality (ECoG n-back corpus, N=4)", loc="left",
                        fontsize=6, fontweight="bold")
         ax_h.text(0.5, 0.5, "Run run_multiband_analysis.py", ha="center",
                   va="center", transform=ax_h.transAxes, fontsize=6)
@@ -657,8 +657,8 @@ def make_figure3(stats_data):
 def make_figure4(stats_data):
     """Ring attractor phase analysis with ACTUAL computed phases, Q(t), DMD,
     and (I-K) the causal anchor: delay-period stimulation obeys the same
-    geometry (Section~sec:causal-anchor) -- merged in here rather than kept
-    as a separate figure, per the R3 restructure."""
+    geometry -- merged in here rather than kept
+    as a separate figure."""
     nature_style()
     fig = plt.figure(figsize=(7.2, 8.1))
     gs_top = gridspec.GridSpec(1, 4, fig, hspace=0.4, wspace=0.38,
@@ -787,7 +787,7 @@ def make_figure4(stats_data):
 
     # ── H: Flow divergence ∇·v — mean-trajectory vs. ensemble (single-trial,
     # cross-validated) estimate. The trial-averaged mean-trajectory fit is
-    # confounded by trial-averaging contraction and, for Miller/Boran, does
+    # confounded by trial-averaging contraction and, for ECoG n-back corpus/DANDI 000574, does
     # NOT survive replacement with an ensemble fit on pooled single-trial
     # transitions: divergence collapses toward zero and flips sign in a
     # majority of subjects. Only the single-unit dataset (000469) shows a
@@ -825,7 +825,7 @@ def make_figure4(stats_data):
         ax_h.axhline(0, color="k", lw=0.8, ls="--", alpha=0.6)
         ax_h.set_xlim(-0.6, 2.6)
         ax_h.set_xticks([0, 1, 2])
-        ax_h.set_xticklabels(["Miller\nPFC", "Boran\nMTL", "000469\nSU"], fontsize=6)
+        ax_h.set_xticklabels(["ECoG n-back\nPFC", "000574\nMTL", "000469\nSU"], fontsize=6)
         ax_h.set_ylabel("Flow divergence ∇·v (s⁻¹)", fontsize=6.5)
         ax_h.set_title("H  Mean-traj. (●) vs. single-trial\nensemble (○) ∇·v, paired per subject",
                        loc="left", fontsize=6, fontweight="bold")
@@ -1070,7 +1070,7 @@ def make_figure6(stats_data):
     false-positive rate, since many session/window tests are run, and (C)
     whether active LQR control, using the error-vs-correct latent centroids as
     the target, outperforms passive (uncontrolled) dynamics at closing that
-    gap (manifold-rescue, Boran)."""
+    gap (manifold-rescue, DANDI 000574)."""
     from scipy.stats import binomtest
 
     nature_style()
@@ -1081,8 +1081,8 @@ def make_figure6(stats_data):
     # ── A: correct-vs-error drift, every dataset with an outcome label ───────
     ax_a = fig.add_subplot(gs[0])
     beh_specs = [
-        ("Boran iEEG", DATASET_COLORS["Boran"], stats_data.get("boran_correct_error_drift", {})),
-        ("Boran units", "#F1CE63", stats_data.get("dandi000574_units_correct_error_drift", {})),
+        ("DANDI 000574 iEEG", DATASET_COLORS["Boran"], stats_data.get("boran_correct_error_drift", {})),
+        ("DANDI 000574 units", "#F1CE63", stats_data.get("dandi000574_units_correct_error_drift", {})),
         ("DANDI 000469", DATASET_COLORS["Rutishauser"], stats_data.get("dandi000469_correct_error_drift", {})),
         ("DANDI 001187", "#76B7B2", stats_data.get("dandi001187_correct_error_drift", {})),
         ("DANDI 000673", "#B07AA1", stats_data.get("dandi000673_correct_error_drift", {})),
@@ -1133,7 +1133,7 @@ def make_figure6(stats_data):
                    loc="left", fontsize=6.0, fontweight="bold")
     panel_label(ax_b, "B")
 
-    # ── C: manifold rescue — controlled vs. passive reduction (Boran) ───────
+    # ── C: manifold rescue — controlled vs. passive reduction (DANDI 000574) ───────
     ax_c = fig.add_subplot(gs[2])
     mr = stats_data.get("manifold_rescue", {})
     per_subj = mr.get("per_subject", {})
@@ -1151,7 +1151,7 @@ def make_figure6(stats_data):
     ax_c.set_ylabel("Distance-to-target\nreduction (%, symlog)", fontsize=6.1)
     ax_c.legend(fontsize=5, loc="lower left", frameon=False)
     contrast = mr.get("controlled_greater_than_passive", {})
-    ax_c.set_title(f"C  Manifold rescue (Boran, N={len(subs)})\n"
+    ax_c.set_title(f"C  Manifold rescue (DANDI 000574, N={len(subs)})\n"
                    f"controlled>passive p={contrast.get('p_value', float('nan')):.3f}",
                    loc="left", fontsize=6.0, fontweight="bold")
     panel_label(ax_c, "C")
@@ -1260,7 +1260,7 @@ def make_figure7(stats_data):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Figure 8 — Closed-loop demonstration (R4, NEW)
+# Figure 8 — Closed-loop demonstration
 # ─────────────────────────────────────────────────────────────────────────────
 
 _CL_MISMATCH_DEG = 20.0
@@ -1311,7 +1311,7 @@ def _cl_load_bundle(cohort_key):
 
 
 def make_figure8(stats_data):
-    """Figure 8 (R4, NEW) -- the closed-loop demonstration: an exemplar
+    """Figure 8 -- the closed-loop demonstration: an exemplar
     loop-off (drifting) vs. loop-on (held) trajectory, the paired per-cohort
     drift-reduction / decodability-lift benefit, and on-demand vs continuous
     control at a fraction of the energy -- with the anti-circularity
@@ -1355,7 +1355,7 @@ def make_figure8(stats_data):
         ax_a.fill_between(t_ax, m - se, m + se, color=col, alpha=0.22, lw=0)
     ax_a.set_xlabel("Step", fontsize=6.5)
     ax_a.set_ylabel(r"Distance to target $\|x_t - x_f\|$", fontsize=6.5)
-    ax_a.set_title(f"A  Exemplar (Boran sub-01)\n{_CL_MISMATCH_DEG:.0f}° B-mismatch, held-out decoder",
+    ax_a.set_title(f"A  Exemplar (DANDI 000574 sub-01)\n{_CL_MISMATCH_DEG:.0f}° B-mismatch, held-out decoder",
                    loc="left", fontsize=6, fontweight="bold")
     ax_a.legend(frameon=False, fontsize=5.5, loc="upper left")
     panel_label(ax_a, "A")
@@ -1452,14 +1452,14 @@ def make_figure8(stats_data):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Figure 9 — Robustness of the closed-loop benefit (R5, NEW)
+# Figure 9 — Robustness of the closed-loop benefit
 # ─────────────────────────────────────────────────────────────────────────────
 
 def make_figure9(stats_data):
-    """Figure 9 (R5, NEW) -- retained closed-loop benefit vs. B-mismatch
+    """Figure 9 -- retained closed-loop benefit vs. B-mismatch
     angle, observation noise, and unmodeled nonlinearity, across all 13
     cohorts (including the two that destabilized in Figure 8's demo — their
-    own robustness profile, shown in red, is part of the R5 story)."""
+    own robustness profile, shown in red, is part of the robustness result)."""
     nature_style()
     rob = stats_data["closed_loop_robustness"]
     cohorts = list(rob.keys())
@@ -1595,7 +1595,7 @@ def make_figS11_macaque_pfc_microstimulation_leaderboard_and_behavior_bound():
     # ── B: behavior-as-bound diag AUC + graded-behavior (RT~drift) forest ──
     ax_b = fig.add_subplot(gs[1])
     cohorts_b = ["boran_ieeg", "boran_units", "dandi000469", "dandi001187", "dandi000673"]
-    labels_b = ["Boran iEEG", "Boran units", "DANDI 000469", "DANDI 001187", "DANDI 000673"]
+    labels_b = ["DANDI 000574 iEEG", "DANDI 000574 units", "DANDI 000469", "DANDI 001187", "DANDI 000673"]
     aucs = [beh_ctg[c]["diag_auc_peak"] for c in cohorts_b]
     p_vals_b = [beh_ctg[c]["p_perm"] for c in cohorts_b]
     x = np.arange(len(cohorts_b))
@@ -1620,7 +1620,7 @@ def make_figS11_macaque_pfc_microstimulation_leaderboard_and_behavior_bound():
     sensitivity_cohorts = graded["_meta"].get("linked_sensitivity_views_excluded", [])
     forest_cohorts = list(primary_cohorts) + list(sensitivity_cohorts)
     cohort_short = {"dandi000469": "000469", "dandi001187": "001187",
-                     "dandi000673": "000673", "boran_ieeg": "Boran"}
+                     "dandi000673": "000673", "boran_ieeg": "000574"}
     forest_labels = [cohort_short.get(c, c) + (" (sens.)" if c in sensitivity_cohorts else "")
                       for c in forest_cohorts]
     betas = [graded[c]["response_time"]["beta"] for c in forest_cohorts]
@@ -1935,7 +1935,7 @@ def make_figS3():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Supplementary Figure S4 — Cross-dataset Boran replication
+# Supplementary Figure S4 — Cross-dataset DANDI 000574 replication
 # ─────────────────────────────────────────────────────────────────────────────
 
 def make_figS4(stats_data):
@@ -1959,7 +1959,7 @@ def make_figS4(stats_data):
     ax_a.set_xticklabels(["Set 4", "Set 6", "Set 8"], fontsize=6)
     ax_a.set_ylabel("PR (mean ± SEM, N=9)", fontsize=6.5)
     lme = stats_data["lme_pr_boran"]
-    ax_a.set_title(f"A  Boran PR × set size\n"
+    ax_a.set_title(f"A  DANDI 000574 PR × set size\n"
                    f"(LME: β={lme['beta']:.3f}, p={lme['p_value']:.3f})",
                    loc="left", fontsize=6.5, fontweight="bold")
 
@@ -1979,7 +1979,7 @@ def make_figS4(stats_data):
     ax_b.set_xticks([0, 1, 2])
     ax_b.set_xticklabels(["Set 4", "Set 6", "Set 8"], fontsize=6)
     ax_b.set_ylabel("Participation ratio (PR)", fontsize=6.5)
-    ax_b.set_title("B  Boran PR per subject (N=9)\n(LME null: β=−0.071, p=0.389)",
+    ax_b.set_title("B  DANDI 000574 PR per subject (N=9)\n(LME null: β=−0.071, p=0.389)",
                    loc="left", fontsize=6.5, fontweight="bold")
     ax_b.legend(frameon=False, fontsize=4.5, ncol=5, loc="upper center",
                 bbox_to_anchor=(0.5, -0.20))
@@ -1996,13 +1996,13 @@ def make_figS4(stats_data):
     m, b = np.polyfit(rdm_miller, rdm_boran, 1)
     xline = np.linspace(rdm_miller.min(), rdm_miller.max(), 100)
     ax_c.plot(xline, m * xline + b, color="#B07AA1", lw=1.2, alpha=0.8)
-    ax_c.set_xlabel("Miller ECoG RDM", fontsize=6.5)
-    ax_c.set_ylabel("Boran iEEG RDM", fontsize=6.5)
+    ax_c.set_xlabel("ECoG n-back corpus RDM", fontsize=6.5)
+    ax_c.set_ylabel("DANDI 000574 iEEG RDM", fontsize=6.5)
     ax_c.set_title(f"C  Cross-dataset RSA\n(r={r_mantel:.2f}, p={p_mantel:.3f})",
                    loc="left", fontsize=6.5, fontweight="bold")
     ax_c.legend(frameon=False, fontsize=5.5)
 
-    fig.suptitle("Supplementary Figure S4 — Boran iEEG replication and cross-dataset RSA",
+    fig.suptitle("Supplementary Figure S4 — DANDI 000574 iEEG replication and cross-dataset RSA",
                  fontsize=7.5, fontweight="bold")
     save_figure(fig, "figS4_supp")
     print("  Figure S4 saved.")
@@ -2173,11 +2173,11 @@ def make_figS5b(stats_data, cds_data):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Supplementary Figure S6 — Boran MTL iEEG CTG cross-dataset replication
+# Supplementary Figure S6 — DANDI 000574 MTL iEEG CTG cross-dataset replication
 # ─────────────────────────────────────────────────────────────────────────────
 
 def make_figS6(stats_data):
-    """Boran Sternberg CTG: 3 representative matrices + 9-subject bar charts + Miller comparison."""
+    """DANDI 000574 Sternberg CTG: 3 representative matrices + 9-subject bar charts + ECoG n-back corpus comparison."""
     nature_style()
     fig = plt.figure(figsize=(7.2, 6.0))
     gs_top = gridspec.GridSpec(1, 3, fig, hspace=0.38, wspace=0.38,
@@ -2233,7 +2233,7 @@ def make_figS6(stats_data):
     cbar.ax.tick_params(labelsize=4)
     cbar.ax.axhline(0.5, color="k", lw=0.7, ls="--")
 
-    # ── D: Off-diagonal AUC — all 9 Boran subjects ───────────────────────────
+    # ── D: Off-diagonal AUC — all 9 DANDI 000574 subjects ───────────────────────────
     # Error bars: SD of the saved label-shuffle permutation null (valid,
     # whole-matrix statistic — not a bootstrap over non-independent cells).
     ax_d = fig.add_subplot(gs_bot[0])
@@ -2257,7 +2257,7 @@ def make_figS6(stats_data):
     d_hi = max(od_vals[i] + yerr_hi[i] for i in range(n_boran)) + 0.03
     ax_d.set_ylim(d_lo, d_hi)
     ax_d.set_ylabel("Mean off-diagonal AUC", fontsize=6)
-    ax_d.set_title("D  Off-diagonal AUC (Boran, N=9)",
+    ax_d.set_title("D  Off-diagonal AUC (DANDI 000574, N=9)",
                    loc="left", fontsize=6, fontweight="bold")
     ax_d.legend(frameon=False, fontsize=5)
     for i, (od, p) in enumerate([(boran_stats[s]["mean_offdiag_auc"],
@@ -2267,7 +2267,7 @@ def make_figS6(stats_data):
         ax_d.text(i, od + yerr_hi[i] + 0.004, p_label, ha="center",
                   va="bottom", fontsize=4.6, rotation=90)
 
-    # ── E: Temporal stability τ — all 9 Boran subjects. y-limits are
+    # ── E: Temporal stability τ — all 9 DANDI 000574 subjects. y-limits are
     # data-adaptive (the corrected nested-CV τ spans a much wider range than
     # the old pipeline, [0.4, 1.5] rather than [0.7, 1.0]); a fixed ylim here
     # previously clipped several bars and pushed their value labels off-panel.
@@ -2284,7 +2284,7 @@ def make_figS6(stats_data):
     e_hi = max(tau_vals) * 1.12
     ax_e.set_ylim(0.0, e_hi)
     ax_e.set_ylabel("Temporal stability τ", fontsize=6)
-    ax_e.set_title("E  Temporal stability τ (Boran, N=9)\n"
+    ax_e.set_title("E  Temporal stability τ (DANDI 000574, N=9)\n"
                    f"Range [{min(tau_vals):.3f}, {max(tau_vals):.3f}]",
                    loc="left", fontsize=6, fontweight="bold")
     ax_e.legend(frameon=False, fontsize=5)
@@ -2292,7 +2292,7 @@ def make_figS6(stats_data):
         ax_e.text(i, val + e_hi * 0.01, f"{val:.3f}", ha="center",
                   va="bottom", fontsize=4.2, rotation=60, clip_on=True)
 
-    # ── F: Miller vs Boran vs Rutishauser τ — only τ from sessions with a
+    # ── F: ECoG n-back corpus vs DANDI 000574 vs human single-unit DANDI corpora τ — only τ from sessions with a
     # meaningfully decodable diagonal (mean_diag_auc >= 0.55); an
     # uninterpretable τ (near-chance diagonal) can take extreme/unstable
     # values (e.g. -28 or +26) that would otherwise dominate the plot.
@@ -2307,13 +2307,13 @@ def make_figS6(stats_data):
     jit_r = rng.uniform(-0.07, 0.07, len(rushi_taus_f))
     ax_f.scatter(np.zeros(len(miller_taus)) + jit_m, miller_taus,
                  color=DATASET_COLORS["Miller"], s=35, alpha=0.85, zorder=3,
-                 label=f"Miller PFC (N={len(miller_taus)})")
+                 label=f"ECoG n-back corpus PFC (N={len(miller_taus)})")
     ax_f.scatter(np.ones(len(tau_vals)) + jit_b, tau_vals,
                  color=DATASET_COLORS["Boran"], s=35, alpha=0.85, zorder=3,
-                 label=f"Boran MTL (N={len(tau_vals)})")
+                 label=f"DANDI 000574 MTL (N={len(tau_vals)})")
     ax_f.scatter(2 * np.ones(len(rushi_taus_f)) + jit_r, rushi_taus_f,
                  color=DATASET_COLORS["Rutishauser"], s=35, alpha=0.75, zorder=3,
-                 label=f"Rutishauser (N={len(rushi_taus_f)})")
+                 label=f"human single-unit DANDI corpora (N={len(rushi_taus_f)})")
     for x, vals, color in [(0, miller_taus, DATASET_COLORS["Miller"]),
                             (1, tau_vals, DATASET_COLORS["Boran"]),
                             (2, rushi_taus_f, DATASET_COLORS["Rutishauser"])]:
@@ -2325,7 +2325,7 @@ def make_figS6(stats_data):
     all_f_vals = miller_taus + tau_vals + rushi_taus_f
     ax_f.set_ylim(0.0, max(all_f_vals) * 1.12 if all_f_vals else 1.2)
     ax_f.set_xticks([0, 1, 2])
-    ax_f.set_xticklabels(["Miller\nPFC", "Boran\nMTL", "Rutis.\nSU"], fontsize=6)
+    ax_f.set_xticklabels(["ECoG n-back\nPFC", "000574\nMTL", "Rutis.\nSU"], fontsize=6)
     ax_f.set_ylabel("Temporal stability τ", fontsize=6.5)
     ax_f.set_title("F  τ across 3 datasets (diag AUC≥0.55 only)",
                    loc="left", fontsize=6, fontweight="bold")
@@ -2338,7 +2338,7 @@ def make_figS6(stats_data):
                   bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="#CCCCCC", alpha=0.85))
 
     fig.suptitle(
-        "Supplementary Figure S6 — Boran MTL iEEG CTG replication and 3-dataset τ comparison",
+        "Supplementary Figure S6 — DANDI 000574 MTL iEEG CTG replication and 3-dataset τ comparison",
         fontsize=7.5, fontweight="bold", y=0.98)
     save_figure(fig, "figS6_supp")
     print("  Figure S6 saved.")
@@ -2370,7 +2370,7 @@ def make_figS7(stats_data):
     gs_bot = gridspec.GridSpec(1, 4, fig, wspace=0.50, left=0.07, right=0.98,
                                top=0.47, bottom=0.11)
 
-    # ── A: B-norm per TES1 subject, one line per Miller subject ──────────────
+    # ── A: B-norm per TES1 subject, one line per ECoG n-back corpus subject ──────────────
     ax_a = fig.add_subplot(gs_top[0])
     x_tgt  = np.arange(n_tes1)
     miller_done = [s for s in SUBJECTS if f"{s}_B_norms" in tes1]
@@ -2383,7 +2383,7 @@ def make_figS7(stats_data):
     ax_a.set_xlabel("TES1 subject index", fontsize=6.5)
     ax_a.set_ylabel("Normalised ‖B_latent‖", fontsize=6.5)
     ax_a.set_title("A  TES1 inter-subject variation in B\n"
-                   "(each line = one Miller patient)",
+                   "(each line = one ECoG n-back corpus patient)",
                    loc="left", fontsize=6.5, fontweight="bold")
     ax_a.legend(frameon=False, fontsize=5.5, ncol=2)
 
@@ -2400,7 +2400,7 @@ def make_figS7(stats_data):
     # ── B: Gramian trace per TES1 subject (controls how easy to steer) ───────
     ax_b = fig.add_subplot(gs_top[1])
     if miller_done:
-        # Average Gramian trace across Miller subjects per TES1 subject
+        # Average Gramian trace across ECoG n-back corpus subjects per TES1 subject
         all_traces = np.array([tes1[f"{s}_gramian_traces"] for s in miller_done])
         mean_traces = all_traces.mean(axis=0)
         sem_traces  = all_traces.std(axis=0) / np.sqrt(len(miller_done))
@@ -2418,7 +2418,7 @@ def make_figS7(stats_data):
                    "(higher → easier neural state control)",
                    loc="left", fontsize=6.5, fontweight="bold")
 
-    # ── C: LQR rescue %: mean vs best TES1 B — Miller subjects ────────────────
+    # ── C: LQR rescue %: mean vs best TES1 B — ECoG n-back corpus subjects ────────────────
     # "Worst" B is reported as text, not a bar: its magnitude (down to -1345%)
     # is qualitatively different (catastrophic destabilisation from a poorly
     # aligned B, not a graded rescue) and swamps the mean/best comparison on
@@ -2457,10 +2457,10 @@ def make_figS7(stats_data):
                       f"{max(worst_vals):.0f}%\n(off-scale — see Methods)",
                       transform=ax_c.transAxes, ha="right", va="bottom", fontsize=4.5,
                       bbox=dict(boxstyle="round,pad=0.25", fc="white", ec="#CCCCCC", alpha=0.85))
-    ax_c.set_title("C  LQR rescue by B selection\n(Miller PFC/parietal)",
+    ax_c.set_title("C  LQR rescue by B selection\n(ECoG n-back corpus PFC/parietal)",
                    loc="left", fontsize=5.8, fontweight="bold")
 
-    # ── D: Same for Boran ─────────────────────────────────────────────────────
+    # ── D: Same for DANDI 000574 ─────────────────────────────────────────────────────
     ax_d = fig.add_subplot(gs_bot[1])
     boran_lqr_s = tes1_lqr.get("boran", {})
     boran_done  = [s for s in sorted(boran_lqr_s)
@@ -2496,7 +2496,7 @@ def make_figS7(stats_data):
         ax_d.text(0.5, 0.5, "Run TES1 analysis after\nBoran pipeline update",
                   ha="center", va="center", transform=ax_d.transAxes, fontsize=7)
         ax_d.axis("off")
-    ax_d.set_title("D  LQR rescue — Boran MTL\n(B personalised to MTL coords)",
+    ax_d.set_title("D  LQR rescue — DANDI 000574 MTL\n(B personalised to MTL coords)",
                    loc="left", fontsize=5.8, fontweight="bold")
     ax_d.set_ylabel("Trajectory rescue (%)", fontsize=6.5)
 
@@ -2518,8 +2518,8 @@ def make_figS7(stats_data):
                           capsize=4, lw=1.5, zorder=4)
         ax_e.set_xlim(-0.6, 1.6)
         ax_e.set_xticks([0, 1])
-        ax_e.set_xticklabels([f"Miller PFC\n(N={len(m_vals)})",
-                              f"Boran MTL\n(N={len(b_vals)})"], fontsize=6.5)
+        ax_e.set_xticklabels([f"ECoG n-back PFC\n(N={len(m_vals)})",
+                              f"000574 MTL\n(N={len(b_vals)})"], fontsize=6.5)
         ax_e.set_ylabel("Best-B LQR rescue (%)", fontsize=6.5)
         y_all = m_vals + b_vals
         ax_e.set_ylim(min(y_all) - 15, max(max(y_all) + 15, 105))
@@ -2551,8 +2551,8 @@ def make_figS7(stats_data):
                         if f"boran_{s}_align_gain" in div]
         rng_f = np.random.default_rng(5)
         for xc, vals, col, lbl in [
-            (0, miller_gains, DATASET_COLORS["Miller"], f"Miller\n(N={len(miller_gains)})"),
-            (1, boran_gains,  DATASET_COLORS["Boran"],  f"Boran\n(N={len(boran_gains)})"),
+            (0, miller_gains, DATASET_COLORS["Miller"], f"ECoG n-back\n(N={len(miller_gains)})"),
+            (1, boran_gains,  DATASET_COLORS["Boran"],  f"000574\n(N={len(boran_gains)})"),
         ]:
             jit = rng_f.uniform(-0.08, 0.08, len(vals))
             ax_f.scatter(xc + jit, vals, color=col, s=30, alpha=0.8, zorder=3, label=lbl)
@@ -2562,7 +2562,7 @@ def make_figS7(stats_data):
         ax_f.axhline(1.0, color="k", lw=0.8, ls="--", alpha=0.6, label="No gain (1×)")
         ax_f.set_xlim(-0.6, 1.6)
         ax_f.set_xticks([0, 1])
-        ax_f.set_xticklabels(["Miller", "Boran"], fontsize=6.5)
+        ax_f.set_xticklabels(["ECoG n-back", "000574"], fontsize=6.5)
         ax_f.set_ylabel("Dynamic / static alignment gain (×)", fontsize=6.5)
         ax_f.set_title("F  Personalised stimulation:\ndynamic (v*-aligned) vs static selection",
                        loc="left", fontsize=6, fontweight="bold")
@@ -2583,11 +2583,11 @@ def make_figS7(stats_data):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Supplementary Figure S8 — Rutishauser single-unit CTG (18 subjects)
+# Supplementary Figure S8 — human single-unit DANDI CTG (18 subjects)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def make_figS8(stats_data):
-    """Rutishauser single-unit CTG: 3 representative matrices + 18-subject summaries."""
+    """human single-unit DANDI CTG: 3 representative matrices + 18-subject summaries."""
     nature_style()
     rushi_stats = stats_data.get("dandi000469_ctg", {})
     if not rushi_stats:
@@ -2734,10 +2734,10 @@ def make_figS8(stats_data):
     wf = 0.25
     ax_f.bar(x_f - wf, m_means_s8, width=wf, yerr=m_sems_s8,
              color=DATASET_COLORS["Miller"], alpha=0.85, capsize=2.5,
-             error_kw={"lw": 0.8}, label="Miller (N=4)")
+             error_kw={"lw": 0.8}, label="ECoG n-back corpus (N=4)")
     ax_f.bar(x_f,      b_means_s8, width=wf, yerr=b_sems_s8,
              color=DATASET_COLORS["Boran"], alpha=0.85, capsize=2.5,
-             error_kw={"lw": 0.8}, label="Boran (N=9)")
+             error_kw={"lw": 0.8}, label="DANDI 000574 (N=9)")
     ax_f.bar(x_f + wf, r_means_s8, width=wf, yerr=r_sems_s8,
              color=DATASET_COLORS["Rutishauser"], alpha=0.85, capsize=2.5,
              error_kw={"lw": 0.8}, label=f"Rushi. (N={n_subj})")
@@ -2750,7 +2750,7 @@ def make_figS8(stats_data):
                 bbox_to_anchor=(0.5, -0.22))
 
     fig.suptitle(
-        "Supplementary Figure S8 — Rutishauser single-unit Sternberg: CTG replication (N=18)",
+        "Supplementary Figure S8 — human single-unit DANDI Sternberg: CTG replication (N=18)",
         fontsize=7.5, fontweight="bold", y=0.98)
     save_figure(fig, "figS8_supp")
     print("  Figure S8 saved.")
@@ -2762,8 +2762,8 @@ def make_figS8(stats_data):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def make_figS9(stats_data):
-    """Full multiband replication: τ, PR-null, ring-attractor R, and ∇·v — Miller +
-    Boran — plus theta×HGP PAC. Directly addresses "why HGP if theta decodes better?":
+    """Full multiband replication: τ, PR-null, ring-attractor R, and ∇·v — ECoG n-back corpus +
+    DANDI 000574 — plus theta×HGP PAC. Directly addresses "why HGP if theta decodes better?":
     every core geometric/dynamical claim replicates across the spectrum, so HGP's
     role in the rest of the paper is a cross-modality-comparability choice, not a
     performance claim.
@@ -2785,7 +2785,7 @@ def make_figS9(stats_data):
     gs = gridspec.GridSpec(2, 3, fig, hspace=0.62, wspace=0.48,
                            left=0.08, right=0.97, top=0.90, bottom=0.08)
 
-    # ── A: Miller τ per band (bars + individual subject dots) ────────────────
+    # ── A: ECoG n-back corpus τ per band (bars + individual subject dots) ────────────────
     ax_a = fig.add_subplot(gs[0, 0])
     rng9 = np.random.default_rng(3)
     means_a, sds_a = [], []
@@ -2800,11 +2800,11 @@ def make_figS9(stats_data):
     ax_a.set_xticks(range(5)); ax_a.set_xticklabels(band_lbls, fontsize=6.5)
     ax_a.set_ylim(0.80, 1.05)
     ax_a.set_ylabel("Temporal stability τ", fontsize=6.5)
-    ax_a.set_title("A  Miller (N=4): τ per band\n(dots = individual subjects)",
+    ax_a.set_title("A  ECoG n-back corpus (N=4): τ per band\n(dots = individual subjects)",
                    loc="left", fontsize=6.5, fontweight="bold")
     ax_a.legend(frameon=False, fontsize=5, loc="lower right")
 
-    # ── B: Boran τ per band ──────────────────────────────────────────────────
+    # ── B: DANDI 000574 τ per band ──────────────────────────────────────────────────
     ax_b = fig.add_subplot(gs[0, 1])
     if boran_done:
         means_b, sds_b = [], []
@@ -2818,14 +2818,14 @@ def make_figS9(stats_data):
         ax_b.axhline(1.0, color="k", lw=0.8, ls="--", alpha=0.6)
         ax_b.set_ylim(min(0.80, min(means_b) - 0.05), 1.05)
     else:
-        ax_b.text(0.5, 0.5, "Boran multiband pending", ha="center", va="center",
+        ax_b.text(0.5, 0.5, "DANDI 000574 multiband pending", ha="center", va="center",
                   transform=ax_b.transAxes, fontsize=6)
     ax_b.set_xticks(range(5)); ax_b.set_xticklabels(band_lbls, fontsize=6.5)
     ax_b.set_ylabel("Temporal stability τ", fontsize=6.5)
-    ax_b.set_title(f"B  Boran (N={len(boran_done)}): τ per band\n(cross-modality: iEEG LFP)",
+    ax_b.set_title(f"B  DANDI 000574 (N={len(boran_done)}): τ per band\n(cross-modality: iEEG LFP)",
                    loc="left", fontsize=6.5, fontweight="bold")
 
-    # ── C: Miller subject × band τ heatmap ────────────────────────────────────
+    # ── C: ECoG n-back corpus subject × band τ heatmap ────────────────────────────────────
     ax_c = fig.add_subplot(gs[0, 2])
     tau_grid = np.array([[float(mb[f"{s}_{b}_tau"]) for b in band_order] for s in SUBJECTS])
     im = ax_c.imshow(tau_grid, cmap="RdYlGn_r", vmin=0.85, vmax=1.02, aspect="auto")
@@ -2839,7 +2839,7 @@ def make_figS9(stats_data):
     ax_c.set_title("C  τ<1 in every subject × band\n(no exceptions)",
                    loc="left", fontsize=6.5, fontweight="bold")
 
-    # ── D: Ring-attractor Rayleigh R per band (Miller) ────────────────────────
+    # ── D: Ring-attractor Rayleigh R per band (ECoG n-back corpus) ────────────────────────
     ax_d = fig.add_subplot(gs[1, 0])
     if f"{SUBJECTS[0]}_theta_rayleigh_R" in mb:
         means_d, sds_d = [], []
@@ -2853,10 +2853,10 @@ def make_figS9(stats_data):
         ax_d.text(0.5, 0.5, "Pending", ha="center", va="center",
                   transform=ax_d.transAxes, fontsize=6)
     ax_d.set_xticks(range(5)); ax_d.set_xticklabels(band_lbls, fontsize=6.5)
-    ax_d.set_title("D  Ring-attractor phase concentration\nper band (Miller)",
+    ax_d.set_title("D  Ring-attractor phase concentration\nper band (ECoG n-back corpus)",
                    loc="left", fontsize=6.5, fontweight="bold")
 
-    # ── E: Flow divergence ∇·v per band (Miller) ──────────────────────────────
+    # ── E: Flow divergence ∇·v per band (ECoG n-back corpus) ──────────────────────────────
     ax_e = fig.add_subplot(gs[1, 1])
     if f"{SUBJECTS[0]}_theta_div_scalar" in mb:
         means_e, sds_e = [], []
@@ -2871,7 +2871,7 @@ def make_figS9(stats_data):
         ax_e.text(0.5, 0.5, "Pending", ha="center", va="center",
                   transform=ax_e.transAxes, fontsize=6)
     ax_e.set_xticks(range(5)); ax_e.set_xticklabels(band_lbls, fontsize=6.5)
-    ax_e.set_title("E  Flow divergence per band (Miller)\n(HGP alone is consistently contracting)",
+    ax_e.set_title("E  Flow divergence per band (ECoG n-back corpus)\n(HGP alone is consistently contracting)",
                    loc="left", fontsize=6.5, fontweight="bold")
 
     # ── F: theta × HGP phase-amplitude coupling (PAC), 0-back vs 2-back ──────
@@ -2919,7 +2919,7 @@ def make_figS10(stats_data):
     gs = gridspec.GridSpec(2, 3, fig, hspace=0.62, wspace=0.50,
                            left=0.09, right=0.96, top=0.90, bottom=0.08)
 
-    # ── A: Miller (al) sliding-window ∇·v(t) trace ────────────────────────────
+    # ── A: ECoG n-back corpus (al) sliding-window ∇·v(t) trace ────────────────────────────
     ax_a = fig.add_subplot(gs[0, 0])
     t_c = div["miller_al_sw_t_centers"]; d_c = div["miller_al_sw_div_trace"]
     ax_a.plot(t_c, d_c, color=DATASET_COLORS["Miller"], lw=1.3)
@@ -2929,11 +2929,11 @@ def make_figS10(stats_data):
     ax_a.axvline(t_max, color="tab:red", lw=1.0, ls="--", label=f"max: t={t_max:.2f}s")
     ax_a.set_xlabel("Time (s)", fontsize=6.5)
     ax_a.set_ylabel("∇·v(t) (s⁻¹)", fontsize=6.5)
-    ax_a.set_title("A  Timing: sliding-window ∇·v(t)\n(Miller S1, sliding 250 ms window)",
+    ax_a.set_title("A  Timing: sliding-window ∇·v(t)\n(ECoG n-back corpus S1, sliding 250 ms window)",
                    loc="left", fontsize=6, fontweight="bold")
     ax_a.legend(frameon=False, fontsize=5)
 
-    # ── B: Boran (sub-02) sliding-window ∇·v(t) trace ─────────────────────────
+    # ── B: DANDI 000574 (sub-02) sliding-window ∇·v(t) trace ─────────────────────────
     ax_b = fig.add_subplot(gs[0, 1])
     t_cb = div["boran_sub-02_sw_t_centers"]; d_cb = div["boran_sub-02_sw_div_trace"]
     ax_b.plot(t_cb, d_cb, color=DATASET_COLORS["Boran"], lw=1.3)
@@ -2943,17 +2943,17 @@ def make_figS10(stats_data):
     ax_b.axvline(t_maxb, color="tab:red", lw=1.0, ls="--", label=f"max: t={t_maxb:.2f}s")
     ax_b.set_xlabel("Time (s)", fontsize=6.5)
     ax_b.set_ylabel("∇·v(t) (s⁻¹)", fontsize=6.5)
-    ax_b.set_title("B  Timing: sliding-window ∇·v(t)\n(Boran sub-02)",
+    ax_b.set_title("B  Timing: sliding-window ∇·v(t)\n(DANDI 000574 sub-02)",
                    loc="left", fontsize=6, fontweight="bold")
     ax_b.legend(frameon=False, fontsize=5)
 
     # ── C: cross-subject optimal-timing summary ───────────────────────────────
     ax_c = fig.add_subplot(gs[0, 2])
     for xc, subs, prefix, col, lbl in [
-        (0, SUBJECTS,  "miller", DATASET_COLORS["Miller"], "Miller\ncontract"),
-        (1, SUBJECTS,  "miller", DATASET_COLORS["Miller"], "Miller\nexpand"),
-        (2, boran_subs, "boran", DATASET_COLORS["Boran"],  "Boran\ncontract"),
-        (3, boran_subs, "boran", DATASET_COLORS["Boran"],  "Boran\nexpand"),
+        (0, SUBJECTS,  "miller", DATASET_COLORS["Miller"], "ECoG n-back\ncontract"),
+        (1, SUBJECTS,  "miller", DATASET_COLORS["Miller"], "ECoG n-back\nexpand"),
+        (2, boran_subs, "boran", DATASET_COLORS["Boran"],  "000574\ncontract"),
+        (3, boran_subs, "boran", DATASET_COLORS["Boran"],  "000574\nexpand"),
     ]:
         field = "t_min_div" if xc in (0, 2) else "t_max_div"
         vals = [float(div[f"{prefix}_{s}_{field}"]) for s in subs
@@ -2964,13 +2964,13 @@ def make_figS10(stats_data):
         ax_c.scatter(xc + jit, vals, color=col, s=18, alpha=0.7, zorder=3)
         ax_c.errorbar(xc, m, yerr=se, fmt="D", color=col, ms=6, capsize=3, zorder=4)
     ax_c.set_xticks(range(4))
-    ax_c.set_xticklabels(["Miller\ncontract", "Miller\nexpand",
-                          "Boran\ncontract", "Boran\nexpand"], fontsize=5.5)
+    ax_c.set_xticklabels(["ECoG n-back\ncontract", "ECoG n-back\nexpand",
+                          "000574\ncontract", "000574\nexpand"], fontsize=5.5)
     ax_c.set_ylabel("Time within trial (s)", fontsize=6.5)
     ax_c.set_title("C  Cross-subject optimal timing\n(contracting vs expanding window)",
                    loc="left", fontsize=6, fontweight="bold")
 
-    # ── D: Miller (al) electrode map coloured by v*-alignment ────────────────
+    # ── D: ECoG n-back corpus (al) electrode map coloured by v*-alignment ────────────────
     ax_d = fig.add_subplot(gs[1, 0])
     mni_al = loc["miller_al_mni"]; score_al = loc["miller_al_score_intrinsic"]
     top_al = int(loc["miller_al_top_idx"])
@@ -2981,14 +2981,14 @@ def make_figS10(stats_data):
                  label="top-ranked electrode")
     ax_d.set_xlabel("MNI y (posterior→anterior, mm)", fontsize=6)
     ax_d.set_ylabel("MNI z (inferior→superior, mm)", fontsize=6)
-    ax_d.set_title("D  Location: electrode-v* alignment\n(Miller S1 array)",
+    ax_d.set_title("D  Location: electrode-v* alignment\n(ECoG n-back corpus S1 array)",
                    loc="left", fontsize=6, fontweight="bold")
     cbar_d = plt.colorbar(sc, ax=ax_d, fraction=0.046, pad=0.04)
     cbar_d.set_label("|cos(V_i, v*)|", fontsize=5.5); cbar_d.ax.tick_params(labelsize=4.5)
     ax_d.legend(frameon=False, fontsize=5, loc="upper center",
                 bbox_to_anchor=(0.5, -0.22))
 
-    # ── E: Boran (sub-02) electrode map coloured by v*-alignment ─────────────
+    # ── E: DANDI 000574 (sub-02) electrode map coloured by v*-alignment ─────────────
     ax_e = fig.add_subplot(gs[1, 1])
     mni_b = loc["boran_sub-02_mni"]; score_b = loc["boran_sub-02_score_intrinsic"]
     top_b = int(loc["boran_sub-02_top_idx"])
@@ -2999,7 +2999,7 @@ def make_figS10(stats_data):
                  label="top-ranked electrode")
     ax_e.set_xlabel("MNI y (posterior→anterior, mm)", fontsize=6)
     ax_e.set_ylabel("MNI z (inferior→superior, mm)", fontsize=6)
-    ax_e.set_title("E  Location: electrode-v* alignment\n(Boran sub-02 array)",
+    ax_e.set_title("E  Location: electrode-v* alignment\n(DANDI 000574 sub-02 array)",
                    loc="left", fontsize=6, fontweight="bold")
     cbar_e = plt.colorbar(sc2, ax=ax_e, fraction=0.046, pad=0.04)
     cbar_e.set_label("|cos(V_i, v*)|", fontsize=5.5); cbar_e.ax.tick_params(labelsize=4.5)
@@ -3014,9 +3014,9 @@ def make_figS10(stats_data):
     x_m = np.zeros(len(rho_m)); x_b = np.ones(len(rho_b))
     rng10b = np.random.default_rng(11)
     ax_f.scatter(x_m + rng10b.uniform(-0.08, 0.08, len(rho_m)), rho_m,
-                 color=DATASET_COLORS["Miller"], s=24, alpha=0.8, zorder=3, label="Miller")
+                 color=DATASET_COLORS["Miller"], s=24, alpha=0.8, zorder=3, label="ECoG n-back corpus")
     ax_f.scatter(x_b + rng10b.uniform(-0.08, 0.08, len(rho_b)), rho_b,
-                 color=DATASET_COLORS["Boran"], s=24, alpha=0.8, zorder=3, label="Boran")
+                 color=DATASET_COLORS["Boran"], s=24, alpha=0.8, zorder=3, label="DANDI 000574")
     for xc, vals, col in [(0, rho_m, DATASET_COLORS["Miller"]), (1, rho_b, DATASET_COLORS["Boran"])]:
         m = np.mean(vals); se = np.std(vals) / np.sqrt(len(vals))
         ax_f.errorbar(xc, m, yerr=se, fmt="D", color=col, ms=6, capsize=3, zorder=4)
@@ -3155,7 +3155,7 @@ def _adjudication_values(name, artifact):
         )]
     if name == "DANDI 001187/000673":
         sys.path.insert(0, str(ROOT / "scripts"))
-        from run_switching_adjudication import extract_folds
+        from statistics import extract_folds
         rows = extract_folds(name, artifact)
         return [
             float(np.mean([
@@ -3183,7 +3183,7 @@ def _adjudication_values(name, artifact):
 def make_current_adjudication_figure():
     nature_style()
     sys.path.insert(0, str(ROOT / "scripts"))
-    from run_switching_adjudication import extract_folds
+    from statistics import extract_folds
     switching = json.loads((RESULTS / "switching_adjudication.json").read_text())
     positive = json.loads((RESULTS / "drift_positive_control_000469.json").read_text())
     files = {
@@ -3292,7 +3292,7 @@ def make_current_adjudication_figure():
 def make_current_switching_decomposition_figure():
     nature_style()
     sys.path.insert(0, str(ROOT / "scripts"))
-    from run_switching_adjudication import DATASETS, extract_folds
+    from statistics import DATASETS, extract_folds
     switching = json.loads((RESULTS / "switching_adjudication.json").read_text())
     fig, axes = plt.subplots(1, 2, figsize=(7.2, 3.8), gridspec_kw={"width_ratios": [1.15, 1]})
     ax = axes[0]
@@ -3921,13 +3921,13 @@ if __name__ == "__main__":
     cds_data = make_figS5a()
     make_figS5b(stats_data, cds_data)
 
-    print("Generating Supplementary S6 (Boran CTG replication)...")
+    print("Generating Supplementary S6 (DANDI 000574 CTG replication)...")
     make_figS6(stats_data)
 
     print("Generating Supplementary S7 (TES1 personalisation)...")
     make_figS7(stats_data)
 
-    print("Generating Supplementary S8 (Rutishauser single-unit CTG)...")
+    print("Generating Supplementary S8 (human single-unit DANDI CTG)...")
     make_figS8(stats_data)
 
     print("Generating Supplementary S9 (multiband + PAC validation)...")

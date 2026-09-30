@@ -8,11 +8,8 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from run_haslacher_phase_diffusion import (  # noqa: E402
-    bin_analog_trials,
-    group_vector_test,
-    harmonic_coefficients,
-)
+from preprocessing import harmonic_coefficients
+from preprocessing import bin_analog_trials, group_vector_test
 from run_haslacher_stimulation_geometry import _sass_sanity  # noqa: E402
 
 

@@ -57,13 +57,15 @@ from corpus_sessions import (  # noqa: E402
     load_watters_session, watters_behaviour, watters_session_dates,
 )
 from provenance import _json_safe, git_commit  # noqa: E402
-from run_component_identity_subspace_atlas import (  # noqa: E402
-    MAX_SESSIONS_ENV_VAR, Z_80_POWER, _alm_session_inputs, _human_session_covariate_inputs,
-    _panichello_session_inputs,
-)
-from run_rank_free_component_identity import FDR_ALPHA, MIN_INDEPENDENT_UNITS, N_BOOT, N_FOLDS, N_PERM  # noqa: E402
+from run_component_identity_subspace_atlas import _alm_session_inputs, _human_session_covariate_inputs
+from corpus_sessions import _panichello_session_inputs
+from info_decoding import MAX_SESSIONS_ENV_VAR
+from statistics import Z_80_POWER
+from run_rank_free_component_identity import N_PERM
+from info_decoding import FDR_ALPHA, MIN_INDEPENDENT_UNITS, N_BOOT, N_FOLDS
 from statistics import fdr_bh, stable_seed  # noqa: E402
 from subspace_identity import block_folds, crossfit_alignment, regression_basis, residual_axis  # noqa: E402
+from corpus_sessions import _synthetic_time_independent_counts  # noqa: E402
 
 OUTPUT_PATH = ROOT / "results" / "within_trial_time_component_identity.json"
 CHECKPOINT_DIR = ROOT / "results" / ".checkpoints" / "run_within_trial_time_component_identity"
@@ -133,7 +135,7 @@ def _hash() -> str:
     digest = hashlib.sha256()
     paths = (
         Path(__file__), ROOT / "src" / "subspace_identity.py", ROOT / "src" / "corpus_sessions.py",
-        ROOT / "src" / "statistics.py", ROOT / "src" / "provenance.py",
+        ROOT / "src" / "statistics.py", ROOT / "src" / "info_decoding.py", ROOT / "src" / "provenance.py",
         ROOT / "scripts" / "run_component_identity_subspace_atlas.py",
         ROOT / "scripts" / "run_rank_free_component_identity.py",
     )
@@ -306,9 +308,6 @@ def _session_cell(counts: np.ndarray, n_perm: int, seed: str) -> dict:
 # NO time dependence, so the measured false-positive rate at p<=0.05 is the calibration number.
 # ================================================================================================
 
-def _synthetic_time_independent_counts(rng: np.random.Generator, n_trials: int, n_units: int, n_bins: int) -> np.ndarray:
-    trial_rate = rng.gamma(shape=2.0, scale=1.5, size=(n_trials, n_units))
-    return rng.poisson(trial_rate[:, :, None] * np.ones((1, 1, n_bins))).astype(float)
 
 
 def null_calibration_check(n_replicates: int, n_perm: int, seed: str,

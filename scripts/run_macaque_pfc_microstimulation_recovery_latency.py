@@ -22,8 +22,11 @@ from statistics import (  # noqa: E402
     spearman_permutation_test, stable_seed,
 )
 from io_utils import locked_json_update  # noqa: E402
-from run_macaque_pfc_microstimulation_pipeline import DATA, PRE_S, SESSIONS, load_macaque_pfc_microstimulation_session  # noqa: E402
-from run_macaque_pfc_microstimulation_design_corrected import BIN_MS, N_BINS, N_COMPONENTS, ONSET_BIN, bin_spiketrain  # noqa: E402
+from run_macaque_pfc_microstimulation_pipeline import DATA, SESSIONS, load_macaque_pfc_microstimulation_session
+from spike_pipeline import PRE_S
+from run_macaque_pfc_microstimulation_design_corrected import BIN_MS, N_COMPONENTS, bin_spiketrain
+from spike_pipeline import N_BINS
+from corpus_sessions import ONSET_BIN
 
 PRE_STIM_BASELINE_BINS = (0, 10)
 CONTROL_CV_FOLDS = 5
@@ -33,6 +36,10 @@ MIN_FOLD_CONTROL_SPREAD_CONTROLS = 5
 RESULTS = ROOT / "results"
 CHECKPOINT_DIR = RESULTS / ".checkpoints"
 SCHEMA_VERSION = "recovery_latency_v6"
+# Checkpoint identity only (distinct from SCHEMA_VERSION, which also names the
+# delivered artifact's schema_version field): bumped so a resumed run never
+# reads a pre-fix checkpoint whose per-angle keys may be digit-only strings.
+CHECKPOINT_IDENTITY = "recovery_latency_v6_ckpt2"
 
 SACCADE_MAD_K = 8.0
 SACCADE_MIN_SUSTAIN_S = 0.020
@@ -527,7 +534,7 @@ def analyze_session(prefix: str) -> dict:
     }
 
 
-def _checkpoint_path(prefix: str, schema_version: str = SCHEMA_VERSION) -> Path:
+def _checkpoint_path(prefix: str, schema_version: str = CHECKPOINT_IDENTITY) -> Path:
     return CHECKPOINT_DIR / f"macaque_recovery_latency_{schema_version}_{prefix}.json"
 
 
@@ -536,14 +543,14 @@ def load_checkpoint(prefix: str) -> dict | None:
     if not path.exists():
         return None
     payload = json.loads(path.read_text())
-    if payload.get("schema_version") != SCHEMA_VERSION:
+    if payload.get("schema_version") != CHECKPOINT_IDENTITY:
         return None
     return restore_checkpoint(payload["result"])
 
 
 def save_checkpoint(prefix: str, result: dict) -> None:
     CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
-    payload = {"schema_version": SCHEMA_VERSION, "result": checkpoint_safe(result)}
+    payload = {"schema_version": CHECKPOINT_IDENTITY, "result": checkpoint_safe(result)}
     _checkpoint_path(prefix).write_text(json.dumps(payload))
 
 

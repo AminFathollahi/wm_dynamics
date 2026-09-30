@@ -66,7 +66,7 @@ from control import (  # noqa: E402
 )
 from dynamics import fit_retention_dynamics  # noqa: E402
 from geometry import pca_decompose  # noqa: E402
-from provenance import canonical_json, git_commit  # noqa: E402
+from provenance import canonical_json, checkpoint_store, git_commit  # noqa: E402
 from statistics import (  # noqa: E402
     minimum_detectable_paired_difference,
     paired_sign_flip_test,
@@ -108,17 +108,8 @@ def save_checkpoint(unit: str, record: dict) -> None:
     ever written as part of the same atomic replace, after the fit that
     computed `record` has already returned, so a killed process never leaves
     a checkpoint that reads as complete but isn't."""
-    CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
     path = _checkpoint_path(unit)
-    payload = {"_complete": True, "record": record}
-    fd, tmp_name = tempfile.mkstemp(dir=str(CHECKPOINT_DIR), prefix="._tmp_")
-    try:
-        with os.fdopen(fd, "w") as f:
-            f.write(canonical_json(payload))
-        os.replace(tmp_name, path)
-    finally:
-        if os.path.exists(tmp_name):
-            os.remove(tmp_name)
+    checkpoint_store(path, {"_complete": True, "record": record})
 
 
 def run_checkpointed(unit: str, fit_fn):
@@ -645,8 +636,9 @@ def ram_closedloop_session(session: dict, n_pc: int, n_null_draws: int) -> dict:
 
 
 def ram_arm(dataset_key: str, max_units: int, derive_stim: bool, per_session_fn, label: str,
-            n_pc: int, n_null_draws: int, n_jobs: int) -> dict:
-    from run_ram_stimulation_drift import _find_stim_sessions, build_session_trajectory, configured_data_path
+            n_pc: int, n_null_draws: int, n_workers: int) -> dict:
+    from run_ram_stimulation_drift import configured_data_path
+    from stimulation_events import _find_stim_sessions, build_session_trajectory
 
     data_root = configured_data_path(dataset_key)
     sessions = _find_stim_sessions(data_root)
@@ -662,7 +654,7 @@ def ram_arm(dataset_key: str, max_units: int, derive_stim: bool, per_session_fn,
 
         def _fit(ieeg_json=ieeg_json, subj=subj, session_id=session_id):
             try:
-                session = build_session_trajectory(ieeg_json, data_root, derive_stim, n_jobs=n_jobs)
+                session = build_session_trajectory(ieeg_json, data_root, derive_stim, n_workers=n_workers)
             except Exception as exc:  # noqa: BLE001
                 return {"loaded": False, "reason": f"processing error: {exc}", "session_id": session_id, "subject": subj}
             if session is None:
@@ -707,7 +699,10 @@ def _macaque_pfc_microstimulation_lightweight_frame(pooled_trials: np.ndarray, u
 
 
 def macaque_pfc_microstimulation_arm(max_sessions: int, n_pc_default: int, n_null_draws: int, n_rotation_null: int) -> dict:
-    from run_macaque_pfc_microstimulation_pipeline import BIN_S, N_PC, SESSIONS, crop_trial, load_macaque_pfc_microstimulation_session
+    from run_macaque_pfc_microstimulation_pipeline import SESSIONS, load_macaque_pfc_microstimulation_session
+    from spike_pipeline import crop_trial
+    from spike_pipeline import BIN_S
+    from dynamics import N_PC
 
     delivered_path = RESULTS / "causal_macaque_pfc_microstimulation.json"
     delivered = json.loads(delivered_path.read_text()) if delivered_path.exists() else {"per_session": {}}
@@ -877,10 +872,11 @@ def macaque_pfc_microstimulation_arm(max_sessions: int, n_pc_default: int, n_nul
 
 def haslacher_arm(max_active: int, max_control: int, n_pc_method: str, n_null_draws: int,
                    n_rotation_null: int) -> dict:
-    from run_haslacher_stimulation_geometry import (
-        ACTIVE_SUBJECTS, CONTROL_SUBJECTS, GRAMIAN_HORIZON, N_RANDOM_DIRS, PHASE_CONDITIONS,
-        _preprocess, _retention_trials, _stimulation_channel_weight,
-    )
+    from run_haslacher_stimulation_geometry import _preprocess
+    from preprocessing import _retention_trials, _stimulation_channel_weight
+    from preprocessing import GRAMIAN_HORIZON, N_RANDOM_DIRS
+    from preprocessing import PHASE_CONDITIONS
+    from preprocessing import ACTIVE_SUBJECTS, CONTROL_SUBJECTS
     from geometry import select_latent_dim
 
     phase_omega_path = RESULTS / "haslacher_phase_omega.json"
@@ -1044,7 +1040,7 @@ def haslacher_arm(max_active: int, max_control: int, n_pc_method: str, n_null_dr
             "own_normalized_displacement_vs_behavioral_modulation_depth": behavioral_coupling}
 
 
-# ── Arm 3 disambiguation + Alagapan (distractor, reproduction only) ────────────
+# ── Arm 3 disambiguation + phase-locked intracranial stimulation corpus (doi:10.1016/j.celrep.2019.10.072) (distractor, reproduction only) ────────────
 
 def disambiguate_arm3() -> dict:
     alagapan_path = RESULTS / "alagapan_stimulation_geometry.json"
@@ -1312,7 +1308,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--haslacher-max-control", type=int, default=25)
     p.add_argument("--n-null-draws", type=int, default=DEFAULT_N_NULL_DRAWS)
     p.add_argument("--n-rotation-null", type=int, default=DEFAULT_N_ROTATION_NULL)
-    p.add_argument("--n-jobs", type=int, default=min(8, os.cpu_count() or 1))
+    p.add_argument("--workers", type=int, default=min(8, os.cpu_count() or 1))
     p.add_argument("--skip-reproduction-gate", action="store_true")
     return p
 
@@ -1356,11 +1352,11 @@ def main() -> None:
     else:
         t1 = time.time()
         openloop = ram_arm("ram_ds005489_openloop", args.openloop_max_subjects, False, ram_openloop_session,
-                           "ram_openloop", RAM_N_PC, args.n_null_draws, args.n_jobs)
+                           "ram_openloop", RAM_N_PC, args.n_null_draws, args.workers)
         print(f"[ram openloop] {len(openloop['per_session'])} sessions computed in {time.time()-t1:.0f}s", flush=True)
         t1 = time.time()
         closedloop = ram_arm("ram_ds005557_closedloop", args.closedloop_max_subjects, True, ram_closedloop_session,
-                             "ram_closedloop", RAM_N_PC, args.n_null_draws, args.n_jobs)
+                             "ram_closedloop", RAM_N_PC, args.n_null_draws, args.workers)
         print(f"[ram closedloop] {len(closedloop['per_session'])} sessions computed in {time.time()-t1:.0f}s", flush=True)
 
     macaque_pfc_microstimulation_void = reproduction_gate["causal_macaque_pfc_microstimulation"]["status"] == "void_reproduction_gate_did_not_reproduce"

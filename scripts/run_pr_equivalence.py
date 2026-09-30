@@ -11,7 +11,7 @@ SESOI (pre-stated BEFORE computing, NOT tuned to the answer): 0.5 effective
 dimensions per load level — half of one effective dimension. A load-driven
 dimensionality expansion smaller than half an effective dimension per step is
 below what the literature reporting load-dependent geometry expansion
-(Bernardi et al. 2020; Wasmuht et al. 2018) would treat as a meaningful change
+would treat as a meaningful change
 in the number of coding dimensions, and is far below the several-effective-
 dimension between-subject PR spread these datasets show.
 
@@ -43,8 +43,8 @@ from provenance import _json_safe
 RESULTS = ROOT / "results"
 SESOI = 0.5   # effective dimensions per load level (pre-stated; see module docstring)
 
-PR_DATASETS = [("Miller", "miller"), ("Boran iEEG", "boran_ieeg"),
-               ("Boran units", "boran_units"), ("DANDI 000469", "dandi000469"),
+PR_DATASETS = [("ECoG n-back", "miller"), ("DANDI 000574 iEEG", "boran_ieeg"),
+               ("DANDI 000574 units", "boran_units"), ("DANDI 000469", "dandi000469"),
                ("DANDI 001187", "dandi001187"), ("DANDI 000673", "dandi000673")]
 
 

@@ -24,16 +24,18 @@ for _sub in ("src", "scripts"):
 
 from corpus_sessions import alm_data_directory, data_root, iter_watters  # noqa: E402
 from provenance import _json_safe, git_commit  # noqa: E402
-from run_deviation_axis_structure import (  # noqa: E402
-    CORPORA as AXIS_DEFINED_CORPORA, _residual_rows, _unit_residual_matrix, leading_eigenvector,
-)
-from run_dissociation_cross_preparation_test import MIN_TRIALS_WITH_DEFINED_DIRECTION  # noqa: E402
-from run_dissociation_replication_and_counting_noise import (  # noqa: E402
-    HUMAN_CORPORA_FOR_THE_CENSUS, _human_seen_denominator, _load_alm_for_counting_noise_census, _load_human_for_counting_noise_census,
-    _load_panichello_for_counting_noise_census,
-)
-from run_rate_free_state_geometry_behavior_link import rate_free_state_deviation  # noqa: E402
-from run_state_behavior_link import _panichello_directory  # noqa: E402
+from info_decoding import _residual_rows
+from info_decoding import _unit_residual_matrix
+from subspace_identity import leading_eigenvector
+from info_decoding import CORPORA as AXIS_DEFINED_CORPORA
+from statistics import MIN_TRIALS_WITH_DEFINED_DIRECTION
+from run_dissociation_replication_and_counting_noise import _human_seen_denominator
+from corpus_sessions import _load_human_for_counting_noise_census
+from corpus_sessions import _load_panichello_for_counting_noise_census
+from statistics import HUMAN_CORPORA_FOR_THE_CENSUS
+from corpus_sessions import _load_alm_for_counting_noise_census
+from stimulation_response_estimator import rate_free_state_deviation
+from corpus_sessions import _panichello_directory
 from statistics import stable_seed  # noqa: E402
 
 OUTPUT_PATH = ROOT / "results" / "minimum_recording_specification.json"

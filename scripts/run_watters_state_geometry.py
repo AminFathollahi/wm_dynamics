@@ -32,7 +32,7 @@ statistics.partial_correlation_permutation_test for the behavioural link,
 and run_state_behavior_link.trial_amplitude_covariates for state amplitude.
 
 The corpus is a preprint deposit: "Working Memory of Multi-Object Scenes in
-Primate Frontal Cortex" (Watters, Gabel, Tenenbaum, Jazayeri; bioRxiv
+Primate Frontal Cortex" (bioRxiv
 preprint, posted 2026-01-27, DOI 10.64898/2026.01.27.702062; data DANDI
 000620). No peer-reviewed journal version was found, so it is cited as an
 unreviewed preprint.
@@ -66,13 +66,16 @@ from corpus_sessions import (  # noqa: E402
     watters_directories,
 )
 from provenance import _json_safe, git_commit  # noqa: E402
-from run_rate_free_state_geometry_behavior_link import (  # noqa: E402
-    MEANINGFUL_EFFECT_THRESHOLD_R_UNITS, _classify, rate_free_state_deviation,
-)
-from run_state_behavior_link import MIN_ERROR_TRIALS_FOR_REACHABILITY, trial_amplitude_covariates  # noqa: E402
-from run_state_content_link import (  # noqa: E402
-    BIN_MS, DECIDING_WIDTH_BINS, PANICHELLO_DELAY_WINDOW_MS, session_subtractive_test, usable_label,
-)
+from run_rate_free_state_geometry_behavior_link import _classify
+from statistics import MEANINGFUL_EFFECT_THRESHOLD_R_UNITS
+from stimulation_response_estimator import rate_free_state_deviation
+from state_persistence import trial_amplitude_covariates
+from statistics import MIN_ERROR_TRIALS_FOR_REACHABILITY
+from run_state_content_link import usable_label
+from info_decoding import session_subtractive_test
+from spike_pipeline import BIN_MS
+from spike_pipeline import DECIDING_WIDTH_BINS
+from statistics import PANICHELLO_DELAY_WINDOW_MS
 from run_watters_source_replication import CORRECT_REPORT_DISTANCE_THRESHOLD  # noqa: E402
 from spike_pipeline import FrozenPSTHTransform  # noqa: E402
 from state_persistence import (  # noqa: E402
@@ -82,6 +85,9 @@ from state_persistence import (  # noqa: E402
 from statistics import (  # noqa: E402
     minimum_detectable_paired_difference, partial_correlation_permutation_test, stable_seed,
 )
+from corpus_sessions import MATCHED_UNIT_COUNT, MIN_TRIALS_FOR_BEHAVIOURAL_CORRELATION, PRIMARY_QUALITY_TIER, _behaviour_observables  # noqa: E402
+from corpus_sessions import _matched_unit_subset  # noqa: E402
+from state_persistence import _pool_values  # noqa: E402
 
 OUTPUT_PATH = ROOT / "results" / "watters_state_geometry.json"
 ANALYSIS_VERSION = "2026-08-14"
@@ -93,7 +99,6 @@ CARDINALITY_RUNGS = (2, 3, 4, 6, 8)
 # Both quality tiers are cut from ONE loaded tensor, so the trial set, the delay
 # window and the behavioural join are identical between them and the only thing
 # that changes is which units are in the population.
-PRIMARY_QUALITY_TIER = "single_and_multi_unit"
 QUALITY_TIER_CHOICE = (
     "The primary population pools well-isolated single units and multi-unit clusters "
     "('single_and_multi_unit'). The corpus's shared per-trial cache labels 5228 of its 8085 "
@@ -108,10 +113,8 @@ QUALITY_TIER_CHOICE = (
 # variants is not read off populations of different size. Fixed at the same floor every
 # included session clears by construction, declared here before any fit, so the matched
 # arm drops no session and needs no post-hoc choice of a matching level.
-MATCHED_UNIT_COUNT = WATTERS_MIN_UNITS
 
 MIN_TRIALS_PER_LOAD_LEVEL = 60
-MIN_TRIALS_FOR_BEHAVIOURAL_CORRELATION = 16
 
 EXISTENCE_DECISION_RULE_DECLARED_BEFORE_FITTING = (
     "Per session, fit the leading latent on half the trials, project the held-out half, and take the "
@@ -420,31 +423,6 @@ def cardinality_ladder(counts: np.ndarray, cued_theta: np.ndarray, seed_tag: str
     }
 
 
-def _behaviour_observables(counts: np.ndarray, session: dict) -> tuple[dict, dict, np.ndarray]:
-    """The per-trial quantities every behavioural correlation in this script
-    is built from, restricted to the trials on which the state direction,
-    the saccadic report and the reaction time are all defined, together with
-    the exclusion count by reason and the mask itself."""
-    activity = counts.sum(axis=2)
-    deviation = rate_free_state_deviation(activity)
-    report_error = np.asarray(session["report_deviation"], dtype=float)
-    reaction_time = np.asarray(session["reaction_time_ms"], dtype=float)
-    usable = np.isfinite(deviation) & np.isfinite(report_error) & np.isfinite(reaction_time)
-    excluded = {
-        "state_direction_undefined_zero_total_activity": int(np.sum(~np.isfinite(deviation))),
-        "no_saccadic_report_recorded": int(np.sum(~np.isfinite(report_error))),
-        "no_reaction_time_recorded": int(np.sum(~np.isfinite(reaction_time) & np.isfinite(report_error))),
-    }
-    observables = {
-        "state_deviation": deviation[usable],
-        "spike_count": activity.sum(axis=1).astype(float)[usable],
-        "trial_index": np.arange(counts.shape[0], dtype=float)[usable],
-        "report_error": report_error[usable],
-        "reaction_time": reaction_time[usable],
-        "item_count": np.asarray(session["num_objects"], dtype=float)[usable],
-        "is_correct": np.asarray(session["correct"], dtype=bool)[usable],
-    }
-    return observables, excluded, usable
 
 
 def item_count_component(counts: np.ndarray, session: dict, seed_tag: str) -> dict:
@@ -584,10 +562,6 @@ def load_arm(counts: np.ndarray, session: dict, seed_tag: str) -> dict:
     }
 
 
-def _matched_unit_subset(counts: np.ndarray, seed_tag: str) -> np.ndarray:
-    rng = np.random.default_rng(stable_seed(f"{seed_tag}|matched_units"))
-    drawn = np.sort(rng.choice(counts.shape[1], size=MATCHED_UNIT_COUNT, replace=False))
-    return counts[:, drawn]
 
 
 def analyse_session(session: dict) -> dict:
@@ -645,13 +619,6 @@ def _tier(rows: list[dict], tier: str) -> list[dict]:
     return [r["by_quality_tier"][tier] for r in rows if tier in r.get("by_quality_tier", {})]
 
 
-def _pool_values(values: list[float]) -> dict:
-    if len(values) < 2:
-        return {"status": "not_computable", "n_sessions": len(values)}
-    pooled = slope_across_sessions_test(values, alternative="two-sided")
-    pooled["minimum_detectable_paired_difference_at_80pct_power"] = minimum_detectable_paired_difference(values)
-    pooled["median_value"] = float(np.median(values))
-    return pooled
 
 
 def _pool_correlations(entries: list[dict]) -> dict:
@@ -986,8 +953,7 @@ def main() -> None:
         "corpus": (
             "Multi-object spatial working memory in macaque frontal cortex, two animals, fixed 1.0 s "
             "maintenance delay with the objects absent, continuous saccadic report. Source: "
-            "'Working Memory of Multi-Object Scenes in Primate Frontal Cortex', Watters, Gabel, "
-            "Tenenbaum and Jazayeri, bioRxiv PREPRINT posted 2026-01-27, DOI 10.64898/2026.01.27.702062, "
+            "'Working Memory of Multi-Object Scenes in Primate Frontal Cortex', bioRxiv PREPRINT posted 2026-01-27, DOI 10.64898/2026.01.27.702062, "
             "data DANDI 000620. This is an unreviewed preprint: no peer-reviewed journal version was "
             "found, and it is cited on that basis."
         ),

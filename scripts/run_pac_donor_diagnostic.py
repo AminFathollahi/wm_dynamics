@@ -29,9 +29,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from closed_loop import simulate_closed_loop, _b_hat_at_angle
 from statistics import stable_seed
-from run_targeting_benchmark import (
-    _pac_channel_weights, _stability_horizon, B_HAT_MISMATCH_DEG, RESULTS,
-)
+from run_targeting_benchmark import RESULTS
+from stimulation_events import _pac_channel_weights, _stability_horizon, B_HAT_MISMATCH_DEG
 
 NEAR_TIE_REL_TOL = 0.90  # pre-specified BEFORE inspecting any donor's destabilization
 TARGET_SUBJECTS = ["sub-02", "sub-03", "sub-05"]

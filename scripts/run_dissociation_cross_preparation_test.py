@@ -73,26 +73,26 @@ if _scripts_dir not in sys.path:
 
 from corpus_sessions import alm_data_directory, data_root, load_alm_raw_session  # noqa: E402
 from provenance import _json_safe, checkpoint_safe, restore_checkpoint  # noqa: E402
-from run_behavior_amplitude_rate_controls import _reachable_sessions as _macaque_reachable_sessions  # noqa: E402
-from run_dominant_latent_identity_and_behaviour_breadth import (  # noqa: E402
-    _behaviour_session_arrays as _macaque_behaviour_session_arrays,
-    _classify_amplitude,
-    _correlation_family as _macaque_correlation_family,
-    _load_session as _macaque_load_session,
-    _pool_correlations as _macaque_pool_correlations,
-    _session_paths as _macaque_all_session_paths,
-    PRIMARY_ERROR_FLOOR as MACAQUE_PRIMARY_ERROR_FLOOR,
-)
-from run_rate_free_state_geometry_behavior_link import (  # noqa: E402
-    MEANINGFUL_EFFECT_THRESHOLD_R_UNITS, _analyze_session as _macaque_analyze_deviation_session,
-    _classify, _pool as _macaque_pool_deviation, _session_arrays as _macaque_deviation_session_arrays,
-    rate_free_state_deviation,
-)
-from run_state_behavior_link import trial_amplitude_covariates  # noqa: E402
+from corpus_sessions import _reachable_sessions as _macaque_reachable_sessions
+from run_dominant_latent_identity_and_behaviour_breadth import _correlation_family as _macaque_correlation_family
+from state_persistence import _behaviour_session_arrays as _macaque_behaviour_session_arrays
+from corpus_sessions import _load_session as _macaque_load_session, _session_paths as _macaque_all_session_paths
+from statistics import _classify_amplitude
+from state_persistence import _pool_correlations as _macaque_pool_correlations
+from statistics import PRIMARY_ERROR_FLOOR as MACAQUE_PRIMARY_ERROR_FLOOR
+from run_rate_free_state_geometry_behavior_link import _analyze_session as _macaque_analyze_deviation_session, _classify
+from corpus_sessions import _session_arrays as _macaque_deviation_session_arrays
+from statistics import MEANINGFUL_EFFECT_THRESHOLD_R_UNITS
+from state_persistence import _pool as _macaque_pool_deviation
+from stimulation_response_estimator import rate_free_state_deviation
+from state_persistence import trial_amplitude_covariates
 from state_persistence import slope_across_sessions_test  # noqa: E402
 from statistics import (  # noqa: E402
     minimum_detectable_paired_difference, partial_correlation_permutation_test, stable_seed,
 )
+from spike_pipeline import BIN_MS  # noqa: E402
+from statistics import MIN_TRIALS_WITH_DEFINED_DIRECTION  # noqa: E402
+from state_persistence import _pool_correlations  # noqa: E402
 
 OUTPUT_PATH = Path(__file__).resolve().parents[1] / "results" / "dissociation_cross_preparation_test.json"
 CHECKPOINT_PATH = OUTPUT_PATH.parent / ".checkpoints" / "dissociation_cross_preparation_test_checkpoint.json"
@@ -100,8 +100,6 @@ SEED_NAMESPACE = "dissociation_cross_preparation_test"
 
 N_PERM = 10000
 DELAY_WINDOW_S = 1.2  # the same delay-duration filter the pre-declared per-session error-trial table was measured at
-BIN_MS = 100.0
-MIN_TRIALS_WITH_DEFINED_DIRECTION = 16
 
 ERROR_FLOORS = (30, 25, 40)
 PRIMARY_ERROR_FLOOR = 30
@@ -279,8 +277,8 @@ def _load_alm_census(root: Path) -> tuple[dict[str, dict], dict[str, str]]:
 # ============================================================================
 # Per-session observable arrays and correlation family (mirrors the macaque
 # arm's _behaviour_session_arrays / _correlation_family exactly, extended
-# with the orthogonality gate against trial index this mandate additionally
-# requires)
+# with the orthogonality gate against trial index that this analysis
+# additionally requires)
 # ============================================================================
 
 def _behaviour_session_arrays(session: dict) -> dict | None:
@@ -326,9 +324,6 @@ def _correlation_family(arrays: dict, observable_key: str, session_id: str) -> d
     }
 
 
-def _pool_correlations(per_session: list[dict], key: str) -> dict:
-    values = [s[key]["r"] for s in per_session if s[key].get("status") == "computed"]
-    return slope_across_sessions_test(values, alternative="two-sided") if values else {"status": "not_computed"}
 
 
 def _mdd(per_session: list[dict], key: str) -> dict:
@@ -504,8 +499,8 @@ def main() -> None:
     output: dict = {
         "version": "2026-08-14",
         "scope": {
-            "corpus": "mouse anterior lateral motor cortex, control arm only (Inagaki et al., random-delay "
-                      "silicon-probe perturbation release, doi:10.25378/janelia.7489253); photoinhibition-"
+            "corpus": "mouse anterior lateral motor cortex, control arm only (random-delay "
+                      "silicon-probe perturbation release, doi 10.25378/janelia.7489253); photoinhibition-"
                       "perturbation trials are a different experiment and never enter",
             "delay_window_s": DELAY_WINDOW_S,
             "bin_ms": BIN_MS,

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Sadtler et al. 2014-style within- vs outside-manifold constraint, tested
+"""Within- vs outside-manifold constraint, tested
 causally on macaque PFC microstimulation microstimulation.
 
-WHY: Sadtler 2014 (Nature) + Golub 2018 + Oby 2019 -- BCI perturbations
+WHY: prior BCI-perturbation literature found that changes
 WITHIN the intrinsic neural manifold are effective, OUTSIDE are not -- has
 never been tested with delivered microstim in a WM setting. v* is
 within-manifold BY CONSTRUCTION (it lives in the same k-dim PCA subspace the
@@ -25,7 +25,7 @@ DEGENERACY GATE: if within_frac has ~zero variance across conditions
 uninformative -- STOP, report honestly, do not force an alternative.
 
 Run:
-    /home/amin/miniconda3/envs/wm_dynamics/bin/python scripts/run_manifold_constraint.py
+    python scripts/run_manifold_constraint.py
 """
 from __future__ import annotations
 
@@ -45,7 +45,10 @@ from causal import benchmark_modifiers
 from statistics import stable_seed
 
 sys.path.insert(0, str(ROOT / "scripts"))
-from run_macaque_pfc_microstimulation_pipeline import load_macaque_pfc_microstimulation_session, crop_trial, SESSIONS, N_PC, N_BINS
+from run_macaque_pfc_microstimulation_pipeline import load_macaque_pfc_microstimulation_session, SESSIONS
+from spike_pipeline import crop_trial
+from dynamics import N_PC
+from spike_pipeline import N_BINS
 
 RESULTS = ROOT / "results"
 
@@ -54,7 +57,7 @@ def _session_within_outside(prefix: str) -> dict | None:
     """Re-fit ONLY the PCA projector (P_k) -- the DMD/v* fit is irrelevant to
     this arm -- and score within_frac/outside_frac for every stim condition's
     RAW channel-space direction e_hat, exactly as build_session_features
-    constructs B_chan (Part 2) before it ever projects into the latent
+    constructs B_chan before it ever projects into the latent
     space."""
     corr = load_macaque_pfc_microstimulation_session(prefix, correct=True)
     if corr is None or corr["control_idx"] is None:
@@ -138,15 +141,17 @@ def main() -> None:
         }
         with open(RESULTS / "manifold_constraint.json", "w") as f:
             json.dump(out, f, indent=2, default=lambda o: float(o) if isinstance(o, np.floating) else o)
-        print("\nDEGENERACY GATE TRIPPED -- wrote excluded_degenerate status, stopping (no 19B).")
+        print("\nDEGENERACY GATE TRIPPED -- wrote excluded_degenerate status, stopping "
+              "(the causal-targeting-modifier scoring step below is skipped).")
         return
 
-    print("\nDegeneracy gate PASSED (within_frac varies across conditions) -- proceeding to 19B.")
-    # 19B: score within_frac/outside_frac as causal-targeting modifiers,
+    print("\nDegeneracy gate PASSED (within_frac varies across conditions) -- "
+          "proceeding to score the causal-targeting modifiers.")
+    # Score within_frac/outside_frac as causal-targeting modifiers,
     # apples-to-apples with vstar_alignment (same rows/sessions/exclusions).
     # Rows carry alignment_to_vstar as "modifier" but not the raw condition id,
     # so within_frac/outside_frac are substituted in condition-by-condition,
-    # mirroring build_session_features's own Part 3 row construction exactly.
+    # mirroring build_session_features's own row construction exactly.
     session_order = [p for p in SESSIONS if p in per_session]
     def _epochs_for(cond_source, cond, label_correct):
         out = []

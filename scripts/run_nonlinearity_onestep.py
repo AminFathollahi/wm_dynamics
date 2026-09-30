@@ -79,7 +79,7 @@ KRR_LANDMARKS = 500  # exact RBF kernel ridge is O(n^2) memory / O(n^3) solve --
                      # regression itself still fits on ALL pairs -- no snapshot pairs are discarded,
                      # unlike raw subsampling. GBR has no such wall (cost is roughly linear in pairs)
                      # so it always runs on the full pair set.
-GBR_N_JOBS = min(8, os.cpu_count() or 1)  # MultiOutputRegressor fits one GBR per output channel (d=8)
+GBR_N_WORKERS = min(8, os.cpu_count() or 1)  # MultiOutputRegressor fits one GBR per output channel (d=8)
                                           # independently -- parallel across processes, identical fit
                                           # to serial, purely a wall-clock speedup on multicore hardware.
 
@@ -149,7 +149,7 @@ def main():
 
             rng_gbr = np.random.default_rng(stable_seed(f"nonlinearity_gbr_{dataset}_{session}"))
             make_gbr = lambda: MultiOutputRegressor(  # noqa: E731
-                GradientBoostingRegressor(random_state=0), n_jobs=GBR_N_JOBS)
+                GradientBoostingRegressor(random_state=0), n_jobs=GBR_N_WORKERS)
             r2_cv_gbr = _cv_r2(Z_trials, make_gbr, rng_gbr)
             r2_null_gbr = _null_r2(Z_trials, make_gbr, rng_gbr, N_NULL_NONLINEAR)
 

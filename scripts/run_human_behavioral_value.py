@@ -16,9 +16,8 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from provenance import _json_safe, git_commit  # noqa: E402
-from run_human_maintenance_behaviour_link import (  # noqa: E402
-    _session_trial_arrays, run_trial_admission_census,
-)
+from run_human_maintenance_behaviour_link import run_trial_admission_census
+from corpus_sessions import _session_trial_arrays
 from corpus_sessions import data_root  # noqa: E402
 
 OUTPUT_PATH = ROOT / "results" / "human_behavioral_value.json"

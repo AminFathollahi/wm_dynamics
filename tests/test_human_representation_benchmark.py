@@ -10,6 +10,16 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import run_human_representation_benchmark as mod  # noqa: E402
+import run_state_space_estimation_admissibility as estimation  # noqa: E402
+
+
+def test_new_candidates_registered_without_mutating_estimation_candidates():
+    assert mod.RECURRENT_SWITCHING_CANDIDATE in mod.benchmark_core.REPRESENTATION_FITS
+    assert mod.NEURAL_DATA_TRANSFORMER_CANDIDATE in mod.benchmark_core.REPRESENTATION_FITS
+    assert mod.benchmark_core.REPRESENTATION_FITS is not estimation.CANDIDATES
+    assert mod.RECURRENT_SWITCHING_CANDIDATE not in estimation.CANDIDATES
+    assert mod.NEURAL_DATA_TRANSFORMER_CANDIDATE not in estimation.CANDIDATES
+    assert len(estimation.CANDIDATES) == 8
 
 
 def test_demixed_candidate_recovers_separable_categories():

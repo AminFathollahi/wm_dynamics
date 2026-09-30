@@ -14,6 +14,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import run_behavior_amplitude_rate_controls as mod  # noqa: E402
 from run_behavior_amplitude_rate_controls import _pool  # noqa: E402
+import corpus_sessions
+from corpus_sessions import _reachable_sessions
 
 
 def _session(session_id: str, r: float) -> dict:
@@ -54,13 +56,13 @@ def test_pool_with_no_matching_sessions_is_not_computed():
 def test_reachable_session_limit_stops_loading(monkeypatch, tmp_path):
     paths = [tmp_path / f"s{i}.mat" for i in range(3)]
     calls = []
-    monkeypatch.setattr(mod, "_panichello_directory", lambda root: tmp_path)
+    monkeypatch.setattr(corpus_sessions, "_panichello_directory", lambda root: tmp_path)
     monkeypatch.setattr(mod.glob, "glob", lambda pattern: [str(path) for path in paths])
     monkeypatch.setattr(
-        mod,
+        corpus_sessions,
         "loadmat",
         lambda path, simplify_cells: calls.append(path)
         or {"isCorr": np.zeros(mod.MIN_ERROR_TRIALS_FOR_REACHABILITY, dtype=bool)},
     )
-    assert mod._reachable_sessions(tmp_path, 1) == paths[:1]
+    assert _reachable_sessions(tmp_path, 1) == paths[:1]
     assert calls == [str(paths[0])]

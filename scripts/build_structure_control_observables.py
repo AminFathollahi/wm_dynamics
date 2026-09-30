@@ -29,56 +29,13 @@ sys.path.insert(0, str(ROOT / "src"))
 from provenance import canonical_json, git_commit, sha256_file  # noqa: E402
 from spike_pipeline import ANATOMICAL_REGIONS  # noqa: E402
 from statistics import bootstrap_ci  # noqa: E402
+from statistics import extract_000469_pairs, extract_001187_000673_pairs  # noqa: E402
 
 RESULTS = ROOT / "results"
 # State units: one unit along the leading FrozenPSTHTransform+PCA axis fit
 # within each outer-training fold (see units_note below for why this is not
 # comparable in absolute terms across structures/datasets).
 DELTA_GRID_STATE_UNITS = [0.5, 1.0, 2.0, 4.0]
-
-
-def _identifiable_session_field(folds: list[dict], field: str) -> float | None:
-    values = [f["state_space"][field] for f in folds if f["state_space"]["status"] == "identifiable"]
-    return float(np.mean(values)) if values else None
-
-
-def extract_000469_pairs(artifact: dict, region: str) -> list[tuple[float, float]]:
-    """(lambda, diffusion) pairs, one per session -- 000469 is one session
-    per patient, so this is also one per patient."""
-    block = artifact.get("regions", {}).get(region)
-    if block is None:
-        return []
-    pairs = []
-    for session in block["sessions"].values():
-        if session.get("status") != "complete":
-            continue
-        lam = _identifiable_session_field(session["folds"], "lambda_rate")
-        dif = _identifiable_session_field(session["folds"], "diffusion")
-        if lam is not None and dif is not None:
-            pairs.append((lam, dif))
-    return pairs
-
-
-def extract_001187_000673_pairs(artifact: dict, region: str) -> list[tuple[float, float]]:
-    """(lambda, diffusion) pairs from the content_axis_battery block
-   , one per session -- the same grain
-    scripts/build_structure_registry.py's existing lambda extraction already
-    uses for this dataset pair (sessions, not patient-averaged; that grain
-    choice predates this module and is not changed here)."""
-    battery = artifact.get("content_axis_battery", {})
-    block = battery.get("regions", {}).get(region)
-    if block is None:
-        return []
-    pairs = []
-    for session in block["sessions"].values():
-        fit = session.get("content_axis_fit", {})
-        if fit.get("status") != "complete":
-            continue
-        lam = _identifiable_session_field(fit["folds"], "lambda_rate")
-        dif = _identifiable_session_field(fit["folds"], "diffusion")
-        if lam is not None and dif is not None:
-            pairs.append((lam, dif))
-    return pairs
 
 
 def bootstrap_summary(values: list[float], rng: np.random.Generator) -> dict[str, Any]:

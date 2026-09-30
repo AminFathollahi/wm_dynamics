@@ -74,7 +74,7 @@ _session_arrays, _ridge_decode, _report_following_fraction,
 _landed_and_target_index, _landed_identity_check, _object_geometry,
 _leave_one_out_unit_directions, _watters_reachability, usable_label,
 _behaviour_observables, rate_free_session_arrays, _reachable_sessions
-(the Panichello loader) and slope_across_sessions_test is imported
+(the macaque prefrontal spatial working-memory corpus (Dryad doi:10.5061/dryad.kkwh70sct) loader) and slope_across_sessions_test is imported
 unchanged from the delivered script that already uses it. The only new
 code here is the within-session permutation engine itself and the
 per-cell wiring that hands it each cell's own trial-level arrays.
@@ -107,21 +107,20 @@ from provenance import _json_safe, git_commit  # noqa: E402
 from state_persistence import slope_across_sessions_test  # noqa: E402
 from statistics import minimum_detectable_paired_difference, permutation_pvalue, stable_seed  # noqa: E402
 
-from run_component_and_item_binding import (  # noqa: E402
-    CORRECT_REPORT_DISTANCE_THRESHOLD, MIN_TRIALS_FOR_BEHAVIOURAL_CORRELATION, _object_geometry,
-)
-from run_swap_versus_imprecision_by_item_count import _session_arrays  # noqa: E402
-from run_deviation_subspace_decomposition import (  # noqa: E402
-    WATTERS_RECOVERABILITY_K_CLASSES, _leave_one_out_unit_directions, _watters_reachability,
-)
-from run_state_content_link import MIN_CLASSES, MIN_TRIALS_PER_CLASS, usable_label  # noqa: E402
-from run_watters_state_geometry import _behaviour_observables  # noqa: E402
-from run_pre_cue_state_and_reported_item_identity import (  # noqa: E402
-    MIN_TEST_TRIALS_PER_SESSION, MIN_TRAIN_TRIALS_PER_SESSION, _landed_and_target_index,
-    _landed_identity_check, _report_following_fraction, _ridge_decode, circular_abs_diff,
-)
-from run_behavior_amplitude_rate_controls import _reachable_sessions as _panichello_reachable_sessions  # noqa: E402
-from run_rate_free_state_geometry_behavior_link import _session_arrays as rate_free_session_arrays  # noqa: E402
+from corpus_sessions import _object_geometry
+from run_watters_source_replication import CORRECT_REPORT_DISTANCE_THRESHOLD
+from corpus_sessions import MIN_TRIALS_FOR_BEHAVIOURAL_CORRELATION
+from corpus_sessions import _swap_imprecision_session_arrays as _session_arrays
+from corpus_sessions import _watters_reachability
+from info_decoding import WATTERS_RECOVERABILITY_K_CLASSES, _leave_one_out_unit_directions
+from run_state_content_link import MIN_TRIALS_PER_CLASS, usable_label
+from info_decoding import MIN_CLASSES
+from corpus_sessions import _behaviour_observables
+from statistics import MIN_TEST_TRIALS_PER_SESSION, MIN_TRAIN_TRIALS_PER_SESSION, _landed_and_target_index, _landed_identity_check, _report_following_fraction, _ridge_decode, circular_abs_diff
+from corpus_sessions import _reachable_sessions as _panichello_reachable_sessions
+from corpus_sessions import _session_arrays as rate_free_session_arrays
+from info_decoding import _blocks_for_levels, _cheap_partial_r  # noqa: E402
+from info_decoding import _circular_outcome_shift, _circular_residual_shift  # noqa: E402
 
 OUTPUT_PATH = ROOT / "results" / "within_session_permutation_control.json"
 ANALYSIS_VERSION = "2026-09-06"
@@ -176,24 +175,6 @@ BRANCH_DECISION_RULE_DECLARED_BEFORE_FITTING = (
 # Generic within-session permutation engine
 # ============================================================================
 
-def _cheap_partial_r(outcome: np.ndarray, covariate: np.ndarray, controls: list[np.ndarray]) -> float | None:
-    """Point-estimate-only partial Pearson correlation by the residual method (OLS on
-    [intercept, *controls], then Pearson on the two residual series) -- the identical formula
-    statistics.partial_correlation_permutation_test uses for its own observed statistic, without that
-    function's inner permutation loop, because this helper is called once per session on every one of
-    N_PERM_WITHIN_SESSION outer draws, where re-running a full permutation test that many times nested
-    inside another permutation test is not tractable."""
-    outcome = np.asarray(outcome, dtype=float)
-    covariate = np.asarray(covariate, dtype=float)
-    if controls:
-        design = np.column_stack([np.ones(len(outcome)), *[np.asarray(c, dtype=float) for c in controls]])
-        y_resid = outcome - design @ np.linalg.lstsq(design, outcome, rcond=None)[0]
-        x_resid = covariate - design @ np.linalg.lstsq(design, covariate, rcond=None)[0]
-    else:
-        y_resid, x_resid = outcome - outcome.mean(), covariate - covariate.mean()
-    if np.std(y_resid) == 0.0 or np.std(x_resid) == 0.0:
-        return None
-    return float(np.corrcoef(y_resid, x_resid)[0, 1])
 
 
 def _default_shuffle_block(rng: np.random.Generator, block: dict) -> dict:
@@ -201,19 +182,8 @@ def _default_shuffle_block(rng: np.random.Generator, block: dict) -> dict:
     return {**block, "outcome": block["outcome"][perm]}
 
 
-def _circular_outcome_shift(rng: np.random.Generator, block: dict) -> dict:
-    shift = int(rng.integers(1, block["n"]))
-    return {**block, "outcome": np.roll(block["outcome"], shift)}
 
 
-def _circular_residual_shift(rng: np.random.Generator, block: dict) -> dict:
-    if not block["controls"]:
-        return _circular_outcome_shift(rng, block)
-    design = np.column_stack([np.ones(block["n"]), *block["controls"]])
-    fitted = design @ np.linalg.lstsq(design, block["outcome"], rcond=None)[0]
-    residual = block["outcome"] - fitted
-    shift = int(rng.integers(1, block["n"]))
-    return {**block, "outcome": fitted + np.roll(residual, shift)}
 
 
 def _default_stat_of_session(blocks: list[dict]) -> float | None:
@@ -291,16 +261,6 @@ def _qualifying_levels_from_arrays(arrays: dict) -> list[int]:
             >= MIN_TRIALS_FOR_BEHAVIOURAL_CORRELATION]
 
 
-def _blocks_for_levels(arrays: dict, levels: list[int], outcome_key: str, controls: tuple[str, ...]) -> list[dict]:
-    blocks = []
-    for level in levels:
-        mask = arrays["item_count"] == float(level)
-        n = int(mask.sum())
-        blocks.append({
-            "n": n, "predictor": arrays["deviation"][mask], "outcome": arrays[outcome_key][mask],
-            "controls": [arrays[c][mask] for c in controls],
-        })
-    return blocks
 
 
 def _load_multi_object_corpus() -> tuple[dict[str, dict], dict]:

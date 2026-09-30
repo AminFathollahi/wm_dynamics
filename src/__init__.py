@@ -6,7 +6,7 @@ tools for testing geometry-conditioned treatment effects.
 Modules
 -------
 preprocessing  : iEEG/NWB signal processing and dataset loaders
-spike_pipeline : shared single-unit Sternberg WM pipeline (Rutishauser-lab datasets)
+spike_pipeline : shared single-unit Sternberg WM pipeline (human single-unit DANDI datasets)
 geometry       : dimensionality, subspace angles, participation ratio, CTG, RSA
 dynamics       : DMD/ensemble DMD, EDMD/Koopman, SINDy, tangling, flow divergence
 control        : controllability, LQR/DARE, minimum-energy control

@@ -23,14 +23,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from run_count_subsampling_ladder import (  # noqa: E402
-    classify_gate_degradation_branch,
-    combine_within_load_trial_weighted,
-    pool_draws_within_session,
-    resolve_unit_target,
-    run_corpus_ladder,
-    translate_floor_to_unit_count,
-)
+from run_count_subsampling_ladder import classify_gate_degradation_branch, combine_within_load_trial_weighted, resolve_unit_target, run_corpus_ladder, translate_floor_to_unit_count
+from corpus_sessions import pool_draws_within_session
 from run_rate_free_state_geometry_behavior_link import rate_free_state_deviation  # noqa: E402
 from statistics import partial_correlation_permutation_test, stable_seed  # noqa: E402
 

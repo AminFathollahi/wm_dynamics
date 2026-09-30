@@ -66,18 +66,11 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from corpus_sessions import data_root, iter_watters, watters_behaviour  # noqa: E402
 from provenance import _json_safe, checkpoint_safe, git_commit, restore_checkpoint  # noqa: E402
-from run_component_and_item_binding import (  # noqa: E402
-    FAMILY_STAT_KEYS,
-    _behaviour_observables,
-    _close,
-    _object_geometry,
-    _predicts,
-    analyse_session,
-    build_disclosures,
-    build_pooled_table,
-    reproduction_gate,
-)
-from run_state_behavior_link import trial_amplitude_covariates  # noqa: E402
+from run_component_and_item_binding import _close, analyse_session, build_pooled_table, reproduction_gate
+from corpus_sessions import _object_geometry
+from statistics import FAMILY_STAT_KEYS, _predicts, build_disclosures
+from corpus_sessions import _behaviour_observables
+from state_persistence import trial_amplitude_covariates
 from scipy.stats import norm  # noqa: E402
 from statistics import (  # noqa: E402
     Z_80_POWER,
@@ -89,7 +82,8 @@ from statistics import (  # noqa: E402
     permutation_pvalue,
     stable_seed,
 )
-from run_watters_state_geometry import MIN_TRIALS_FOR_BEHAVIOURAL_CORRELATION  # noqa: E402
+from corpus_sessions import MIN_TRIALS_FOR_BEHAVIOURAL_CORRELATION
+from corpus_sessions import _swap_imprecision_session_arrays  # noqa: E402
 
 Z_95 = float(norm.ppf(0.975))
 
@@ -118,7 +112,7 @@ def _real_minus_control(real: dict, bias: dict) -> dict:
 
 SCRIPT_STEM = Path(__file__).stem
 OUTPUT_PATH = ROOT / "results" / "swap_versus_imprecision_by_item_count.json"
-CHECKPOINT_DIR = ROOT / "results" / ".checkpoints" / SCRIPT_STEM
+CHECKPOINT_DIR = ROOT / "results" / ".checkpoints" / f"{SCRIPT_STEM}_v2"
 CHECKPOINT_PATH = CHECKPOINT_DIR / "checkpoint.json"
 DELIVERED_PATH = ROOT / "results" / "component_and_item_binding.json"
 ANALYSIS_VERSION = "2026-08-21"
@@ -246,24 +240,6 @@ def _flush(output: dict) -> None:
 # already computes.
 # ============================================================================
 
-def _session_arrays(session: dict, behaviour) -> dict | None:
-    observables, _excluded, usable = _behaviour_observables(session["counts"], session)
-    if int(usable.sum()) < MIN_TRIALS_FOR_BEHAVIOURAL_CORRELATION:
-        return None
-    covariates = trial_amplitude_covariates(session["counts"])
-    if covariates["status"] != "computed":
-        return None
-    amplitude_full = np.asarray(covariates["leading_component_score_gain"], dtype=float)
-    geometry = _object_geometry(behaviour, session)
-    return {
-        "item_count": observables["item_count"],
-        "deviation": observables["state_deviation"],
-        "amplitude": amplitude_full[usable],
-        "spike_count": observables["spike_count"],
-        "trial_index": observables["trial_index"],
-        "swap_primary": geometry["swap_primary"][usable].astype(float),
-        "imprecision": geometry["imprecision"][usable],
-    }
 
 
 # ============================================================================
@@ -844,8 +820,8 @@ def main() -> None:
 
     output: dict = {
         "version": ANALYSIS_VERSION,
-        "corpus": "Multi-object spatial working memory in macaque frontal cortex, DANDI 000620 (Watters, "
-                  "Gabel, Tenenbaum and Jazayeri; bioRxiv preprint posted 2026-01-27, DOI "
+        "corpus": "Multi-object spatial working memory in macaque frontal cortex, DANDI 000620 ("
+                  "bioRxiv preprint posted 2026-01-27, DOI "
                   "10.64898/2026.01.27.702062, unreviewed).",
         "sign_convention": "Every coefficient here is against the continuous graded report ERROR, or "
                             "against the binary swap indicator (1 = swap). No sign flip is applied.",
@@ -946,7 +922,7 @@ def main() -> None:
     _log("building per-session raw trial arrays for the new per-level tests")
     rows_arrays: dict[str, dict] = {}
     for session in loaded:
-        arrays = _session_arrays(session, behaviour)
+        arrays = _swap_imprecision_session_arrays(session, behaviour)
         if arrays is not None:
             rows_arrays[session["session"]] = arrays
 

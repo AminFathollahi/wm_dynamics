@@ -27,7 +27,8 @@ from stimulation_response_estimator import (  # noqa: E402
     rate_free_state_deviation,
     window_treatment_effect,
 )
-from run_stimulation_response_gate_and_panel import _pool_arm, _specificity_check  # noqa: E402
+from stimulation_response_estimator import _pool_arm
+from stimulation_events import _specificity_check
 
 
 # ── same-trial reference leakage ────────────────────────────────────────────
@@ -80,7 +81,7 @@ def test_pre_and_post_window_bins_never_overlap_human_and_macaque_geometry():
     before-stimulation-begins leakage rule, checked structurally rather than
     trusted."""
     from run_ram_openloop_pipeline import PRE_S as HUMAN_PRE_S, POST_S as HUMAN_POST_S, BIN_S as HUMAN_BIN_S
-    from run_macaque_pfc_microstimulation_pipeline import PRE_S as MACAQUE_PRE_S, BIN_S as MACAQUE_BIN_S, N_BINS as MACAQUE_N_BINS
+    from spike_pipeline import PRE_S as MACAQUE_PRE_S, BIN_S as MACAQUE_BIN_S, N_BINS as MACAQUE_N_BINS
 
     human_pre_bins = int(round(HUMAN_PRE_S / HUMAN_BIN_S))
     human_n_bins = int(round((HUMAN_PRE_S + HUMAN_POST_S) / HUMAN_BIN_S))

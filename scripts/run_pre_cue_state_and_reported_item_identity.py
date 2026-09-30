@@ -79,18 +79,17 @@ from corpus_sessions import (  # noqa: E402
     WATTERS_DELAY_WINDOW_S, WATTERS_RAW_BIN_MS, data_root, iter_watters, watters_behaviour,
 )
 from provenance import _json_safe, checkpoint_safe, git_commit, restore_checkpoint  # noqa: E402
-from run_component_and_item_binding import (  # noqa: E402
-    CORRECT_REPORT_DISTANCE_THRESHOLD, _object_geometry, reproduction_gate,
-)
-from run_deviation_subspace_decomposition import (  # noqa: E402
-    WATTERS_RECOVERABILITY_K_CLASSES, WATTERS_REGRESSION_DIM, _leave_one_out_unit_directions,
-    _orthonormal_basis, _watters_reachability, cv_regression_subspace,
-)
-from run_state_content_link import MIN_CLASSES, MIN_TRIALS_PER_CLASS, usable_label  # noqa: E402
-from run_watters_state_geometry import (  # noqa: E402
-    MIN_TRIALS_FOR_BEHAVIOURAL_CORRELATION, PRIMARY_QUALITY_TIER, _behaviour_observables,
-)
+from run_component_and_item_binding import reproduction_gate
+from corpus_sessions import _object_geometry
+from run_watters_source_replication import CORRECT_REPORT_DISTANCE_THRESHOLD
+from corpus_sessions import _watters_reachability
+from info_decoding import WATTERS_RECOVERABILITY_K_CLASSES, WATTERS_REGRESSION_DIM, _leave_one_out_unit_directions, cv_regression_subspace
+from subspace_identity import _orthonormal_basis
+from run_state_content_link import MIN_TRIALS_PER_CLASS, usable_label
+from info_decoding import MIN_CLASSES
+from corpus_sessions import MIN_TRIALS_FOR_BEHAVIOURAL_CORRELATION, PRIMARY_QUALITY_TIER, _behaviour_observables
 from statistics import fdr_bh, minimum_detectable_paired_difference, paired_sign_flip_test, stable_seed  # noqa: E402
+from statistics import MIN_TEST_TRIALS_PER_SESSION, MIN_TRAIN_TRIALS_PER_SESSION, circular_abs_diff, _landed_and_target_index, _landed_identity_check, _report_following_fraction, RIDGE_ALPHA_GRID, N_FOLDS, _ridge_decode  # noqa: E402
 
 OUTPUT_PATH = ROOT / "results" / "pre_cue_state_and_reported_item_identity.json"
 CHECKPOINT_PATH = ROOT / "results" / ".checkpoints" / "pre_cue_state_and_reported_item_identity_checkpoint.json"
@@ -101,10 +100,6 @@ BIN_MS = 100.0
 # Constants declared before any fit runs.
 # ----------------------------------------------------------------------------------------------------
 
-N_FOLDS = 5
-RIDGE_ALPHA_GRID = tuple(float(v) for v in np.logspace(-2, 6, 9))
-MIN_TRAIN_TRIALS_PER_SESSION = 30   # non-swap, item count >= 2 -- enough rows for a 5-fold ridge fit
-MIN_TEST_TRIALS_PER_SESSION = 8     # held-out item-count-3 swap trials -- a session's own fraction
 MIN_POOLED_TEST_TRIALS = 200        # across every gate-cleared session, before the report-following test is read at all
 ANGULAR_EQUIDISTANCE_TOLERANCE_RAD = float(np.deg2rad(15.0))
 N_SHUFFLE_DRAWS = 1000
@@ -203,9 +198,6 @@ DECISION_RULE_SWAP_DESTINATION_TASK_GEOMETRY_DECLARED_BEFORE_FITTING = (
 )
 
 
-def circular_abs_diff(a: np.ndarray, b: np.ndarray) -> np.ndarray:
-    """Wrapped absolute angular difference in [0, pi] between two angle arrays (radians)."""
-    return np.abs(np.angle(np.exp(1j * (np.asarray(a) - np.asarray(b)))))
 
 
 # ----------------------------------------------------------------------------------------------------
@@ -251,38 +243,8 @@ def measure_pre_cue_window_timing_premise(loaded_sessions: list[dict], behaviour
 # function's own swap_primary output before its landed index is used for anything.
 # ----------------------------------------------------------------------------------------------------
 
-def _landed_and_target_index(behaviour, session: dict) -> dict:
-    rows = behaviour.loc[(session["animal"], session["session_date"])]
-    trial_rows = rows.loc[session["trial_num"].tolist()]
-    object_x = trial_rows[[f"object_{i}_x" for i in range(3)]].to_numpy(dtype=float)
-    object_y = trial_rows[[f"object_{i}_y" for i in range(3)]].to_numpy(dtype=float)
-    object_theta = trial_rows[[f"object_{i}_theta" for i in range(3)]].to_numpy(dtype=float)
-    response_x = trial_rows["response_x"].to_numpy(dtype=float)
-    response_y = trial_rows["response_y"].to_numpy(dtype=float)
-    target = trial_rows["target_object_index"].to_numpy(dtype=int)
-    n = len(target)
-
-    distances = np.hypot(object_x - response_x[:, None], object_y - response_y[:, None])
-    ok = ~np.all(np.isnan(distances), axis=1)
-    landed = np.full(n, -1, dtype=int)
-    landed[ok] = np.nanargmin(distances[ok], axis=1)
-
-    return {"landed": landed, "target": target, "object_theta": object_theta, "ok": ok}
 
 
-def _landed_identity_check(behaviour, session: dict, geometry: dict, landed_info: dict) -> dict:
-    recomputed_swap = landed_info["ok"] & (landed_info["landed"] != landed_info["target"])
-    identical = bool(np.array_equal(recomputed_swap, geometry["swap_primary"]))
-    n = len(landed_info["target"])
-    target_theta = landed_info["object_theta"][np.arange(n), np.clip(landed_info["target"], 0, 2)]
-    cued_theta = np.asarray(session["cued_theta"], dtype=float)
-    finite = np.isfinite(target_theta) & np.isfinite(cued_theta)
-    cued_theta_diff = float(np.max(circular_abs_diff(target_theta[finite], cued_theta[finite]))) if finite.any() \
-        else None
-    return {
-        "swap_primary_matches_object_geometry": identical,
-        "cued_theta_matches_target_object_theta_max_abs_diff": cued_theta_diff,
-    }
 
 
 # ----------------------------------------------------------------------------------------------------
@@ -328,34 +290,8 @@ def _subspace_decomposition_identity_check(u: np.ndarray, target_2d: np.ndarray,
 # Ridge decoder
 # ----------------------------------------------------------------------------------------------------
 
-def _ridge_decode(x_train: np.ndarray, y_train: np.ndarray, x_test: np.ndarray, fold_seed: int) -> dict:
-    from sklearn.linear_model import RidgeCV
-    from sklearn.model_selection import KFold
-
-    if x_train.shape[0] < N_FOLDS or x_test.shape[0] < 1:
-        return {"status": "not_computable"}
-    cv = KFold(n_splits=N_FOLDS, shuffle=True, random_state=fold_seed)
-    model = RidgeCV(alphas=RIDGE_ALPHA_GRID, cv=cv)
-    model.fit(x_train, y_train)
-    y_pred_test = model.predict(x_test)
-    y_pred_train = model.predict(x_train)
-    decoded_theta_test = np.arctan2(y_pred_test[:, 1], y_pred_test[:, 0])
-    bias_position = y_pred_train.mean(axis=0)
-    bias_theta = float(np.arctan2(bias_position[1], bias_position[0]))
-    return {
-        "status": "computed", "decoded_theta_test": decoded_theta_test, "bias_theta": bias_theta,
-        "alpha_selected": float(model.alpha_), "n_train": int(x_train.shape[0]), "n_test": int(x_test.shape[0]),
-    }
 
 
-def _report_following_fraction(decoded_theta: np.ndarray, reported_theta: np.ndarray,
-                                other_theta: np.ndarray) -> dict:
-    d_reported = circular_abs_diff(decoded_theta, reported_theta)
-    d_other = circular_abs_diff(decoded_theta, other_theta)
-    closer_to_reported = d_reported < d_other
-    n_ties = int(np.sum(d_reported == d_other))
-    return {"fraction": float(np.mean(closer_to_reported)), "n_trials": int(len(decoded_theta)),
-            "n_ties": n_ties, "closer_to_reported": closer_to_reported}
 
 
 def _shuffled_report_null(decoded_theta: np.ndarray, reported_theta: np.ndarray, other_theta: np.ndarray,
@@ -811,10 +747,10 @@ def _fit(key: str, compute) -> dict:
     if entry is not None:
         return entry["value"]
     value = compute()
-    _COMPLETED_FITS[key] = {"complete": True, "value": checkpoint_safe(value)}
+    _COMPLETED_FITS[key] = {"complete": True, "value": value}
     CHECKPOINT_PATH.parent.mkdir(parents=True, exist_ok=True)
     scratch = CHECKPOINT_PATH.with_suffix(".partial")
-    scratch.write_text(json.dumps(_COMPLETED_FITS, allow_nan=False))
+    scratch.write_text(json.dumps(checkpoint_safe(_COMPLETED_FITS), allow_nan=False))
     os.replace(scratch, CHECKPOINT_PATH)
     return value
 

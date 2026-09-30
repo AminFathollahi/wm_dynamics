@@ -1,15 +1,14 @@
 """microcircuit_graph.py -- functional connectivity and graph-organisation
 metrics on a population of simultaneously recorded units, with a
-degree-preserving (Maslov & Sneppen 2002) null for every metric.
+degree-preserving rewiring null for every metric.
 
-Connectivity: Pearson correlation, the spike-time tiling coefficient (Cutts
-& Eglen 2014; rate-insensitive, via elephant's reference implementation),
-and a shrinkage-regularised precision (inverse covariance) matrix (Ledoit &
-Wolf 2004).
+Connectivity: Pearson correlation, the spike-time tiling coefficient
+(rate-insensitive, via elephant's reference implementation),
+and a shrinkage-regularised precision (inverse covariance) matrix.
 
-Graph metrics use bctpy (Rubinov & Sporns 2010) throughout rather than
+Graph metrics use bctpy throughout rather than
 reimplementing standard algorithms: weight entropy, Louvain modularity,
-small-worldness sigma (Humphries & Gurney 2008), degree assortativity, mean
+small-worldness sigma, degree assortativity, mean
 clustering, characteristic path length, communicability, mean participation
 coefficient, and the rich-club coefficient curve.
 """
@@ -168,7 +167,7 @@ def null_percentile(observed: float | None, null_values: list) -> float | None:
 
 
 def degree_preserving_null_battery(W: NDArray, rng: np.random.Generator, n_draws: int = N_NULL_DRAWS) -> dict:
-    """Maslov & Sneppen 2002 degree-preserving rewiring, n_draws independent graphs.
+    """Degree-preserving rewiring null, n_draws independent graphs.
 
     Rewires the already-sparsified graph (see `sparsify`) -- rewiring the
     dense input is what makes this prohibitively slow.

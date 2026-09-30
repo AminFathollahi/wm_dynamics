@@ -16,18 +16,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 
-from run_stimulation_timing_and_parameter_structure import (  # noqa: E402
-    MIN_TRIALS_PER_ARM_PER_SUBJECT,
-    _item_attributability_neighbor_coverage,
-    _item_attributability_session,
-    build_trains_closedloop,
-    build_trains_openloop,
-    fit_subject_interaction,
-    group_words_by_list,
-    match_train_owner,
-    overlaps,
-    process_closedloop_session,
-)
+from run_stimulation_timing_and_parameter_structure import MIN_TRIALS_PER_ARM_PER_SUBJECT, _item_attributability_neighbor_coverage, _item_attributability_session, build_trains_closedloop, build_trains_openloop, fit_subject_interaction, group_words_by_list, process_closedloop_session
+from stimulation_events import match_train_owner, overlaps
 
 
 def make_row(trial_type: str, onset: float, duration: float = 0.0, **kw) -> dict:

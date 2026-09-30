@@ -96,17 +96,14 @@ from statistics import (  # noqa: E402
     Z_80_POWER, minimum_detectable_paired_difference, partial_correlation_permutation_test, stable_seed,
 )
 
-from run_behavior_amplitude_rate_controls import _reachable_sessions as _panichello_reachable_sessions  # noqa: E402
-from run_rate_free_state_geometry_behavior_link import (  # noqa: E402
-    MIN_ERROR_TRIALS_FOR_REACHABILITY as RATE_FREE_MIN_ERROR_TRIALS,
-    _analyze_session as rate_free_analyze_session,
-    _session_arrays as rate_free_session_arrays,
-    rate_free_state_deviation,  # noqa: F401  (imported unchanged; not called directly here, gate proves reuse)
-)
-from run_state_behavior_link import (  # noqa: E402
-    MIN_ERROR_TRIALS_FOR_REACHABILITY as GAIN_MIN_ERROR_TRIALS,
-    _counts_from_spikes, cheap_first_look,
-)
+from corpus_sessions import _reachable_sessions as _panichello_reachable_sessions
+from run_rate_free_state_geometry_behavior_link import _analyze_session as rate_free_analyze_session
+from corpus_sessions import _session_arrays as rate_free_session_arrays
+from statistics import MIN_ERROR_TRIALS_FOR_REACHABILITY as RATE_FREE_MIN_ERROR_TRIALS
+from stimulation_response_estimator import rate_free_state_deviation
+from state_persistence import cheap_first_look
+from statistics import MIN_ERROR_TRIALS_FOR_REACHABILITY as GAIN_MIN_ERROR_TRIALS
+from spike_pipeline import _counts_from_spikes
 from run_swap_versus_imprecision_by_item_count import _bias_only_between_session  # noqa: E402,F401 (source quote below)
 
 OUTPUT_PATH = ROOT / "results" / "behaviour_association_bias_only_sweep.json"
@@ -583,7 +580,7 @@ def claim_leading_component_gain(root: Path, t0: float) -> dict:
             continue
         # trial_amplitude_covariates is re-derived inside cheap_first_look; recover the raw per-trial gain
         # array too (needed for the bias-only session-mean collapse) via the identical unchanged function.
-        from run_state_behavior_link import trial_amplitude_covariates
+        from state_persistence import trial_amplitude_covariates
         covariates = trial_amplitude_covariates(counts_all)
         loaded.append({"session": session_id, "r": cfl["leading_component_score_gain"]["r"]})
         rows_arrays[session_id] = {
@@ -873,7 +870,7 @@ def claim_dissociation_cross_preparation_test(claims: dict) -> dict:
         "why_at_risk": "the macaque lPFC cells here are the SAME statistics as claims "
                        "rate_free_state_geometry_behavior_link and "
                        "state_behavior_link_leading_component_score_gain (reused, not recomputed); the "
-                       "mouse ALM (Inagaki ALM-preparation) cells at n=20 sessions (floor 30) are a "
+                       "mouse ALM (anterior lateral motor cortex preparation) cells at n=20 sessions (floor 30) are a "
                        "genuinely different corpus and observable, checked here for significance -- neither "
                        "mouse cell is a significant positive, so neither needs a bias-only control under "
                        "this sweep's own voiding rule.",
@@ -1234,8 +1231,8 @@ def main() -> None:
             "accuracy correlation, a different statistic from that file's own null headline persistence "
             "contrast), determines that results/behavior_geometry_link.json carries no pooled significance "
             "test at all (nothing to void), and enumerates every other results/*.json artifact into an "
-            "at-risk census. Both macaque claims tested here use the same 11 sessions of Panichello et al. "
-            "2024 macaque lPFC recordings reaching the pre-declared reachability floor (>=60 error trials).",
+            "at-risk census. Both macaque claims tested here use the same 11 sessions of the macaque lPFC "
+            "recordings (doi 10.1038/s41586-024-08139-9) reaching the pre-declared reachability floor (>=60 error trials).",
         )[0],
         "decision_rule_declared_before_fitting": DECISION_RULE_DECLARED_BEFORE_FITTING,
         "bias_only_control_source_and_generalisation": BIAS_ONLY_SOURCE_QUOTE_VERBATIM,
@@ -1350,7 +1347,7 @@ def main() -> None:
     tested_branches = [b for b in all_branches if b in resolved_branches]
     n_voided = sum(1 for b in all_branches if b in voided_branches)
 
-    # ---- at-risk census completeness note (coordinator item 3) ----------------------------------
+    # ---- at-risk census completeness note ----------------------------------
     census_counts = output["at_risk_census"]["counts"]
     priority_at_risk_files = [
         f for f in ("rate_free_state_geometry_behavior_link.json", "state_behavior_link.json",
@@ -1388,7 +1385,7 @@ def main() -> None:
         "undetermined_from_artifact_contents_never_examined": census_counts["undetermined_from_artifact_contents"],
         "statement": (
             f"Of {census_counts['at_risk']} file-level at_risk artifacts, {len(priority_at_risk_files)} are "
-            "named in this sweep's own 10-item priority order. After this round, 5 carry a completed "
+            "named in this sweep's own 10-item priority order. Of these, 5 carry a completed "
             "reproduction-gate-plus-bias-only-control verdict, 1 carries a verdict covering only its "
             "reused/identical cell (its own novel statistics untested), and 3 carry ONLY the delivered "
             "artifact's own numbers, cited but not independently reproduced or bias-only-controlled, "
@@ -1396,7 +1393,7 @@ def main() -> None:
             f"lag-alignment partial, a subspace eigendecomposition). The remaining "
             f"{n_other_at_risk_never_examined} at_risk artifacts outside this sweep's priority order, and "
             f"all {census_counts['undetermined_from_artifact_contents']} "
-            "undetermined_from_artifact_contents artifacts, were never examined by any round of this sweep "
+            "undetermined_from_artifact_contents artifacts, were never examined by this sweep "
             "and remain completely untested. This sweep is a targeted test of a pre-declared priority list, "
             "not a completed audit of every at-risk claim in this project."
         ),
@@ -1411,7 +1408,7 @@ def main() -> None:
         "n_at_risk_cells_tested_against_the_bias_only_control": len(tested_branches),
         "n_voided": n_voided,
         "headline_surviving_half_branch": headline_branch,
-        # --- coordinator-authorised amendment: the two fields below replace this sweep's original
+        # --- amendment: the two fields below replace this sweep's original
         # headline_dissociation_still_holds (bool) and headline_verdict_statement, which asserted a
         # conclusion ("dissociation still holds") that the branch beside them (inconclusive_below_
         # detection_floor) explicitly withheld. No computed number, decision rule, or claim-level

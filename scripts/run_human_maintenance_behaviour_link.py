@@ -86,17 +86,19 @@ from corpus_sessions import (  # noqa: E402
     region_filtered_units, resolve_unit_regions,
 )
 from provenance import _json_safe  # noqa: E402
-from run_behavior_amplitude_rate_controls import _reachable_sessions  # noqa: E402
-from run_dissociation_cross_preparation_test import MIN_TRIALS_WITH_DEFINED_DIRECTION  # noqa: E402
-from run_human_drift_spine_001187_000673 import canonical_sessions, _trial_group  # noqa: E402
-from run_rate_free_state_geometry_behavior_link import rate_free_state_deviation  # noqa: E402
-from run_state_behavior_link import _counts_from_spikes  # noqa: E402
-from run_state_content_link import delay_counts  # noqa: E402
+from corpus_sessions import _reachable_sessions
+from statistics import MIN_TRIALS_WITH_DEFINED_DIRECTION
+from run_human_drift_spine_001187_000673 import canonical_sessions
+from corpus_sessions import _trial_group
+from stimulation_response_estimator import rate_free_state_deviation
+from spike_pipeline import _counts_from_spikes
+from spike_pipeline import delay_counts
 from state_persistence import slope_across_sessions_test  # noqa: E402
 from statistics import (  # noqa: E402
     Z_80_POWER, forest_meta, minimum_detectable_paired_difference, partial_correlation_permutation_test,
     power_to_detect_effect, stable_seed,
 )
+from corpus_sessions import _session_trial_arrays  # noqa: E402
 
 OUTPUT_PATH = ROOT / "results" / "human_maintenance_behaviour_link.json"
 CHECKPOINT_DIR = ROOT / "results" / ".checkpoints" / "run_human_maintenance_behaviour_link"
@@ -383,31 +385,6 @@ def run_trial_admission_census(root: Path) -> tuple[dict, dict[str, list[dict]]]
 # Per-session trial arrays (deviation, its session-training-trial-mean control, and covariates)
 # =======================================================================================================
 
-def _session_trial_arrays(entry: dict) -> dict:
-    counts = delay_counts(entry["spike_lists"], entry["delay_onset"], entry["delay_window_s"], bin_ms=BIN_MS)
-    activity_by_unit = counts.sum(axis=2)
-    deviation = rate_free_state_deviation(activity_by_unit)
-    spike_count = activity_by_unit.sum(axis=1)
-    trial_index = np.arange(activity_by_unit.shape[0], dtype=float)
-    finite = np.isfinite(deviation)
-    n_finite = int(finite.sum())
-    if n_finite < MIN_TRIALS_WITH_DEFINED_DIRECTION:
-        return {"status": "too_few_trials_with_defined_direction", "n_trials_total": int(activity_by_unit.shape[0]),
-                "n_trials_with_defined_direction": n_finite}
-    dev = deviation[finite]
-    n = dev.shape[0]
-    total_dev = float(dev.sum())
-    # Session training-trial mean: the leave-one-out mean of the DEVIATION VALUES themselves (not the
-    # unit-vectors rate_free_state_deviation's own reference averages) -- a per-trial constant carrying
-    # only this session's between-session offset, with no trial-to-trial information at all. The mandatory
-    # placebo control below asks whether this constant alone reproduces any significant result.
-    control_dev = (total_dev - dev) / (n - 1) if n > 1 else np.full(n, np.nan)
-    return {
-        "status": "computed", "patient": entry["patient"], "session": entry["session"], "dataset": entry["dataset"],
-        "is_correct": entry["is_correct"][finite].astype(float), "deviation": dev, "control_deviation": control_dev,
-        "spike_count": spike_count[finite], "trial_index": trial_index[finite], "load_level": entry["load_level"][finite],
-        "n_trials_total": int(activity_by_unit.shape[0]), "n_trials_with_defined_direction": n_finite,
-    }
 
 
 DS006848_PRESENTATION_MODE_CODES = {"Simultaneous": 0, "Fast": 1, "Fast+delay": 2, "Slow": 3}

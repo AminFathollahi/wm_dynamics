@@ -31,7 +31,6 @@ from geometry import time_resolved_content_decoding
 from statistics import stable_seed, paired_sign_flip_test, minimum_detectable_paired_difference
 from provenance import _json_safe
 
-DATA_DIR = dataset_path("dandi_000469")
 RESULTS = ROOT / "results"
 
 BIN_MS = 100
@@ -84,7 +83,7 @@ def compute_epoch_masks(times_fix: np.ndarray, times_resp: np.ndarray, landmarks
 
 
 def process_subject(subj: str) -> dict | None:
-    nwb_path = DATA_DIR / subj / f"{subj}_ses-2_ecephys+image.nwb"
+    nwb_path = dataset_path("dandi_000469") / subj / f"{subj}_ses-2_ecephys+image.nwb"
     if not nwb_path.exists():
         return None
     with h5py.File(str(nwb_path), "r") as f:

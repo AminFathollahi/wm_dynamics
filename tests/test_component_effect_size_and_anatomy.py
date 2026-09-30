@@ -20,11 +20,9 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from run_component_effect_size_and_anatomy import (  # noqa: E402
-    _effect_size_cv_branch, _contiguous_folds, _cv_discrimination_binary, _cv_discrimination_continuous,
-    _decile_contrast, _localisation_branch, _matched_contrast_reachability, _pairwise_cell_reachability,
-    _pairwise_comparison_note, _pairwise_predictor_tests, _spike_count_matched_contrast, _trial_count_weighted,
-)
+from run_component_effect_size_and_anatomy import _effect_size_cv_branch, _cv_discrimination_binary, _cv_discrimination_continuous, _decile_contrast, _localisation_branch, _matched_contrast_reachability, _pairwise_cell_reachability, _pairwise_comparison_note, _pairwise_predictor_tests, _spike_count_matched_contrast
+from statistics import _trial_count_weighted
+from subspace_identity import _contiguous_folds
 
 
 # --------------------------------------------------------------------------------------------------------

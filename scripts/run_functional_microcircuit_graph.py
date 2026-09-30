@@ -18,15 +18,14 @@ necessary to keep total runtime in the tens of minutes rather than hours
 Pearson and precision
 (shrinkage-regularised inverse covariance) connectivity are computed as
 point-estimate cross-checks against STTC (no null), not run through the
-full battery, since STTC is rate-insensitive and is the route this project's
-standing rule specifically calls for. Naive Maslov-Sneppen rewiring on a near-complete
+full battery, since STTC is rate-insensitive and is the preferred route. Naive Maslov-Sneppen rewiring on a near-complete
 correlation graph was measured directly at ~150x slower than on the same
 graph thresholded to a fixed edge density (src/microcircuit_graph.py's
 `sparsify` docstring), which is why every graph here is sparsified to its
 top 20% of edges by |weight| before any topological metric is computed.
 
 Corpora: DANDI 000469, the canonical 001187/000673 dedup, and DANDI 000574
-(Boran) via src/corpus_sessions.py -- see that module's docstring for why
+(DANDI 000574) via src/corpus_sessions.py -- see that module's docstring for why
 DANDI 000004 is not yet included.
 """
 

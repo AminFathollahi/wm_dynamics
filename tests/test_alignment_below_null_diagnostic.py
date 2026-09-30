@@ -31,6 +31,8 @@ import run_alignment_below_null_diagnostic as diagnostic  # noqa: E402
 import run_rank_free_component_identity as rank_free  # noqa: E402
 from geometry import principal_angles, subspace_overlap  # noqa: E402
 from subspace_identity import block_folds, class_basis, permutation_alignment, regression_basis  # noqa: E402
+from info_decoding import _rotation
+from info_decoding import _prepare_trials
 
 DATA_ROOT_AVAILABLE = bool(os.environ.get("WM_DYNAMICS_DATA_ROOT")) and Path(
     os.environ.get("WM_DYNAMICS_DATA_ROOT", "")
@@ -84,7 +86,7 @@ def test_prepare_trials_matches_delivered_cell_filtering():
     target = rng.normal(size=30)
     target[7] = np.inf
 
-    prepared = diagnostic._prepare_trials(activity, target)
+    prepared = _prepare_trials(activity, target)
     delivered = rank_free._cell(activity, target, "continuous", 50, "prepare-check")
 
     assert prepared is not None
@@ -93,7 +95,7 @@ def test_prepare_trials_matches_delivered_cell_filtering():
 
 
 def test_prepare_trials_returns_none_below_trial_floor():
-    assert diagnostic._prepare_trials(np.ones((3, 4)), np.arange(3, dtype=float)) is None
+    assert _prepare_trials(np.ones((3, 4)), np.arange(3, dtype=float)) is None
 
 
 # ---------------------------------------------------------------------------------------------------
@@ -159,7 +161,7 @@ def test_interleaved_folds_leave_a_stationary_relation_essentially_unchanged():
 
 def test_rotation_detects_a_subspace_that_actually_rotates():
     directions, target = _rotating_relation_directions(np.random.default_rng(5))
-    rotation = diagnostic._rotation(directions, target, "continuous")
+    rotation = _rotation(directions, target, "continuous")
     assert rotation["status"] == "computed"
     assert rotation["subspace_overlap"] < 0.5
 
@@ -171,7 +173,7 @@ def test_rotation_reports_near_full_overlap_for_a_stable_subspace():
     activity = rng.normal(0.0, 1.0, size=(n, n_units))
     activity[:, 0] += 5.0 * target
     directions = activity / np.linalg.norm(activity, axis=1, keepdims=True)
-    rotation = diagnostic._rotation(directions, target, "continuous")
+    rotation = _rotation(directions, target, "continuous")
     assert rotation["status"] == "computed"
     assert rotation["subspace_overlap"] > 0.8
 
@@ -182,7 +184,7 @@ def test_rotation_matches_geometry_module_directly():
     folds = block_folds(n, 2)
     early = regression_basis(directions[folds == 0], target[folds == 0])
     late = regression_basis(directions[folds == 1], target[folds == 1])
-    rotation = diagnostic._rotation(directions, target, "continuous")
+    rotation = _rotation(directions, target, "continuous")
     assert rotation["subspace_overlap"] == pytest.approx(subspace_overlap(early, late))
     np.testing.assert_allclose(rotation["principal_angles_radians"], principal_angles(early, late))
 

@@ -59,7 +59,7 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from project_config import dataset_path  # noqa: E402
+from project_config import dataset_path
 from spike_pipeline import (  # noqa: E402
     load_spike_times, build_psth, unit_mean_firing_rates, low_rate_unit_mask,
     resolve_unit_regions, filter_units_by_region, FrozenPSTHTransform,
@@ -77,11 +77,11 @@ from state_persistence import slope_across_sessions_test  # noqa: E402
 from provenance import _json_safe, git_commit  # noqa: E402
 from subject_independence import resolve_group, count_independent_groups  # noqa: E402
 from io_utils import locked_json_update  # noqa: E402
-from run_count_subsampling_ladder import pool_draws_within_session  # noqa: E402
+from corpus_sessions import pool_draws_within_session
+from statistics import _trial_population_spike_count  # noqa: E402
 
 RESULTS = ROOT / "results"
 CHECKPOINT_DIR = RESULTS / ".checkpoints" / "run_region_resolved_rate_stability_behaviour"
-CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
 
 CTG_STEP = 3
 CTG_N_SPLITS = 5
@@ -214,12 +214,6 @@ CORPUS_SPECS = {
 }
 
 
-def _trial_population_spike_count(spike_lists: list, onsets: np.ndarray, window_s: float) -> np.ndarray:
-    counts = np.zeros(len(onsets))
-    for spk in spike_lists:
-        for i, t0 in enumerate(onsets):
-            counts[i] += np.sum((spk >= t0) & (spk < t0 + window_s))
-    return counts
 
 
 def _fit_ctg_offdiag(psth_z: np.ndarray, condition: np.ndarray, low: int, high: int,
@@ -637,6 +631,7 @@ def _write(artifact: dict) -> None:
 
 
 def main():
+    CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
     build_artifact()
 
 

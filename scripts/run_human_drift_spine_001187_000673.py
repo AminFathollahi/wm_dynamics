@@ -9,14 +9,13 @@ reuses). Same estimators (src/drift_dynamics.py), same firing-rate/accuracy
 QC and PSTH construction (src/spike_pipeline.py).
 
 Two things make this dataset pair structurally different from 000469 and
-Miller, both handled explicitly below rather than forced into the sibling
+ECoG n-back corpus, both handled explicitly below rather than forced into the sibling
 scripts' shape:
 
 1. Identity. 001187 (46 recordings) and 000673 (44 recordings) are release
    views of the SAME patient-sessions for 37 verified overlaps (31 patients,
-   corrected 2026-08-03 from a prior 19/16 undercount caused by grouping on
-   the raw identifier string instead of patient+session -- see
-   provenance/dataset_overlap_report.json and results/patient_identity_audit.json),
+   identified by grouping on patient+session rather than the raw
+   identifier string),
    not independent cohorts (provenance/canonical_recording_registry.json and
    provenance/canonical_primary_records.json, built by
    scripts/audit_dataset_identity.py -- consumed here, not rebuilt). The
@@ -43,8 +42,8 @@ recordings that have spike potentials removed and is downsampled to 400Hz").
 No further author-specified referencing/filtering guidance exists beyond
 that, so the literature-standard substitute already used identically
 elsewhere in this codebase applies (common-average reference, 60 Hz US
-line-noise notch -- Cedars-Sinai is a US site -- and Crone et al. 1998 /
-Ray & Maunsell 2011 Hilbert-envelope high-gamma power), matching
+line-noise notch -- Cedars-Sinai is a US site -- and the standard
+Hilbert-envelope high-gamma power method), matching
 scripts/run_miller_drift_spine.py's PREPROCESSING_PROVENANCE pattern.
 Hippocampal channels are selected from the electrode table's ``location``
 field.
@@ -112,7 +111,8 @@ from statistics import (  # noqa: E402
     spearman_permutation_test,
     stable_seed,
 )
-from run_miller_drift_spine import bin_time_axis, iid_log_likelihood  # noqa: E402
+from preprocessing import bin_time_axis, iid_log_likelihood
+from corpus_sessions import _trial_group  # noqa: E402
 
 BIN_MS = 100
 WINDOW_S = 2.3
@@ -121,7 +121,7 @@ N_SPLITS = 5
 MIN_UNITS = 15
 MIN_TRIALS_PER_LOAD = 20
 LFP_SRATE_HZ = 400.0
-LFP_LINE_FREQ_HZ = 60.0  # Cedars-Sinai (Rutishauser lab) is a US site
+LFP_LINE_FREQ_HZ = 60.0  # Cedars-Sinai is a US site
 RULE_PATH = ROOT / "preregistration" / "rotation_drift_decision_rule.json"
 RULE_HASH = "c9505c80aed6b6c82494e472991a519c46a60a00bd8bfab7e6375f0706dc0ecd"
 PROVENANCE_DIR = ROOT / "provenance"
@@ -130,7 +130,7 @@ RESULTS = ROOT / "results"
 PREPROCESSING_PROVENANCE = {
     "unit_arm": (
         "Firing-rate and session-accuracy QC identical to run_001187_pipeline.py "
-        "/ run_000673_pipeline.py (Daume et al. 2024 QC floors), unsmoothed "
+        "/ run_000673_pipeline.py (this dataset's original QC floors), unsmoothed "
         "100 ms PSTH bins (drift_dynamics.py forbids smoothing for drift fits)."
     ),
     "lfp_arm_author_guidance_checked": (
@@ -141,11 +141,11 @@ PREPROCESSING_PROVENANCE = {
     ),
     "lfp_arm_substitute_applied": (
         "literature-standard substitute in the absence of further author "
-        "instruction: common-average reference (Engel et al. 2005), 60 Hz US "
+        "instruction: common-average reference, 60 Hz US "
         "line-noise notch (3 harmonics; Cedars-Sinai is a US site), and "
-        "Crone et al. 1998 / Ray & Maunsell 2011 Hilbert-envelope high-gamma "
-        "(70-150 Hz) power -- identical to the substitute already used for "
-        "Miller (scripts/run_miller_drift_spine.py) and Boran "
+        "the standard Hilbert-envelope high-gamma "
+        "(70-150 Hz) power method -- identical to the substitute already used for "
+        "the ECoG n-back corpus (scripts/run_miller_drift_spine.py) and DANDI 000574 "
         "(scripts/run_multiband_analysis.py) in this codebase."
     ),
     "no_smoothing_for_drift_fit": (
@@ -329,8 +329,6 @@ def fit_load_confinement(
     }
 
 
-def _trial_group(handle: h5py.File, release: str):
-    return handle["intervals/WM_trials"] if release == "001187" else handle["intervals/trials"]
 
 
 def _fit_by_load(epochs_ct: np.ndarray, loads: np.ndarray, dt: float, seed: int, n_components: int) -> dict:
@@ -620,7 +618,7 @@ def content_axis_patient_level_means(
     sessions: dict, metric_names: tuple[str, ...] = CONTENT_AXIS_METRIC_NAMES,
 ) -> dict[str, dict[str, float]]:
     """Average each metric within patient before any cross-patient inference
-    (advisor N4/10.4). Unlike run_human_drift_spine_000574.py's version,
+    Unlike run_human_drift_spine_000574.py's version,
     pairs on the ``patient`` field each session row already carries rather
     than splitting the session key string."""
     by_patient: dict[str, list[dict]] = {}

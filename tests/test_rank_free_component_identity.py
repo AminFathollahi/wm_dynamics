@@ -10,6 +10,7 @@ sys.path.insert(0, str(ROOT / "src"))
 import data_integrity
 import run_rank_free_component_identity as analysis
 import subspace_identity
+from info_decoding import _combine_levels
 
 
 def _directions(seed: int, labels: np.ndarray | None = None) -> np.ndarray:
@@ -181,7 +182,7 @@ def test_level_combination_handles_unequal_valid_null_counts():
         "target_kind": "continuous", "seed_id": "b",
     }
 
-    combined = analysis._combine_levels([(10, cell_a), (30, cell_b)])
+    combined = _combine_levels([(10, cell_a), (30, cell_b)])
 
     assert combined["n_permutations"] == 2
     assert combined["n_trials"] == 40
@@ -242,7 +243,7 @@ def test_dandi_000004_region_sessions_filters_by_structure_and_relabels_pooled(m
 
 
 def test_dandi_000004_corpora_are_registered_with_full_candidate_support():
-    from run_component_identity_subspace_atlas import CANDIDATE_KEYS, CANDIDATE_SUPPORT_MATRIX
+    from info_decoding import CANDIDATE_KEYS, CANDIDATE_SUPPORT_MATRIX
 
     for corpus in ("dandi_000004_human_hippocampus", "dandi_000004_human_amygdala"):
         assert corpus in analysis.GAIN_QUANTITY_BY_CORPUS

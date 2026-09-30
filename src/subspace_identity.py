@@ -167,3 +167,42 @@ def _basis(rows: np.ndarray, dim: int) -> np.ndarray | None:
     _, singular, vectors = np.linalg.svd(rows, full_matrices=False)
     keep = min(dim, int(np.sum(singular > 1e-10)))
     return vectors[:keep].T if keep else None
+
+
+N_CV_FOLDS = 5
+
+
+def _contiguous_folds(n: int, k: int) -> np.ndarray:
+    edges = np.linspace(0, n, k + 1).astype(int)
+    fold = np.empty(n, dtype=int)
+    for f in range(k):
+        fold[edges[f]:edges[f + 1]] = f
+    return fold
+
+
+def leading_eigenvector(R: np.ndarray) -> np.ndarray:
+    _w, v = np.linalg.eigh(R.T @ R)
+    return v[:, -1]
+
+
+def _orthonormal_basis(row_vectors: np.ndarray, dim: int) -> np.ndarray:
+    """(units,) orthonormal basis of the row space of ``row_vectors`` (k,
+    units), top ``dim`` left singular vectors of its transpose."""
+    u_svd, _, _ = np.linalg.svd(row_vectors.T, full_matrices=False)
+    return u_svd[:, :dim]
+
+
+def _class_mean_subspace_basis(U: np.ndarray, labels: np.ndarray, dim: int) -> np.ndarray | None:
+    classes = np.unique(labels)
+    if len(classes) < dim + 1:
+        return None
+    centred = U - U.mean(axis=0)
+    class_means = np.stack([centred[labels == c].mean(axis=0) for c in classes])
+    return _orthonormal_basis(class_means, dim)
+
+
+def _regression_subspace_basis(U: np.ndarray, target_2d: np.ndarray, dim: int) -> np.ndarray | None:
+    x_c = target_2d - target_2d.mean(axis=0)
+    u_c = U - U.mean(axis=0)
+    coef, *_ = np.linalg.lstsq(x_c, u_c, rcond=None)
+    return _orthonormal_basis(coef, dim)

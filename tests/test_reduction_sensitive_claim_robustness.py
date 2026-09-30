@@ -23,9 +23,7 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import run_reduction_sensitive_claim_robustness as mod  # noqa: E402
-from run_deviation_geometry_estimation_robustness import (  # noqa: E402
-    _combine_restated_cells_across_levels,
-)
+from info_decoding import _combine_restated_cells_across_levels
 
 RNG = np.random.default_rng(20260827)
 
@@ -166,7 +164,7 @@ def test_incomplete_checkpoint_reads_as_a_miss():
 
 def test_checkpoint_round_trips_through_restore_checkpoint_with_array_typed_fields():
     """A record containing a numpy array (as the deviation-cell-style records occasionally may) must
-    come back as an array after a save/load cycle, not as a plain list -- the exact defect class the
+    come back as an array after a save/load cycle, not as a plain list -- the exact error class the
     engineering requirement warns has silently corrupted resumed artifacts on this project before."""
     with tempfile.TemporaryDirectory() as tmp:
         original_dir = mod.CHECKPOINT_DIR
@@ -178,5 +176,25 @@ def test_checkpoint_round_trips_through_restore_checkpoint_with_array_typed_fiel
             assert restored is not None
             assert isinstance(restored["null_values"], np.ndarray)
             assert np.allclose(restored["null_values"], [0.1, 0.2, 0.3])
+        finally:
+            mod.CHECKPOINT_DIR = original_dir
+
+
+def test_checkpoint_round_trip_preserves_per_level_status_string_keys():
+    """multi_object_candidate_cells writes per_level_status keyed by str(level) (e.g. "2", "3"),
+    nested inside the record _save_checkpoint stores whole. No current read site in this module
+    looks it up by key (every consumer only iterates .values()), but the round-trip property must
+    still hold for a resumed cell: the keys must come back exactly as written, not converted to int."""
+    with tempfile.TemporaryDirectory() as tmp:
+        original_dir = mod.CHECKPOINT_DIR
+        mod.CHECKPOINT_DIR = Path(tmp)
+        try:
+            record = {"status": "computed", "per_level_status": {
+                "2": {"status": "computed", "n_trials": 40}, "3": {"status": "computed", "n_trials": 25},
+            }}
+            mod._save_checkpoint("per_level_key", record)
+            restored = mod._load_checkpoint("per_level_key")
+            assert list(restored["per_level_status"]) == ["2", "3"]
+            assert all(isinstance(key, str) for key in restored["per_level_status"])
         finally:
             mod.CHECKPOINT_DIR = original_dir

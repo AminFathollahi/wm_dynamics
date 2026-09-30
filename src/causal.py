@@ -13,19 +13,12 @@ input to the unstable eigenvector v* (and during a contracting-flow window). So
 the workhorse here is not an ATE but a CATE estimated against a theory-specified
 geometric modifier. We use the doubly-robust (AIPW) pseudo-outcome so the
 estimate stays valid if either the propensity or the outcome model is right, and
-cross-fitting so flexible nuisance learners do not bias the second stage
-(Chernozhukov 2018; Kennedy 2023).
+cross-fitting so flexible nuisance learners do not bias the second stage.
 
 Where treatment is experimentally assigned (macaque PFC microstimulation, RAM
 open-loop), the propensity is KNOWN — pass it in via `propensity=` rather than
 estimating it; that puts the doubly-robust estimator in its ideal regime with
 guaranteed overlap.
-
-References
-----------
-Chernozhukov V et al. (2018) Double/debiased machine learning. Econom. J. 21(1).
-Kennedy EH (2023) Towards optimal doubly robust estimation of heterogeneous
-  causal effects. Electron. J. Stat. 17(2).
 """
 
 from __future__ import annotations
@@ -39,6 +32,7 @@ _src_dir = os.path.dirname(__file__)
 if _src_dir not in sys.path:
     sys.path.insert(0, _src_dir)
 from statistics import permutation_pvalue
+from statistics import stable_seed
 
 
 def _default_outcome_learner():
@@ -154,7 +148,7 @@ def _bootstrap_pvalue(
     common across these datasets (a normal-theory SE from ~5 cross-fit folds
     can produce implausible p-values like 1e-193 that are a small-n artifact,
     not evidence). p-value via the fraction of the bootstrap distribution
-    crossing zero (Davison & Hinkley 1997 percentile-based test).
+    crossing zero (the standard percentile-based bootstrap test).
 
     stat_fn(idx) : recompute the statistic on a resampled index array.
     """
@@ -537,8 +531,8 @@ def dml_partial_linear(
     n_boot: int = 2000,
     rng: np.random.Generator | None = None,
 ) -> dict:
-    """Double/debiased ML estimate of a CONTINUOUS exposure's effect (Chernozhukov
-    et al. 2018 partially-linear model): Y = theta*D + g(X) + U, D = m(X) + V.
+    """Double/debiased ML estimate of a CONTINUOUS exposure's effect (the
+    partially-linear model): Y = theta*D + g(X) + U, D = m(X) + V.
 
     Unlike cate_vs_modifier_slope/aipw_ate (which need a BINARY, typically
     experimentally-assigned treatment), this is for observational data where
@@ -628,16 +622,16 @@ def dml_partial_linear(
 
 
 def e_value(estimate: float, se: float, y_sd: float, d_sd: float) -> dict:
-    """E-value (VanderWeele & Ding 2017): how strong an unmeasured confounder's
+    """E-value: how strong an unmeasured confounder's
     association with BOTH the exposure and the outcome would need to be to
     fully explain away an observed (non-experimental) effect estimate.
 
     Converts the continuous DML coefficient to an approximate risk-ratio scale
-    via the standardized effect size (theta*d_sd/y_sd), then applies VanderWeele
-    & Ding's RR->E-value formula. A large E-value (e.g. >2) means only a strong
+    via the standardized effect size (theta*d_sd/y_sd), then applies the
+    standard RR->E-value formula. A large E-value (e.g. >2) means only a strong
     unmeasured confounder could null the result; an E-value near 1 means even
     weak unmeasured confounding could. Report alongside every DML estimate used
-    causally: this project's standing rule that every DML estimate carries a
+    causally: every DML estimate carries a
     mandatory sensitivity analysis.
 
     Parameters
@@ -653,7 +647,7 @@ def e_value(estimate: float, se: float, y_sd: float, d_sd: float) -> dict:
           e_value_ci (for the CI bound closer to the null)
     """
     def _rr_from_smd(smd: float) -> float:
-        # VanderWeele & Ding 2017 eq 2: OR ~= exp(0.91 * SMD) for a
+        # OR ~= exp(0.91 * SMD) for a
         # standardized mean difference; approximate RR by the OR for a
         # not-too-common outcome (standard approximation in this literature).
         return float(np.exp(0.91 * abs(smd)))
@@ -673,3 +667,25 @@ def e_value(estimate: float, se: float, y_sd: float, d_sd: float) -> dict:
     ev_ci = _ev_from_rr(rr_ci)
 
     return {"rr_approx": rr, "e_value": ev_point, "e_value_ci": ev_ci}
+
+
+def _pool_arm(per_subject: dict, arm: str, field: str) -> dict | None:
+    """dml_partial_linear: field ~ align_to_vstar (continuous exposure),
+    confounders = subject dummies -- the DR/DML machinery spec E2 names.
+    Excludes destabilized (subject, arm) rows (see run_boran_targeting_
+    benchmark's inline comment) -- a destabilizing controller's drift number
+    is a numerical artifact, not a genuine "worse control" effect."""
+    rows = [(v["arms"][arm]["align_to_vstar"], v["arms"][arm][field], subj)
+           for subj, v in per_subject.items()
+           if v["arms"].get(arm) is not None and np.isfinite(v["arms"][arm][field])
+           and not v["arms"][arm].get("destabilized", False)]
+    if len(rows) < 4:
+        return None
+    aligns = np.array([r[0] for r in rows])
+    ys = np.array([r[1] for r in rows])
+    subjs = sorted(set(r[2] for r in rows))
+    X = np.eye(len(subjs))[[subjs.index(r[2]) for r in rows]]
+    res = dml_partial_linear(ys, aligns, X, n_folds=min(5, len(rows)),
+                             rng=np.random.default_rng(stable_seed(f"dml_{arm}_{field}")))
+    return {"theta": res["theta"], "se": res["se"], "ci_lo": res["ci_lo"], "ci_hi": res["ci_hi"],
+           "p_value": res["p_value"], "n": res["n"]}

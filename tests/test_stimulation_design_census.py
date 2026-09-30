@@ -25,7 +25,7 @@ def test_single_level_beats_everything_else():
 
 
 def test_state_triggered_overrides_documented_randomization():
-    """This is the ds005557 ruling made executable: a release that logs a
+    """A release that logs a
     nominal randomization/trigger field must still be classified as
     state-triggered selection, never as randomized, when delivery is in
     fact keyed to an online neural readout."""
@@ -191,7 +191,7 @@ def test_validate_row_flags_an_untagged_field():
     row = {field: census.VOID("x") for field in census.REQUIRED_ROW_FIELDS}
     row["corpus_id"] = "x"
     row["arm_id"] = "y"
-    row["amplitude"] = 1000.0  # bare value, not MEASURED/VOID-tagged -- the defect this gate exists to catch
+    row["amplitude"] = 1000.0  # bare value, not MEASURED/VOID-tagged -- the error this gate exists to catch
     defects = census.validate_row(row)
     assert any("amplitude" in d for d in defects)
 

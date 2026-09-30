@@ -10,18 +10,18 @@ delivered.
 
 SCOPE (principled, not a shortcut): src/closed_loop.py's simulate_closed_loop
 needs a fitted (A, B) plant, and the only cohorts with a TES1-derived B matrix
-are Miller and Boran iEEG (DATASET_ANALYSIS_MATRIX.md exclusion #2: TES1 covers
-DLPFC only). Of those two, Miller has NO usable trial-outcome label in the data
+are ECoG n-back corpus and DANDI 000574 iEEG (TES1 covers
+DLPFC only). Of those two, ECoG n-back corpus has NO usable trial-outcome label in the data
 mounted for this project (see run_behavior_ctg.py's docstring -- the raw MAT
-files carry task condition, not response accuracy). That leaves Boran iEEG as
+files carry task condition, not response accuracy). That leaves DANDI 000574 iEEG as
 the ONLY cohort where this analysis is both runnable (a fitted B) and
 behaviorally meaningful (a real correct/error label) with real, non-fabricated
-data. Boran units / DANDI 000469 / 001187 / 000673 have outcome but no B
+data. DANDI 000574 units / DANDI 000469 / 001187 / 000673 have outcome but no B
 matrix (MTL, outside TES1 coverage) -- STOP-and-report, not run.
 
 Design (mirrors run_closed_loop_analysis.py's _run_cohort, decoder swapped
 from load to outcome; run_ondemand_streak_diagnostic.py's on-demand policy):
-  D1. Fit a correct-vs-error decoder on REAL Boran iEEG maintenance-window
+  D1. Fit a correct-vs-error decoder on REAL DANDI 000574 iEEG maintenance-window
       states (same guardrail-2 discipline as run_closed_loop_analysis.py: fit
       BEFORE simulation, on uncontrolled real data, never re-fit to simulated
       states). Predicted-error trials = real trials the decoder calls "error"
@@ -63,95 +63,20 @@ sys.path.insert(0, str(ROOT / "src"))
 from closed_loop import simulate_closed_loop, _b_hat_at_angle
 from statistics import bootstrap_ci, stable_seed
 from io_utils import locked_json_update
+from closed_loop import _fit_outcome_decoder_and_margin, _flip_one_trial  # noqa: E402
 
 RESULTS = ROOT / "results"
 BORAN_SUBJECTS = [f"sub-{i:02d}" for i in range(1, 10)]
 B_HAT_MISMATCH_DEG = 20.0   # same realistic B-estimation-error stand-in as
                             # run_closed_loop_analysis.py's guardrail 1
 N_BOOT = 2000
-U_BUDGET = 1.0
 MIN_ERROR_PRED = 3   # floor to report a per-subject flip rate at all. LOWERED from an
                      # initial 5: Step B's pooled outcome decodability (AUC=0.68, N=1653
                      # trials/9 subjects) does NOT decompose into reliable PER-SUBJECT
                      # decoders (per-subject cv_acc ~0.49-0.50, near chance) -- most
                      # subjects clear 0-2 decoder-predicted-error trials even at the
                      # Step-B peak timepoint. STOP-and-report: this is a genuinely
-                     # underpowered per-subject design, not a bug; see agent_report.md.
-
-
-def _fit_outcome_decoder_and_margin(Z: np.ndarray, correct: np.ndarray, peak_t_idx: int | None = None):
-    """Out-of-fold correct-vs-error decoder on real, uncontrolled states
-    (guardrail 2). Fits AT THE SAME PEAK-AUC TIMEPOINT results/behavior_ctg.json
-    (Step B) already identified for this cohort -- a per-timestep-pooled/
-    majority-vote decoder was tried first and reliably predicted zero trials
-    as "error" for every Boran iEEG subject (near-chance cv_acc ~0.50; the
-    outcome signal Step B found is concentrated at specific delay timepoints,
-    diluted to nothing when pooled across the whole trial). peak_t_idx=None
-    falls back to the mid-trial timepoint. Returns (predict_fn, margin_fn,
-    pred_error_trial, correct_centroid, decoder_cv_acc)."""
-    from sklearn.linear_model import LogisticRegression
-    from sklearn.preprocessing import StandardScaler
-    from sklearn.pipeline import Pipeline
-    from sklearn.model_selection import StratifiedKFold, cross_val_predict, cross_val_score
-
-    N, T, k = Z.shape
-    ti = peak_t_idx if peak_t_idx is not None else T // 2
-    ti = int(np.clip(ti, 0, T - 1))
-    X = Z[:, ti, :]
-    labels = correct.astype(int)   # 1 = correct, 0 = error
-
-    n_splits = min(5, int(np.min(np.bincount(labels))))
-    pipe = Pipeline([("scaler", StandardScaler()), ("clf", LogisticRegression(C=1.0, max_iter=1000))])
-    if n_splits < 2:
-        return None
-    cv = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=0)
-    cv_acc = float(cross_val_score(pipe, X, labels, cv=cv, scoring="balanced_accuracy").mean())
-    pred_error_trial = (cross_val_predict(pipe, X, labels, cv=cv) == 0)
-
-    pipe.fit(X, labels)   # final decoder used inside the simulation loop
-    predict_fn = lambda Xq: pipe.predict(Xq)
-
-    def margin_fn(Xq: np.ndarray) -> np.ndarray:
-        return pipe.decision_function(Xq)   # >0 favors "correct" (class 1)
-
-    correct_centroid = Z[correct, ti, :].mean(axis=0)
-    return predict_fn, margin_fn, pred_error_trial, correct_centroid, cv_acc
-
-
-def _flip_one_trial(A, B_true, B_hat, x0, target, decoder, margin_fn, horizon,
-                    obs_noise, proc_noise, rng, random_dir: bool = False):
-    """Drive ONE real predicted-error trial's own starting state through the
-    on-demand controller. n_trials=1 in the underlying call: this trial's x0
-    is fixed, only the process/observation noise is resampled.
-
-    D3 null control (random_dir=True): the SAME on-demand/LQR machinery
-    (same duty-cycle trigger, same u_budget, same B_hat mismatch), but the
-    actuator itself (B_true) is replaced by a random unit direction in the
-    SAME latent space -- same convention as the causal-benchmark leaderboard's
-    random_alignment arm (run_macaque_pfc_microstimulation_pipeline.py) elsewhere in this project.
-    An informed direction should flip trials; an uninformed one should not."""
-    if random_dir:
-        n = A.shape[0]
-        rand_dir = rng.standard_normal((n, 1))
-        rand_dir /= np.linalg.norm(rand_dir) + 1e-12
-        res = simulate_closed_loop(
-            A, rand_dir, x0, target, decoder, label=1, trigger="decoder",
-            A_hat=A, B_hat=rand_dir, obs_noise=obs_noise, proc_noise=proc_noise, u_budget=U_BUDGET,
-            horizon=horizon, n_trials=1, n_boot=1, rng=rng,
-        )
-    else:
-        res = simulate_closed_loop(
-            A, B_true, x0, target, decoder, label=1, trigger="decoder",
-            A_hat=A, B_hat=B_hat, obs_noise=obs_noise, proc_noise=proc_noise, u_budget=U_BUDGET,
-            horizon=horizon, n_trials=1, n_boot=1, rng=rng,
-        )
-    x_final = res["x_traj_on"][0, -1]
-    x_final_off = res["x_traj_off"][0, -1]
-    pred_final = decoder(x_final.reshape(1, -1))[0]
-    flipped = bool(pred_final == 1)
-    margin_delta = float(margin_fn(x_final.reshape(1, -1))[0] - margin_fn(x_final_off.reshape(1, -1))[0])
-    duty = res["duty_cycle"]
-    return flipped, margin_delta, duty
+                     # underpowered per-subject design, not a bug.
 
 
 def run_boran_ieeg() -> dict:
@@ -184,7 +109,7 @@ def run_boran_ieeg() -> dict:
             continue
 
         # Fit at the SAME peak-AUC timepoint Step B's outcome-CTG already
-        # identified for Boran iEEG (results/behavior_ctg.json), not a fresh
+        # identified for DANDI 000574 iEEG (results/behavior_ctg.json), not a fresh
         # per-subject search -- keeps this trial-flip test from re-fishing for
         # the best timepoint on the same data it then evaluates.
         peak_t_idx = int(np.argmin(np.abs(times - peak_time_s))) if peak_time_s is not None else None
@@ -254,12 +179,12 @@ def run_boran_ieeg() -> dict:
 
 
 def main():
-    print("Boran iEEG (ONLY cohort with both a fitted B matrix and a real "
+    print("DANDI 000574 iEEG (ONLY cohort with both a fitted B matrix and a real "
           "outcome label -- see module docstring for why):")
     boran = run_boran_ieeg()
 
     if not boran:
-        print("\nNo Boran iEEG subject produced a usable result -- STOP, nothing to pool.")
+        print("\nNo DANDI 000574 iEEG subject produced a usable result -- STOP, nothing to pool.")
         out = {"boran_ieeg": {}, "pooled": None,
               "excluded_no_b_matrix": ["boran_units", "dandi000469", "dandi001187", "dandi000673"],
               "excluded_no_outcome_label": ["miller"]}

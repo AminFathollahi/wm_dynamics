@@ -34,7 +34,7 @@ rank-1 share can be cross-checked exactly
 against the read-only artifact's stored value for the same session as a
 correctness gate before anything new (h(t) itself) is trusted.
 
-Scope: the Panichello 2024 macaque lPFC corpus is run first and in full (25
+Scope: the macaque prefrontal spatial working-memory corpus (Dryad doi:10.5061/dryad.kkwh70sct) is run first and in full (25
 sessions) -- it is the corpus results/state_latent_identity.json already
 covers, so it is the one this closure can validate against a read-only
 reference. The human delay and mouse ALM corpora are the same rank-1 gain
@@ -60,10 +60,11 @@ _scripts_dir = str(Path(__file__).resolve().parents[1] / "scripts")
 if _scripts_dir not in sys.path:
     sys.path.insert(0, _scripts_dir)
 
-from run_state_latent_identity import (  # noqa: E402
-    BIN_WIDTH_S, DECIDING_WIDTH_BINS, _stable_seed, alm_sessions, data_root, human_sessions, macaque_sessions,
-    session_rank1_and_residual,
-)
+from run_state_latent_identity import _stable_seed
+from spike_pipeline import DECIDING_WIDTH_BINS
+from info_decoding import BIN_WIDTH_S, session_rank1_and_residual
+from corpus_sessions import alm_sessions, human_sessions, macaque_sessions
+from corpus_sessions import data_root
 from state_persistence import _ols_slope  # noqa: E402
 
 READ_ONLY_ARTIFACT_PATH = Path(__file__).resolve().parents[1] / "results" / "state_latent_identity.json"
@@ -74,7 +75,7 @@ MIN_LAGS_FOR_SLOPE = 4
 
 
 def _cohort_label(session_id: str) -> str:
-    """Panichello 2024 session filenames start with a two-digit year
+    """macaque spatial working-memory corpus session filenames start with a two-digit year
     (21/22/24). config/datasets.json's panichello_2024.label_convention_note
     documents that this prefix corresponds to three monkey/date clusters,
     not an incidental naming accident: 2021 = monkey A (10 sessions), 2022 =
@@ -482,7 +483,7 @@ def main() -> None:
         "scope": (
             "Closes three items in this project's rank-1 gain audit: stores the shared temporal profile h(t) "
             "per session (not only its sign-crossing count), withdraws the mis-specified residual-existence "
-            "test, and stratifies the rank-1 share by cohort/animal. The Panichello 2024 macaque lPFC corpus "
+            "test, and stratifies the rank-1 share by cohort/animal. The macaque spatial working-memory corpus "
             "(all 25 sessions) is required and run first; human delay and mouse ALM are the same cheap census "
             "pointed at two more corpora, added only as time allows, each corpus written to disk as soon as it "
             "completes."
@@ -544,7 +545,7 @@ def main() -> None:
     # kept in its pre-existing top-level field rather than moved), this closes all five human/ALM
     # width_bins combinations this project's own sign-crossing-conditioned slope test design reaches
     # (human delay at 2, 3, 5; ALM at 2, 3, 5 -- six cells, five of which live under width_extension and
-    # the sixth is the human delay deciding-width field above). Panichello is not extended here: its
+    # the sixth is the human delay deciding-width field above). macaque spatial working-memory corpus is not extended here: its
     # slope is positive, not decaying, so a sign-crossing account of a decay does not apply to it, and it
     # cannot reach width 5 at all (see state_persistence_lag.json's own width-reachability note).
     if arg in ("all", "width_extension"):

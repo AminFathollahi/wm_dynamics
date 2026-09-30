@@ -47,7 +47,7 @@ _scripts_dir = str(Path(__file__).resolve().parents[1] / "scripts")
 if _scripts_dir not in sys.path:
     sys.path.insert(0, _scripts_dir)
 
-from run_state_persistence_shape import _lag_lists  # noqa: E402
+from info_decoding import _lag_lists
 from state_persistence import (  # noqa: E402
     _d_series, breakpoint_bootstrap_ci, component_series, geometry_vs_clock_verdict,
     per_session_slopes_in_range, segmented_slope_test,
@@ -67,7 +67,7 @@ HUMAN_DATASETS = ("dandi_000469", "dandi_001187", "dandi_000574")
 COMMON_RANGES_BINS = {"0.3_to_0.8s": (3, 8), "0.3_to_0.9s": (3, 9)}
 LATE_RANGE_LO_BINS = 9  # everything past 0.9 s, reported per arm as a bound only
 
-# Advisor's independently recomputed reference table (per-session OLS slope of
+# Independently recomputed reference table (per-session OLS slope of
 # d_perm on lag in seconds, adjacency lag dropped, two-sided sign-flip p),
 # reproduced here so a divergence is caught immediately rather than found later.
 REFERENCE_TABLE = {
@@ -127,7 +127,7 @@ def _common_range_contrasts(profiles, pois, perm, width_bins: int) -> dict:
     two-sided test with its CI. d_perm's two component slopes -- r_obs and
     the permutation null r_null -- are computed and reported as SIBLINGS of
     d_perm in the same ``by_stat`` block, with an explicit arithmetic
-    identity check, per this project's standing rule that a d_perm slope,
+    identity check, because a d_perm slope,
     level or sign is never reported without the two correlations that
     compose it."""
     out = {}
@@ -153,10 +153,10 @@ def four_row_headline_table(arm_rows: dict[str, list[dict]], human_encoding_rows
     (unlike this module's other segmented-slope contrasts, which drop the
     adjacency lag). Both choices -- the exact bin range and no exclusion --
     were determined empirically: they are the only combination that
-    reproduces the round's own quoted reference numbers to four decimal
+    reproduces the quoted reference numbers to four decimal
     places for every arm and statistic; bins (3, 9) or dropping the
-    adjacency lag each move every number away from the reference. Advisor's
-    own hand-computed reference numbers are carried alongside for
+    adjacency lag each move every number away from the reference. The
+    hand-computed reference numbers are carried alongside for
     comparison; a mismatch is reported, not silently adopted, exactly as
     the accessor gate for the delay-length arms already does. p-values may
     legitimately differ even when slopes agree: this project's paired

@@ -45,7 +45,7 @@ def main():
     cd_vals = [v["cd_ctg"]["offdiag_effect"] for v in miller.values()]
     out["miller_context"] = paired_test(ci_vals, cd_vals, rng)
     out["miller_context"]["n_subjects"] = len(ci_vals)
-    print(f"Miller context (N={len(ci_vals)}): mean(CD-CI)={out['miller_context']['mean_diff']:.4f} "
+    print(f"ECoG n-back corpus context (N={len(ci_vals)}): mean(CD-CI)={out['miller_context']['mean_diff']:.4f} "
           f"[{out['miller_context']['ci_lower']:.4f}, {out['miller_context']['ci_upper']:.4f}], "
           f"p={out['miller_context']['p_value']:.4f}")
 

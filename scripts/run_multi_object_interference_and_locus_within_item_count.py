@@ -83,23 +83,20 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from corpus_sessions import data_root, iter_watters  # noqa: E402
 from provenance import _json_safe, checkpoint_safe, restore_checkpoint  # noqa: E402
-from run_deviation_serial_dependence_and_temporal_locus import (  # noqa: E402
-    DETREND_WINDOWS_TRIALS, MIN_TRIALS_FOR_LAG_PROFILE, PRIMARY_SPLIT, SUB_WINDOW_SPLITS,
-    _cosine_at_lag, _detrend, _sub_window_bins, unit_direction_vectors,
-)
-from run_dissociation_cross_preparation_test import MIN_TRIALS_WITH_DEFINED_DIRECTION  # noqa: E402
-from run_dissociation_replication_and_counting_noise import (  # noqa: E402
-    _observable_arrays, _pool_cell, _session_observable_arm,
-)
-from run_rate_free_state_geometry_behavior_link import rate_free_state_deviation  # noqa: E402
-from run_watters_state_geometry import MIN_TRIALS_FOR_BEHAVIOURAL_CORRELATION  # noqa: E402
+from statistics import DETREND_WINDOWS_TRIALS, MIN_TRIALS_FOR_LAG_PROFILE, PRIMARY_SPLIT, SUB_WINDOW_SPLITS, _cosine_at_lag, _detrend, _sub_window_bins, unit_direction_vectors
+from statistics import MIN_TRIALS_WITH_DEFINED_DIRECTION
+from run_dissociation_replication_and_counting_noise import _session_observable_arm
+from state_persistence import _pool_cell
+from corpus_sessions import _observable_arrays
+from stimulation_response_estimator import rate_free_state_deviation
+from corpus_sessions import MIN_TRIALS_FOR_BEHAVIOURAL_CORRELATION
 from statistics import (  # noqa: E402
     minimum_detectable_paired_difference, partial_correlation_permutation_test, stable_seed,
 )
 from state_persistence import slope_across_sessions_test  # noqa: E402
 
 OUTPUT_PATH = ROOT / "results" / "multi_object_interference_and_locus_within_item_count.json"
-CHECKPOINT_PATH = ROOT / "results" / ".checkpoints" / "multi_object_interference_and_locus_within_item_count_checkpoint.json"
+CHECKPOINT_PATH = ROOT / "results" / ".checkpoints" / "multi_object_interference_and_locus_within_item_count_checkpoint_v2.json"
 ANALYSIS_VERSION = "2026-08-19"
 
 N_PERM = 10000

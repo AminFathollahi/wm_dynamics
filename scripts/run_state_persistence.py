@@ -28,7 +28,7 @@ epoch x bin width x window mode x window count, for wall-clock reasons):
     delay is where the deciding contrast and the anatomical comparison live;
   - encoding and delay, pooled structure, 100 ms, native window, feed the
     within-session maintenance-versus-encoding discriminator;
-  - the macaque prefrontal delay-period population (Panichello et al. 2024)
+  - the macaque prefrontal delay-period population (doi 10.1038/s41586-024-08139-9)
     is run through the identical estimator, pooled per session, as the
     second discriminator.
 """
@@ -63,6 +63,12 @@ from state_persistence import (  # noqa: E402
     per_unit_permutation_null_r_lag_profile, permutation_null_validation, poisson_null_r_gap_profile,
     poisson_null_r_lag_profile, patient_clustered_lag_inference, r_gap_profile, r_lag_profile, reachability_note,
 )
+from info_decoding import HUMAN_DATASETS  # noqa: E402
+from state_persistence import LAG_BIN_MS, LAG_NULL_SPLITS_PER_REPLICATE, LAG_N_NULL_REPLICATES  # noqa: E402
+from info_decoding import PANICHELLO_DELAY_WINDOW_MS, PANICHELLO_LAG_N_NULL_REPLICATES, PANICHELLO_LAG_N_SPLITS  # noqa: E402
+from state_persistence import LAG_N_SPLITS, _lag_run_row  # noqa: E402
+from statistics import _seed  # noqa: E402
+from corpus_sessions import _panichello_directory  # noqa: E402
 
 EPOCHS = ("baseline", "encoding", "delay", "probe")
 BIN_WIDTHS_MS = (100.0, 200.0)
@@ -72,8 +78,6 @@ NULL_SPLITS_PER_REPLICATE = 6
 MATCHED_POWER_DRAWS = 10
 MATCHED_POWER_N_SPLITS = 8
 POWER_RESAMPLES = 300
-HUMAN_DATASETS = ("dandi_000469", "dandi_001187", "dandi_000574")
-PANICHELLO_DELAY_WINDOW_MS = (300.0, 1450.0)  # matches scripts/run_panichello_pipeline.py
 # The macaque prefrontal window-count-profile arm's split and permutation-replicate counts are lighter
 # than the human/ALM module defaults (N_SPLITS, N_NULL_REPLICATES above) because each session carries a
 # large simultaneous population and a single fit already costs several seconds. Named as explicit
@@ -88,8 +92,6 @@ OUTPUT_PATH = Path(__file__).resolve().parents[1] / "results" / "state_persisten
 VARIANCE_PARTITION_PATH = Path(__file__).resolve().parents[1] / "results" / "variance_partition.json"
 
 
-def _seed(*parts) -> int:
-    return stable_seed("|".join(str(p) for p in parts))
 
 
 def _counts_from_spikes(spike_lists, onset, window_s: float, bin_ms: float) -> np.ndarray:
@@ -272,11 +274,6 @@ def matched_sensitivity_alm(root: Path, human_median_units: int, human_median_tr
     }
 
 
-def _panichello_directory(root: Path) -> Path | None:
-    config = json.loads((Path(__file__).resolve().parents[1] / "config" / "datasets.json").read_text())
-    entry = config["datasets"]["panichello_2024"]  # raise if the registry key is missing/mistyped, not a silent skip
-    path = root / entry["local_path"]
-    return path if path.is_dir() else None
 
 
 def panichello_rows(root: Path, n_splits: int = PANICHELLO_PROFILE_N_SPLITS,
@@ -291,7 +288,7 @@ def panichello_rows(root: Path, n_splits: int = PANICHELLO_PROFILE_N_SPLITS,
     rather than a documented, disclosed mismatch."""
     directory = _panichello_directory(root)
     if directory is None:
-        return {"status": "not_available", "reason": "Panichello_2024 not staged", "rows": []}
+        return {"status": "not_available", "reason": "macaque prefrontal spatial working-memory corpus (Dryad doi:10.5061/dryad.kkwh70sct) not staged", "rows": []}
 
     files = sorted(glob.glob(str(directory / "*.mat")))
     if not files:
@@ -974,9 +971,9 @@ def main() -> None:
     matched_sensitivity = matched_sensitivity_alm(root, human_median_units, human_median_trials, human_median_rate_hz)
     print(f"  done, {time.time() - t_start:.1f}s elapsed", file=sys.stderr)
 
-    print("Panichello macaque prefrontal arm...", file=sys.stderr)
+    print("macaque spatial working-memory corpus macaque prefrontal arm...", file=sys.stderr)
     panichello = panichello_rows(root)
-    print(f"  {len(panichello.get('rows', []))} Panichello rows, {time.time() - t_start:.1f}s elapsed", file=sys.stderr)
+    print(f"  {len(panichello.get('rows', []))} macaque spatial working-memory corpus rows, {time.time() - t_start:.1f}s elapsed", file=sys.stderr)
 
     decision = deciding_contrast(delay_pooled, matched_sensitivity)
     het = heterogeneity(delay_pooled, _load_white_share_lookup())
@@ -997,10 +994,10 @@ def main() -> None:
             "epoch additionally gets the common 2.3 s floor window and 3 sub-windows at the native window "
             "(both bin widths) -- a documented narrowing of the full cross-product (every epoch x both "
             "window modes x both window counts) to the epoch the deciding contrast and the "
-            "anatomical comparison actually use, for wall-clock reasons. Mouse ALM (Inagaki) is the "
-            "matched-sensitivity reference. Panichello 2024 macaque lPFC delay is the second attribution "
+            "anatomical comparison actually use, for wall-clock reasons. Mouse ALM (doi:10.25378/janelia.7489253) is the "
+            "matched-sensitivity reference. macaque spatial working-memory corpus delay is the second attribution "
             "discriminator, pooled per session (no per-channel area label exists in the deposited data). "
-            "LFP corpora and the Watters macaque arm are not run here, a deferral carried forward from "
+            "LFP corpora and the macaque multi-object working-memory corpus (doi:10.64898/2026.01.27.702062) macaque arm are not run here, a deferral carried forward from "
             "earlier in this project unchanged."
         ),
         "n_splits": N_SPLITS, "n_null_replicates": N_NULL_REPLICATES,
@@ -1116,9 +1113,9 @@ def main_profile() -> None:
         "scope": (
             "Every (dataset, structure, session) reachable through src/corpus_sessions.iter_all_corpora; "
             "encoding and delay epochs; 100 ms bins only (200 ms is not run here -- it costs lags); "
-            "W in {4, 6, 8} at each corpus's own native window. ALM (Inagaki) re-run at the human delay "
+            "W in {4, 6, 8} at each corpus's own native window. ALM (mouse motor-cortex corpus) re-run at the human delay "
             "floor window (2.3 s) with the same rate-matched thinning applied throughout this grid, same "
-            "W grid, Poisson null only. Panichello and a full species/region/task attribution verdict are "
+            "W grid, Poisson null only. macaque spatial working-memory corpus and a full species/region/task attribution verdict are "
             "not run by this analysis, which is scoped to the shortest-lag question alone; the "
             "encoding-vs-delay field below is an opportunistic by-product of the primary grid already "
             "covering both epochs, not a completed attribution deliverable."
@@ -1147,11 +1144,7 @@ def main_profile() -> None:
 
 
 LAG_WIDTHS_BINS = (2, 3, 5)
-LAG_BIN_MS = 100.0
 LAG_EPOCHS = ("encoding", "delay")
-LAG_N_SPLITS = 12
-LAG_N_NULL_REPLICATES = 20
-LAG_NULL_SPLITS_PER_REPLICATE = 6
 LAG_MATCHED_COUNT_N_SPLITS = 8
 LAG_MATCHED_COUNT_N_NULL_REPLICATES = 10
 LAG_DECIDING_WIDTH_BINS = 3
@@ -1161,34 +1154,8 @@ LAG_OUTPUT_PATH = Path(__file__).resolve().parents[1] / "results" / "state_persi
 # this project's cross-species d_perm-slope comparison, so its settings differing from LAG_N_SPLITS/
 # LAG_N_NULL_REPLICATES is a disclosed, measured mismatch (see
 # scripts/run_persistence_estimator_split_count_sensitivity.py) rather than an unexamined economy.
-PANICHELLO_LAG_N_SPLITS = 10
-PANICHELLO_LAG_N_NULL_REPLICATES = 10
 
 
-def _lag_run_row(counts: np.ndarray, width_bins: int, seed: int,
-                  n_splits: int = LAG_N_SPLITS, n_null_replicates: int = LAG_N_NULL_REPLICATES) -> dict:
-    """A session/width row at fixed window width, both nulls -- never a
-    silent omission: a session that cannot support this width gets a status,
-    not a missing row. ``width_exceeds_epoch`` is the fixed-width analogue
-    of the window-count profile's bins-per-window floor -- the shortest
-    reachable lag is the width itself, so at least 2 * width bins are
-    required for even one lag to exist."""
-    n_trials, n_units, n_bins = counts.shape
-    base = {"n_trials": int(n_trials), "n_units": int(n_units), "n_bins": int(n_bins), "width_bins": int(width_bins)}
-    if n_trials < 8:
-        return {**base, "profile": {"status": "fewer_than_eight_trials"}, "null_poisson": None, "null_permutation": None}
-    if n_bins < 2 * width_bins:
-        return {**base, "profile": {"status": "width_exceeds_epoch"}, "null_poisson": None, "null_permutation": None}
-    profile = r_lag_profile(counts, width_bins, n_splits=n_splits, rng=np.random.default_rng(seed))
-    if profile["status"] != "fitted":
-        return {**base, "profile": profile, "null_poisson": None, "null_permutation": None}
-    null_poisson = poisson_null_r_lag_profile(
-        counts, width_bins, n_replicates=n_null_replicates, n_splits_per_replicate=LAG_NULL_SPLITS_PER_REPLICATE,
-        rng=np.random.default_rng(seed + 1))
-    null_permutation = per_unit_permutation_null_r_lag_profile(
-        counts, width_bins, n_replicates=n_null_replicates, n_splits_per_replicate=LAG_NULL_SPLITS_PER_REPLICATE,
-        rng=np.random.default_rng(seed + 2))
-    return {**base, "profile": profile, "null_poisson": null_poisson, "null_permutation": null_permutation}
 
 
 def human_lag_rows(root: Path) -> tuple[list[dict], dict]:
@@ -1267,7 +1234,7 @@ def panichello_lag_rows(root: Path, n_splits: int = PANICHELLO_LAG_N_SPLITS,
     calls this arm at both regimes."""
     directory = _panichello_directory(root)
     if directory is None:
-        return {"status": "not_available", "reason": "Panichello_2024 not staged", "rows": []}
+        return {"status": "not_available", "reason": "macaque spatial working-memory corpus not staged", "rows": []}
     files = sorted(glob.glob(str(directory / "*.mat")))
     if not files:
         return {"status": "not_available", "reason": "no .mat files found", "rows": []}
@@ -1397,7 +1364,7 @@ def main_patient_clustered_lag() -> None:
             raise RuntimeError("state_persistence_lag.json has no fitted human pooled delay rows")
         artifact["patient_clustered_human_delay"] = patient_clustered_human_delay(delay_pooled)
         artifact["patient_clustered_inference_note"] = (
-            "Added 2026-09-01. Existing session-row fields remain descriptive because 72 delay rows nest "
+            "Existing session-row fields remain descriptive because 72 delay rows nest "
             "within 52 dataset-qualified patients. Current human F1 inference is patient_clustered_human_delay."
         )
     result = json.loads(LAG_OUTPUT_PATH.read_text())["patient_clustered_human_delay"]
@@ -1616,9 +1583,9 @@ def main_lag() -> None:
     alm_rows = alm_lag_rows(root, human_window_s, rate_matched_keep_probability)
     print(f"  {len(alm_rows)} ALM lag rows, {time.time() - t_start:.1f}s elapsed", file=sys.stderr)
 
-    print("Panichello macaque prefrontal lag arm (both nulls)...", file=sys.stderr)
+    print("macaque spatial working-memory corpus macaque prefrontal lag arm (both nulls)...", file=sys.stderr)
     panichello = panichello_lag_rows(root)
-    print(f"  {len(panichello.get('rows', []))} Panichello lag rows, {time.time() - t_start:.1f}s elapsed", file=sys.stderr)
+    print(f"  {len(panichello.get('rows', []))} macaque spatial working-memory corpus lag rows, {time.time() - t_start:.1f}s elapsed", file=sys.stderr)
 
     delay_pooled = [r for r in primary_rows if r["epoch"] == "delay" and r["structure"] == "pooled"
                     and r["dataset"] in HUMAN_DATASETS]
@@ -1640,7 +1607,7 @@ def main_lag() -> None:
     print("Heterogeneity on the mean d_perm over 1.4A's clearing lags (1.9)...", file=sys.stderr)
     heterogeneity = heterogeneity_on_d_perm(delay_pooled, white_lookup, LAG_DECIDING_WIDTH_BINS, clearing_lags)
 
-    print("ALM and Panichello lag-shape decisions (1.7)...", file=sys.stderr)
+    print("ALM and macaque spatial working-memory corpus lag-shape decisions (1.7)...", file=sys.stderr)
     alm_decision = classify_lag_profile(*_lag_lists(alm_rows, LAG_DECIDING_WIDTH_BINS),
                                          width_bins=LAG_DECIDING_WIDTH_BINS, bin_width_s=LAG_BIN_MS / 1000.0)
     panichello_decision = classify_lag_profile(*_lag_lists(panichello.get("rows", []), LAG_DECIDING_WIDTH_BINS),
@@ -1660,17 +1627,17 @@ def main_lag() -> None:
             "here and are not recomputed or edited. This file's deciding_contrast (branch field) is the "
             "current verdict on this observable's shape; where a branch or number here disagrees with either "
             "prior file, this file's is the corrected reading and the prior file's own scope/relationship "
-            "field states so, per the current implementation report."
+            "field states so."
         ),
         "scope": (
             "Every (dataset, structure, session) reachable through src/corpus_sessions.iter_all_corpora; "
             "encoding and delay epochs; 100 ms bins only; width in {2, 3, 5} bins (200/300/500 ms), every "
             "lag from width to n_bins - width bins, reported in seconds. Both the Poisson and the per-unit "
-            "permutation null at every (session, epoch, width) row. ALM (Inagaki) at the human delay floor "
+            "permutation null at every (session, epoch, width) row. ALM (mouse motor-cortex corpus) at the human delay floor "
             "window (2.3 s) with the rate-matched thinning established earlier in this project, and "
-            "Panichello 2024 macaque prefrontal delay, both re-run through the identical estimator WITH "
+            "macaque spatial working-memory corpus macaque prefrontal delay, both re-run through the identical estimator WITH "
             "BOTH NULLS -- the gap left open by the window-count profile arm. A full species/region/task "
-            "attribution verdict is not run here; the ALM, Panichello, and encoding-vs-delay fields below "
+            "attribution verdict is not run here; the ALM, macaque spatial working-memory corpus, and encoding-vs-delay fields below "
             "are the data those arms need, not a completed attribution deliverable."
         ),
         "n_splits": LAG_N_SPLITS, "n_null_replicates": LAG_N_NULL_REPLICATES, "bin_width_s": LAG_BIN_MS / 1000.0,

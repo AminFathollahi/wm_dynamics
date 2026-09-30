@@ -1,4 +1,4 @@
-"""Lightweight synthetic-input regression test for the Miller drift-spine fit."""
+"""Lightweight synthetic-input regression test for the ECoG n-back corpus drift-spine fit."""
 
 from __future__ import annotations
 
@@ -11,7 +11,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from drift_dynamics import simulate_confined_diffusion  # noqa: E402
-from run_miller_drift_spine import bin_time_axis, fit_condition_drift  # noqa: E402
+from run_miller_drift_spine import fit_condition_drift
+from preprocessing import bin_time_axis
 
 _VALID_STATUSES = {"identifiable", "not_identifiable", "unconfined", "nonconverged", "not_estimable"}
 

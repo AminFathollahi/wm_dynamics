@@ -15,8 +15,7 @@ SE provenance (no fabrication — every SE is derived from stored quantities):
                      correct-vs-error drift). p is floored at 1e-6.
 Every synthesis records which key and which method produced each row.
 
-DANDI 001187 and 000673 share 31 patients across 37 sessions (corrected 2026-08-03 from a prior 16/19 undercount; see
-provenance/dataset_overlap_report.json); the "DANDI 000673" row in every forest
+DANDI 001187 and 000673 share 31 patients across 37 sessions (identified by matching patient and session, not the raw identifier string); the "DANDI 000673" row in every forest
 here excludes those linked-duplicate sessions (dropped by key before pooling
 below, or -- for the q1 PR-vs-load slope and q6 drift-beta rows, which are
 single numbers already pooled upstream -- excluded at the source in
@@ -41,18 +40,19 @@ STATS_PATH = ROOT / "results" / "all_statistics.json"
 OUT_PATH = ROOT / "results" / "forest_syntheses.json"
 PROVENANCE_PATH = ROOT / "provenance"
 
-# 001187 and 000673 share 31 patients/37 sessions (corrected 2026-08-03 from a prior 16/19 undercount; provenance/dataset_overlap_report.json);
+# 001187 and 000673 share 31 patients/37 sessions;
 # 001187 is the canonical view, so its matching 000673 session-keys are dropped from any
 # per-session dict below before pooling, or a shared patient-session counts twice.
-_OVERLAP_REPORT = load_overlap_report(PROVENANCE_PATH)
-LINKED_000673_KEYS = (linked_duplicate_000673_session_keys(_OVERLAP_REPORT)
-                      if _OVERLAP_REPORT is not None else set())
-
 
 def _drop_linked_000673(label: str, grp: dict) -> dict:
-    if label != "DANDI 000673" or not LINKED_000673_KEYS:
+    if label != "DANDI 000673":
         return grp
-    return {k: v for k, v in grp.items() if k not in LINKED_000673_KEYS}
+    overlap_report = load_overlap_report(PROVENANCE_PATH)
+    linked_keys = (linked_duplicate_000673_session_keys(overlap_report)
+                  if overlap_report is not None else set())
+    if not linked_keys:
+        return grp
+    return {k: v for k, v in grp.items() if k not in linked_keys}
 
 
 def se_from_beta_p(beta: float, p: float) -> float:
@@ -88,12 +88,12 @@ def build(d: dict) -> dict:
     if "ctg" in d:
         vals = [s["mean_offdiag"] - 0.5 for s in d["ctg"].values() if "mean_offdiag" in s]
         m, se, n = subject_spread(vals)
-        ctg_rows.append(("Miller ECoG", m, se))
+        ctg_rows.append(("ECoG n-back", m, se))
     if "boran_ctg" in d:
         vals = [s["offdiag_effect"] for s in d["boran_ctg"].values()
                 if isinstance(s, dict) and "offdiag_effect" in s]
         m, se, n = subject_spread(vals)
-        ctg_rows.append(("Boran iEEG", m, se))
+        ctg_rows.append(("DANDI 000574 iEEG", m, se))
     out["q1_context_ctg_offdiag"] = {
         "description": "Context/load CTG off-diagonal effect (AUC-0.5), pooled across datasets",
         "se_method": "subject-spread",
@@ -144,8 +144,8 @@ def build(d: dict) -> dict:
 
     # ── Q1: PR-vs-load slope (readout is low-dimensional and load-invariant)
     pr_rows = []
-    for label, key in [("Miller", "miller"), ("Boran iEEG", "boran_ieeg"),
-                       ("Boran units", "boran_units"), ("DANDI 000469", "dandi000469"),
+    for label, key in [("ECoG n-back", "miller"), ("DANDI 000574 iEEG", "boran_ieeg"),
+                       ("DANDI 000574 units", "boran_units"), ("DANDI 000469", "dandi000469"),
                        ("DANDI 001187", "dandi001187"), ("DANDI 000673", "dandi000673")]:
         r = d.get("pr_lme_by_dataset", {}).get(key)
         if r and "beta" in r:
@@ -158,7 +158,7 @@ def build(d: dict) -> dict:
     }
 
     # ── Q3: flow divergence (mean-trajectory and single-trial ensemble)
-    # Pool the three previously-uncovered cohorts (Boran units, DANDI 001187,
+    # Pool the three previously-uncovered cohorts (DANDI 000574 units, DANDI 001187,
     # DANDI 000673) into the SAME forest as their siblings — moves this from
     # ~3 to ~6 datasets. All six are fit at the SAME DMD_RANK=8 (module's
     # full-latent-rank convention; see run_divergence_analysis.py's matching
@@ -166,9 +166,9 @@ def build(d: dict) -> dict:
     for field, name in [("div_scalar", "q3_divergence_mean_traj"),
                         ("ensemble_div_scalar", "q3_divergence_ensemble")]:
         div_rows = []
-        for label, key in [("Miller ECoG", "miller"), ("Boran iEEG", "boran"),
+        for label, key in [("ECoG n-back", "miller"), ("DANDI 000574 iEEG", "boran"),
                            ("Single units (DANDI 000469)", "rutishauser"),
-                           ("Boran units", "boran_units"),
+                           ("DANDI 000574 units", "boran_units"),
                            ("DANDI 001187", "dandi001187"),
                            ("DANDI 000673", "dandi000673")]:
             grp = _drop_linked_000673(label, d.get("divergence", {}).get(key, {}))
@@ -188,9 +188,9 @@ def build(d: dict) -> dict:
     #    circular-shift null (positive = the linear operator predicts held-out transitions
     #    above chance). Pooled across datasets; SE from subject spread of (cv - null).
     q2_rows = []
-    for label, key in [("Miller ECoG", "miller"), ("Boran iEEG", "boran"),
+    for label, key in [("ECoG n-back", "miller"), ("DANDI 000574 iEEG", "boran"),
                        ("Single units (DANDI 000469)", "rutishauser"),
-                       ("Boran units", "boran_units"),
+                       ("DANDI 000574 units", "boran_units"),
                        ("DANDI 001187", "dandi001187"),
                        ("DANDI 000673", "dandi000673")]:
         grp = _drop_linked_000673(label, d.get("divergence", {}).get(key, {}))
@@ -215,7 +215,7 @@ def build(d: dict) -> dict:
     #    field-potential datasets carry a spatial LFP to align; single units are excluded by
     #    design, not omitted silently).
     q4_rows = []
-    for label, key in [("Miller ECoG", "miller"), ("Boran iEEG", "boran")]:
+    for label, key in [("ECoG n-back", "miller"), ("DANDI 000574 iEEG", "boran")]:
         grp = d.get("divergence", {}).get(key, {})
         gains = [s["align_gain_x"] - 1.0 for s in grp.values() if isinstance(s, dict)
                  and s.get("align_gain_x") is not None and np.isfinite(s["align_gain_x"])]
@@ -233,13 +233,13 @@ def build(d: dict) -> dict:
     }
 
     # ── Q5: actuation — NOT a cross-dataset forest. LQR/TES1 control is a feasibility
-    #    demonstration on the two iEEG datasets (Miller+Boran); B-alignment and rescue are
+    #    demonstration on the two iEEG datasets (ECoG n-back corpus+DANDI 000574); B-alignment and rescue are
     #    within-subject contrasts, not an effect measured across all six cohorts. Carry the
     #    key numbers through rather than fabricate a pooled effect.
     lqr = d.get("tes1_lqr", {})
     rescue = d.get("manifold_rescue", {})
     out["q5_control_feasibility"] = {
-        "description": "Actuation is a control-design demonstration on Miller+Boran, not a "
+        "description": "Actuation is a control-design demonstration on ECoG n-back corpus+DANDI 000574, not a "
                        "poolable cross-dataset effect (documented, not forced into a forest).",
         "not_a_forest": True,
         "source_keys": ["tes1_lqr", "manifold_rescue"],
@@ -263,8 +263,8 @@ def build(d: dict) -> dict:
     # ── Q6: correct-vs-error drift beta across datasets (positive = correct drifts more)
     drift_rows = []
     drift_sources = [
-        ("Boran iEEG", "boran_correct_error_drift"),
-        ("Boran units", "dandi000574_units_correct_error_drift"),
+        ("DANDI 000574 iEEG", "boran_correct_error_drift"),
+        ("DANDI 000574 units", "dandi000574_units_correct_error_drift"),
         ("DANDI 000469", "dandi000469_correct_error_drift"),
         ("DANDI 001187", "dandi001187_correct_error_drift"),
         ("DANDI 000673", "dandi000673_correct_error_drift"),

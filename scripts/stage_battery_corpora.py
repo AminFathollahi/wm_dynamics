@@ -27,7 +27,6 @@ import scipy.io as sio
 REPO_ROOT = Path(__file__).resolve().parents[1]
 from project_config import data_root
 
-DATA_ROOT = data_root()
 RESULTS_DIR = REPO_ROOT / "results"
 
 
@@ -54,16 +53,17 @@ def _git_commit() -> str | None:
 
 
 def inspect_panichello_2024() -> dict[str, Any]:
+    data_root_dir = data_root()
     """Inspect the .mat top-level keys and infer the monkey/area attribution.
 
-    The README (Panichello_2024/README.md) states 10/8/7 sessions for monkeys
+    The README (macaque prefrontal spatial working-memory corpus (Dryad doi:10.5061/dryad.kkwh70sct)/README.md) states 10/8/7 sessions for monkeys
     A/H/J respectively, with no per-session monkey table anywhere in the
     deposit. Session filenames cluster tightly by acquisition date into three
     disjoint blocks whose sizes match those counts exactly, which is the only
     recoverable link between a session and its monkey/area without contacting
     the depositor.
     """
-    root = DATA_ROOT / "Panichello_2024"
+    root = data_root_dir / "Panichello_2024"
     mat_files = sorted(p for p in root.glob("*.mat"))
     example = sio.loadmat(str(mat_files[0]), squeeze_me=True)
     top_level_keys = sorted(k for k in example.keys() if not k.startswith("__"))
@@ -77,10 +77,10 @@ def inspect_panichello_2024() -> dict[str, Any]:
         clusters.setdefault(year_prefix, []).append(d)
     cluster_sizes = {k: len(v) for k, v in clusters.items()}
 
-    # Paper-reported counts (Panichello et al. 2024, Nature 636:422-429):
+    # Paper-reported counts (doi 10.1038/s41586-024-08139-9, Nature 636:422-429):
     # monkey A = 10 sessions (area 8), monkey H = 8 (areas 8 and 9/46),
     # monkey J = 7 (area 9/46). Dryad's file listing confirms no
-    # session-to-monkey table is deposited (verified 2026-08-08).
+    # session-to-monkey table is deposited.
     paper_counts_by_monkey = {"A": 10, "H": 8, "J": 7}
     sorted_clusters = sorted(clusters.items(), key=lambda kv: kv[1][0])
     inferred_monkey_order = sorted(paper_counts_by_monkey, key=lambda m: -paper_counts_by_monkey[m])
@@ -105,7 +105,7 @@ def inspect_panichello_2024() -> dict[str, Any]:
     }
 
     return {
-        "path": str(root.relative_to(DATA_ROOT)),
+        "path": str(root.relative_to(data_root_dir)),
         "size_bytes": _dir_size_bytes(root),
         "status": "staged",
         "species": "macaque",
@@ -122,7 +122,6 @@ def inspect_panichello_2024() -> dict[str, Any]:
         "recording_modality": "single_unit_and_multi_unit_spike_rasters",
         "perturbation_present": False,
         "source_publication": {
-            "authors": "Panichello MF, Jonikaitis D, Oh YJ, Zhu S, Trepka EB, Moore T",
             "title": "Intermittent rate coding and cue-specific ensembles support working memory",
             "venue": "Nature 636(8042):422-429 (2024)",
             "doi": "10.1038/s41586-024-08139-9",
@@ -161,7 +160,8 @@ def inspect_panichello_2024() -> dict[str, Any]:
 
 
 def inspect_inagaki() -> dict[str, Any]:
-    root = DATA_ROOT / "Inagaki" / "SiliconProbeData" / "SiliconProbeData"
+    data_root_dir = data_root()
+    root = data_root_dir / "Inagaki" / "SiliconProbeData" / "SiliconProbeData"
     perturb_dir = root / "RandomDelayTask" / "withPerturbation"
     example = sorted(perturb_dir.glob("*_units.mat"))[0]
     d = sio.loadmat(str(example), squeeze_me=True, struct_as_record=False)
@@ -175,8 +175,8 @@ def inspect_inagaki() -> dict[str, Any]:
     without_perturb_dir = root / "RandomDelayTask" / "withoutPerturbation"
 
     return {
-        "path": str(root.relative_to(DATA_ROOT)),
-        "size_bytes": _dir_size_bytes(DATA_ROOT / "Inagaki"),
+        "path": str(root.relative_to(data_root_dir)),
+        "size_bytes": _dir_size_bytes(data_root_dir / "Inagaki"),
         "status": "staged",
         "species": "mouse",
         "task": "delayed licking task, anterior lateral motor cortex (ALM), fixed- and random-delay variants",
@@ -187,7 +187,6 @@ def inspect_inagaki() -> dict[str, Any]:
         "recording_modality": "single_unit_silicon_probe_and_whole_cell_patch",
         "perturbation_present": True,
         "source_publication": {
-            "authors": "Inagaki HK, Fontolan L, Romani S, Svoboda K",
             "title": "Discrete attractor dynamics underlies persistent activity in the frontal cortex",
             "venue": "Nature 566(7743):212-217 (2019)",
             "doi": "10.1038/s41586-019-0919-7",
@@ -207,7 +206,7 @@ def inspect_inagaki() -> dict[str, Any]:
             f"(stim_trial_vector in {{0,1,2,3}}, 0 = no stim)",
         ],
         "evidence": {
-            "example_session_file": str(example.relative_to(DATA_ROOT)),
+            "example_session_file": str(example.relative_to(data_root_dir)),
             "unit_struct_fields": list(unit0._fieldnames),
             "behavior_struct_fields": list(unit0.Behavior._fieldnames),
             "stim_trial_vector_unique_values": [int(v) for v in np.unique(stim_vec)],
@@ -228,7 +227,8 @@ def inspect_inagaki() -> dict[str, Any]:
 
 
 def inspect_campbell() -> dict[str, Any]:
-    root = DATA_ROOT / "Campbell"
+    data_root_dir = data_root()
+    root = data_root_dir / "Campbell"
     summary_csv = root / "Exp Summary.csv"
     import csv
 
@@ -240,7 +240,7 @@ def inspect_campbell() -> dict[str, Any]:
     lateralities = sorted({r["Laterality"] for r in rows if r.get("Laterality")})
 
     return {
-        "path": str(root.relative_to(DATA_ROOT)),
+        "path": str(root.relative_to(data_root_dir)),
         "size_bytes": _dir_size_bytes(root),
         "status": "staged",
         "species": "human",
@@ -251,11 +251,6 @@ def inspect_campbell() -> dict[str, Any]:
         "recording_modality": "microelectrode_single_unit_plus_macro_stimulation",
         "perturbation_present": True,
         "source_publication": {
-            "authors": (
-                "Campbell JM, Cowan RL, Wahlstrom KL, Hollearn MK, Jensen D, Davis T, Rahimpour S, "
-                "Shofty B, Arain A, Rolston JD, Hamann S, Wang S, Eisenman LN, Swift J, Xie T, "
-                "Brunner P, Manns JR, Inman CS, Smith EH, Willie JT"
-            ),
             "title": "Human single-neuron activity is modulated by intracranial theta burst stimulation of the basolateral amygdala",
             "venue": "eLife, reviewed preprint (version 2, 2025-08-18)",
             "doi": "10.7554/eLife.106481.2",
@@ -280,13 +275,14 @@ def inspect_campbell() -> dict[str, Any]:
 
 
 def inspect_watters() -> dict[str, Any]:
-    root = DATA_ROOT / "Watters"
+    data_root_dir = data_root()
+    root = data_root_dir / "Watters"
     figures_root = root / "data_for_figures" / "data_for_figures"
     modeling_root = root / "data_for_modeling" / "data_for_modeling"
     monkeys = sorted(p.name for p in (modeling_root / "spikes_per_trial").iterdir()) if (modeling_root / "spikes_per_trial").exists() else []
 
     return {
-        "path": str(root.relative_to(DATA_ROOT)),
+        "path": str(root.relative_to(data_root_dir)),
         "size_bytes": _dir_size_bytes(root),
         "status": "staged",
         "species": "macaque",
@@ -300,7 +296,6 @@ def inspect_watters() -> dict[str, Any]:
         "recording_modality": "single_unit",
         "perturbation_present": False,
         "source_publication": {
-            "authors": "Watters N, Gabel J, Tenenbaum J, Jazayeri M",
             "title": "Working Memory of Multi-Object Scenes in Primate Frontal Cortex",
             "venue": "bioRxiv preprint (2026-02-03)",
             "doi": "10.64898/2026.01.27.702062",
@@ -323,11 +318,12 @@ def inspect_watters() -> dict[str, Any]:
 
 
 def inspect_tes1() -> dict[str, Any]:
-    root = DATA_ROOT / "Tes1"
+    data_root_dir = data_root()
+    root = data_root_dir / "Tes1"
     readme = (root / "data" / "0_README.txt").read_text()
 
     return {
-        "path": str(root.relative_to(DATA_ROOT)),
+        "path": str(root.relative_to(data_root_dir)),
         "size_bytes": _dir_size_bytes(root),
         "status": "staged",
         "species": "human",
@@ -338,7 +334,6 @@ def inspect_tes1() -> dict[str, Any]:
         "recording_modality": "intracranial_ecog_ieeg_field_potential",
         "perturbation_present": True,
         "source_publication": {
-            "authors": "Huang Y, Liu AA, Lafon B, Friedman D, Dayan M, Wang X, Bikson M, Doyle WK, Devinsky O, Parra LC",
             "title": "Measurements and models of electric fields in the in vivo human brain during transcranial electric stimulation",
             "venue": "eLife 6:e18834 (2017)",
             "doi": "10.7554/eLife.18834",
@@ -360,7 +355,8 @@ def inspect_tes1() -> dict[str, Any]:
 
 
 def inspect_connectome() -> dict[str, Any]:
-    path = DATA_ROOT / "connectomes" / "markov2014_fln.csv"
+    data_root_dir = data_root()
+    path = data_root_dir / "connectomes" / "markov2014_fln.csv"
     header_comment = path.read_text().splitlines()[0]
     import csv
 
@@ -370,7 +366,7 @@ def inspect_connectome() -> dict[str, Any]:
     n_areas = len(area_names)
 
     return {
-        "path": str(path.relative_to(DATA_ROOT)),
+        "path": str(path.relative_to(data_root_dir)),
         "size_bytes": _dir_size_bytes(path),
         "status": "staged",
         "species": "macaque",
@@ -381,12 +377,11 @@ def inspect_connectome() -> dict[str, Any]:
         "recording_modality": "tracer_injection_fln_matrix",
         "perturbation_present": False,
         "source_publication": {
-            "authors": "Markov NT, et al.",
             "title": "A weighted and directed interareal connectivity matrix for macaque cerebral cortex",
             "venue": "Cerebral Cortex 24(1):17-36 (2014)",
             "doi": "10.1093/cercor/bhs270",
             "verified": True,
-            "verification_method": "verified in-file (header comment); reprocessed by INM-6/multi-area-model (Schmidt et al. 2018) from the CC BY-NC-SA 4.0 redistribution",
+            "verification_method": "verified in-file (header comment); reprocessed by the INM-6 multi-area-model project from the CC BY-NC-SA 4.0 redistribution",
         },
         "analyses_it_can_support": [
             "NONE yet -- registered here as the areal-level structural substrate "
@@ -397,6 +392,7 @@ def inspect_connectome() -> dict[str, Any]:
 
 
 def already_registered_rows() -> list[dict[str, Any]]:
+    data_root_dir = data_root()
     """Rows for corpora already in config/datasets.json / anatomical_census.json.
 
     These are not re-derived; this project's staging census requires every
@@ -416,7 +412,7 @@ def already_registered_rows() -> list[dict[str, Any]]:
             continue
         census_row = census_by_dataset.get(key, {})
         local_path = Path(entry["local_path"])
-        full_path = DATA_ROOT / local_path
+        full_path = data_root_dir / local_path
         rows.append({
             "path": str(local_path),
             "size_bytes": _dir_size_bytes(full_path) if full_path.exists() else None,
@@ -431,8 +427,8 @@ def already_registered_rows() -> list[dict[str, Any]]:
                 "alagapan_phase_stimulation", "haslacher_clam_tacs", "macaque_pfc_microstimulation",
                 "ram_ds005557_closedloop",
             },
-            "source_publication": {"doi": entry.get("doi"), "verified": True, "note": "already registered pre-this-round"},
-            "analyses_it_can_support": ["already in active use elsewhere in this project -- see DATASET_ANALYSIS_MATRIX.md"],
+            "source_publication": {"doi": entry.get("doi"), "verified": True, "note": "already registered"},
+            "analyses_it_can_support": ["already in active use elsewhere in this project"],
             "evidence": {
                 "config_datasets_json_entry": True,
                 "registry_key": key,
@@ -443,6 +439,7 @@ def already_registered_rows() -> list[dict[str, Any]]:
 
 
 def main() -> None:
+    data_root_dir = data_root()
     RESULTS_DIR.mkdir(exist_ok=True)
 
     rows = {
@@ -461,7 +458,7 @@ def main() -> None:
         "schema_version": "1.0.0",
         "code_commit": _git_commit(),
         "trigger": "Stage and identify under-used corpora before any analysis is licensed to claim data-limitation.",
-        "data_root": str(DATA_ROOT),
+        "data_root": str(data_root_dir),
         "corpora": rows,
     }
     out_path = RESULTS_DIR / "corpus_staging_audit.json"

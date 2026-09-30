@@ -41,7 +41,7 @@ Output: results/vstar_eigen_audit.json, keyed dataset -> session -> {
 }, plus "_meta" (bootstrap count, seed scheme, CI method, per-dataset cell counts).
 
 Run:
-    /home/amin/miniconda3/envs/wm_dynamics/bin/python scripts/run_vstar_eigen_audit.py
+    python scripts/run_vstar_eigen_audit.py
 """
 from __future__ import annotations
 
@@ -62,18 +62,21 @@ from control import canonicalize_eigenvector_phase
 
 import run_divergence_analysis as rda
 import run_macaque_pfc_microstimulation_pipeline as rsp
+from dynamics import DMD_RANK, N_PC
+from spike_pipeline import BIN_S, N_BINS
+from spike_pipeline import crop_trial
 
 RESULTS = ROOT / "results"
 B_BOOT = 1000
 
 LATENT_SUBSTRATE = {
-    "miller": "HGP 70-150Hz Hilbert envelope, 50ms Gaussian smoothing (Methods 5.1-5.2)",
-    "boran": "HGP 70-150Hz Hilbert envelope, 50ms Gaussian smoothing (Methods 5.1-5.2)",
-    "boran_units": "single-unit spike counts, binned (Boran cohort, Methods 5.1-5.2)",
-    "dandi000469": "spike times, 100ms bins, 200ms Gaussian kernel (Methods 5.1-5.2)",
-    "dandi001187": "spike times, 100ms bins, 200ms Gaussian kernel (Methods 5.1-5.2)",
-    "dandi000673": "spike times, 100ms bins, 200ms Gaussian kernel (Methods 5.1-5.2)",
-    "macaque_pfc_microstimulation": "50ms-binned spikerate, channel-wise z-scored log-power, 30 bins (Methods 5.1-5.2)",
+    "miller": "HGP 70-150Hz Hilbert envelope, 50ms Gaussian smoothing",
+    "boran": "HGP 70-150Hz Hilbert envelope, 50ms Gaussian smoothing",
+    "boran_units": "single-unit spike counts, binned (DANDI 000574 cohort)",
+    "dandi000469": "spike times, 100ms bins, 200ms Gaussian kernel",
+    "dandi001187": "spike times, 100ms bins, 200ms Gaussian kernel",
+    "dandi000673": "spike times, 100ms bins, 200ms Gaussian kernel",
+    "macaque_pfc_microstimulation": "50ms-binned spikerate, channel-wise z-scored log-power, 30 bins",
 }
 
 
@@ -126,7 +129,7 @@ def spectral_gaps(Z_mean: np.ndarray, r_use: int, dt: float) -> dict:
       the Re-ranked analogue) over the modulus/Re-sorted RAW spectrum. This is
       DEGENERATE by construction whenever the leading mode is a
       complex-conjugate pair: lam2 = conj(lam1) so |lam2| = |lam1| exactly,
-      giving gap_mod = 0 identically (gap_re has the same defect, since
+      giving gap_mod = 0 identically (gap_re has the same error, since
       conjugates share a real part). Kept here, unchanged, for audit trail --
       do not use it as a predictor of anything.
     - `gap_to_next_distinct_mode_mod`/`_re`: the corrected statistic. Groups
@@ -380,7 +383,7 @@ def _iter_macaque_pfc_microstimulation():
         if corr is None or corr["control_idx"] is None:
             continue
         control_idx = corr["control_idx"]
-        ctrl_epochs = [rsp.crop_trial(tr["spikerate"]) for tr in corr["trials"]
+        ctrl_epochs = [crop_trial(tr["spikerate"]) for tr in corr["trials"]
                        if tr["stim_cond"] == control_idx]
         ctrl_epochs = [e for e in ctrl_epochs if e is not None]
         if len(ctrl_epochs) < 10:
@@ -388,10 +391,10 @@ def _iter_macaque_pfc_microstimulation():
         Z_ctrl = np.stack(ctrl_epochs, axis=0)  # (N, N_BINS, C)
         C = Z_ctrl.shape[2]
         X_flat = Z_ctrl.reshape(-1, C)
-        _, V, _ = pca_decompose(X_flat, rsp.N_PC)
+        _, V, _ = pca_decompose(X_flat, N_PC)
         Z_trials = ((Z_ctrl.reshape(-1, C) - X_flat.mean(0)) @ V).reshape(
-            Z_ctrl.shape[0], rsp.N_BINS, V.shape[1])
-        yield "macaque_pfc_microstimulation", prefix, Z_trials, rsp.BIN_S, rsp.DMD_RANK
+            Z_ctrl.shape[0], N_BINS, V.shape[1])
+        yield "macaque_pfc_microstimulation", prefix, Z_trials, BIN_S, DMD_RANK
 
 
 ALL_ITERS = [_iter_miller, _iter_boran, _iter_rutishauser, _iter_boran_units,

@@ -32,7 +32,7 @@ def _unstable_system():
 def _calibrated_threshold_decoder(A, B, x0, target, rng):
     """A decoder 'trained' on independent loop-off (uncontrolled) trials: the
     decision threshold is the median distance-to-target over an independent
-    calibration batch of loop-off rollouts, pooled across the whole horizon
+    calibration set of loop-off rollouts, pooled across the whole horizon
     (not the trials/seeds simulate_closed_loop will later score)."""
     calib = simulate_closed_loop(A, B, x0, target, None, n_trials=150, horizon=30, rng=rng)
     off_dists = np.linalg.norm(calib["x_traj_off"] - target, axis=-1)

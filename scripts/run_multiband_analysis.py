@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Multiband replication of the core WM-geometry findings — Miller ECoG + Boran iEEG.
+"""Multiband replication of the core WM-geometry findings — ECoG n-back corpus + DANDI 000574 iEEG.
 
-A reviewer who sees that theta decodes at least as well as HGP will ask why
+If theta decodes at least as well as HGP, why
 HGP was used at all. The answer is not "HGP wins" (it doesn't) — it is that
-HGP is the only band directly comparable to the Rutishauser single-unit
-spike dataset (Ray & Maunsell 2011), so it is retained as the substrate for
+HGP is the only band directly comparable to the human single-unit DANDI
+spike dataset, so it is retained as the substrate for
 the rest of the paper's pipeline for a methodological, not a performance,
 reason. To make that defensible, every core geometric/dynamical claim is
 checked here in ALL FIVE bands, not just CTG τ:
@@ -22,19 +22,19 @@ Five frequency bands:
   theta  4–8  Hz    beta   13–30 Hz   hgp   70–150 Hz
   alpha  8–13 Hz    gamma  30–70 Hz
 
-Pipeline per band (Miller):
-  1. Load raw voltage (Miller MAT) → CAR + notch.
+Pipeline per band (ECoG n-back corpus):
+  1. Load raw voltage (ECoG n-back corpus MAT) → CAR + notch.
   2. Bandpass → Hilbert envelope² → Gaussian smooth → epoch.
   3. Baseline z-score per channel.
   4. PCA (top-8 PCs) → CTG (0-back vs 2-back, stride=40); PR per load; Rayleigh
      at 2-back maintenance end; DMD divergence on mean 2-back trajectory.
 
-Pipeline per band (Boran, iEEG LFP — continuous field, so the same
+Pipeline per band (DANDI 000574, iEEG LFP — continuous field, so the same
 band-power decomposition applies):
   Same CTG steps, using the good-channel selection already fixed by the main
-  HGP-based Boran pipeline (boran_geometry_*.npz), set4 vs set8 CTG.
+  HGP-based DANDI 000574 pipeline (boran_geometry_*.npz), set4 vs set8 CTG.
 
-Rutishauser (single-unit spike times) has no continuous voltage field, so
+human single-unit DANDI corpora (single-unit spike times) has no continuous voltage field, so
 band-power decomposition does not apply — this is a stated scope limit,
 not an oversight. TES1/LQR personalisation is likewise not re-derived per
 band: it is an engineering controllability demonstration conditioned on
@@ -42,7 +42,7 @@ having *an* adequate manifold, not a claim about which band carries the
 code, so it is demonstrated once (HGP) and that choice is stated explicitly.
 
 Phase-amplitude coupling (PAC):
-  Theta phase × HGP amplitude, KL-divergence modulation index (Tort et al. 2010).
+  Theta phase × HGP amplitude, KL-divergence modulation index.
   Computed per channel × trial; projected to population level via mean over channels.
 
 Saves: results/multiband_ctg.npz
@@ -72,7 +72,7 @@ from geometry import ctg_label_permutation_null
 RESULTS = ROOT / "results"
 SUBJECTS = ["al", "ca", "cc", "ug"]
 
-SRATE = 1000  # Miller 2019 Nat Hum Behav Methods: "sampled at 1000 Hz" (not 1200)
+SRATE = 1000  # per the dataset's original publication (Nat Hum Behav Methods): "sampled at 1000 Hz" (not 1200)
 PRE_MS  = 200.0
 POST_MS = 1500.0
 
@@ -93,14 +93,13 @@ PAC_N_BINS = 18
 # Nested-CV, label-permutation null (geometry.ctg_label_permutation_null) — the
 # same estimator as the headline CTG (run_miller_ctg_corrected.py), so multiband
 # results are directly comparable rather than inflated by a single non-nested
-# train/test split (audit item 1c-i). n_perm is lower than the headline's 10000
+# train/test split. n_perm is lower than the headline's 10000
 # purely for compute budget (5 bands x 13 subjects here vs. 1 band x 4 there).
 N_PERM_CTG = 1000
 
-# ── Boran iEEG (mirrors scripts/run_boran_pipeline.py epoching) ────────────────
+# ── DANDI 000574 iEEG (mirrors scripts/run_boran_pipeline.py epoching) ────────────────
 import h5py
 
-BORAN_DIR      = dataset_path("dandi_000574")
 BORAN_SUBJECTS = [f"sub-0{i}" for i in range(1, 10)]
 BORAN_SRATE    = 1398.0
 T_PRE_MAINT    = 3.0
@@ -156,7 +155,7 @@ def compute_ctg(X_ct: np.ndarray, task_id: np.ndarray, step: int = CTG_STEP,
                 ) -> tuple[np.ndarray, np.ndarray, float, float, float]:
     """CTG matrix (0-back vs 2-back) via the shared nested-CV, label-permutation
     pipeline (geometry.ctg_label_permutation_null) — the same estimator as the
-    headline CTG, so multiband results are comparable to it (audit item 1c-i).
+    headline CTG, so multiband results are comparable to it.
 
     Parameters
     ----------
@@ -211,7 +210,7 @@ def band_dmd_divergence(Z_mean: np.ndarray, dt: float, r: int = 8) -> dict:
 
 def compute_pac_mi(phase_signal: np.ndarray, amp_signal: np.ndarray,
                    n_bins: int = PAC_N_BINS) -> float:
-    """KL-divergence modulation index (Tort et al. 2010).
+    """KL-divergence modulation index.
 
     Parameters
     ----------
@@ -237,11 +236,11 @@ def compute_pac_mi(phase_signal: np.ndarray, amp_signal: np.ndarray,
     return float(mi)
 
 
-# ── Boran iEEG helpers (mirrors run_boran_pipeline.load_subject_sessions) ──────
+# ── DANDI 000574 iEEG helpers (mirrors run_boran_pipeline.load_subject_sessions) ──────
 
 def boran_load_subject_sessions(subj: str) -> dict | None:
-    """Load and concatenate all sessions for one Boran subject (epochs, set_sizes)."""
-    nwbs = sorted((BORAN_DIR / subj).glob("*.nwb"))
+    """Load and concatenate all sessions for one DANDI 000574 subject (epochs, set_sizes)."""
+    nwbs = sorted((dataset_path("dandi_000574") / subj).glob("*.nwb"))
     all_epochs, all_sizes = [], []
     electrode_labels = None
 
@@ -291,7 +290,7 @@ def boran_load_subject_sessions(subj: str) -> dict | None:
 
 def boran_band_power_epochs(epochs: np.ndarray, lo: float, hi: float,
                              smooth_ms: float, srate: float = BORAN_SRATE) -> np.ndarray:
-    """Generic band-power extraction per trial for Boran epochs (N, C, T)."""
+    """Generic band-power extraction per trial for DANDI 000574 epochs (N, C, T)."""
     N, C, T = epochs.shape
     out = np.zeros_like(epochs, dtype=np.float32)
     smooth_s = int(smooth_ms / 1000 * srate)
@@ -316,8 +315,8 @@ def boran_baseline_normalize(band_power: np.ndarray, baseline_samps: int) -> np.
 
 
 def process_boran_multiband(out: dict):
-    """Multiband CTG (set4 vs set8) for Boran iEEG, reusing HGP-pipeline good channels."""
-    print("\n  Boran iEEG (N=9):")
+    """Multiband CTG (set4 vs set8) for DANDI 000574 iEEG, reusing HGP-pipeline good channels."""
+    print("\n  DANDI 000574 iEEG (N=9):")
     maint_start_s = int((T_EPOCH_PRE + T_PRE_MAINT) * BORAN_SRATE)
     maint_end_s   = int((T_EPOCH_PRE + T_PRE_MAINT + T_POST_MAINT) * BORAN_SRATE)
     bl_samps      = int(T_EPOCH_PRE * BORAN_SRATE)
@@ -533,8 +532,8 @@ def main():
 
     process_boran_multiband(out)
 
-    # ── Cross-subject band-replication summary (Miller) ─────────────────────────
-    print("\n  Miller — band replication summary (mean ± SD across 4 subjects):")
+    # ── Cross-subject band-replication summary (ECoG n-back corpus) ─────────────────────────
+    print("\n  ECoG n-back corpus — band replication summary (mean ± SD across 4 subjects):")
     print(f"  {'band':6s} {'tau':>14s} {'PR(0,1,2)':>22s} {'PR-null p':>10s} "
           f"{'Rayleigh R':>11s} {'div (s⁻¹)':>12s}")
     rng_lme = np.random.default_rng(0)
@@ -569,7 +568,7 @@ def main():
 
     boran_done = [s for s in BORAN_SUBJECTS if f"{s}_hgp_tau" in out]
     if boran_done:
-        print("\n  Boran τ per band (mean ± SD across "
+        print("\n  DANDI 000574 τ per band (mean ± SD across "
               f"{len(boran_done)} subjects):")
         for band_name in BANDS:
             taus = [float(out[f"{s}_{band_name}_tau"]) for s in boran_done]
@@ -578,6 +577,6 @@ def main():
 
 if __name__ == "__main__":
     warnings.filterwarnings("ignore")
-    print("Multiband CTG + PAC analysis (Miller ECoG + Boran iEEG)...")
+    print("Multiband CTG + PAC analysis (ECoG n-back corpus + DANDI 000574 iEEG)...")
     main()
     print("Done.")

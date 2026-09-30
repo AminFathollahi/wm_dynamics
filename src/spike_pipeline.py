@@ -1,7 +1,7 @@
 """spike_pipeline.py — shared single-unit Sternberg WM pipeline.
 
-Rutishauser-lab Sternberg single-unit datasets (DANDI 000469, 001187, 000673,
-and — via Boran's co-located microwires — 000574) share the same underlying
+human single-unit DANDI Sternberg single-unit datasets (DANDI 000469, 001187, 000673,
+and — via DANDI 000574's co-located microwires — 000574) share the same underlying
 analysis: bin spike times into a firing-rate population vector, PCA-project,
 run cross-temporal generalisation (load and item-identity) with a
 label-permutation null, cross-validated participation ratio, and a
@@ -28,22 +28,22 @@ if _src_dir not in sys.path:
 from geometry import (ctg_label_permutation_null, ctg_content_permutation_null,
                       temporal_stability_tau, spatiotemporal_participation_ratio,
                       geometric_drift)
+from statistics import minimum_detectable_paired_difference, paired_sign_flip_test
 
 N_PC_DEFAULT = 8
 BIN_MS_DEFAULT = 100
 SMOOTH_MS_DEFAULT = 200
 
-# QC floors documented in Daume et al. 2024 (Neuron; DANDI 001187 source
-# paper): 2/48 sessions excluded for behavioural accuracy below this floor,
+# QC floors documented in the DANDI 001187 source paper: 2/48 sessions excluded for behavioural accuracy below this floor,
 # 67/883 neurons (7.1%) excluded for firing rate below this floor. Applied
-# uniformly across all three Rutishauser-lineage Sternberg cohorts sharing
+# uniformly across all three human single-unit DANDI Sternberg cohorts sharing
 # this pipeline (000469, 001187, 000673) for cross-cohort QC consistency,
 # even where a given cohort's own paper does not separately restate them.
 MIN_SESSION_ACCURACY = 0.55
 MIN_UNIT_FIRING_RATE_HZ = 0.1
 
 # Region-stratified fitting (anatomy is a level of inference, never a
-# nuisance variable pooled away -- a standing human ruling): declared
+# nuisance variable pooled away): declared
 # independently of any fitted estimate, before any region-level result is
 # computed. "pooled" reproduces the pre-stratification behavior (every unit
 # in the session) and is retained as the superseded baseline, never removed.
@@ -51,10 +51,10 @@ ANATOMICAL_REGIONS = ("hippocampus", "amygdala", "pre_sma", "dacc", "vmpfc")
 REGIONS_WITH_POOLED = ("pooled",) + ANATOMICAL_REGIONS
 MIN_UNITS_PER_REGION = 8
 
-# DANDI 000574 (Boran) single-unit region set: every structure the anatomical
+# DANDI 000574 single-unit region set: every structure the anatomical
 # census (results/anatomical_census.json) found with n_units > 0 in this
-# corpus. Distinct from ANATOMICAL_REGIONS because Boran's Brainnetome-hybrid
-# labels resolve a different, wider set of structures than the Rutishauser
+# corpus. Distinct from ANATOMICAL_REGIONS because DANDI 000574's Brainnetome-hybrid
+# labels resolve a different, wider set of structures than the human single-unit DANDI corpora
 # suffix convention -- the pooled DANDI 000574 fit mixes all of these into
 # one state today, which a region-stratified refit still needs to correct.
 BORAN_ANATOMICAL_REGIONS = (
@@ -116,7 +116,7 @@ REGION_VOCABULARY: dict[str, str] = {
 # "cingulate" and "subcortical_other" are kept distinct from
 # "medial_frontal" / "MTL" because RAM's whole-cortex parcellation contacts
 # (anterior cingulate gyrus, basal ganglia, ...) are not the same recording
-# targets as the Rutishauser-lineage microwire ROIs of the same rough
+# targets as the human single-unit DANDI microwire ROIs of the same rough
 # neighborhood, and collapsing them would misrepresent what was pooled.
 COARSE_REGION_GROUP: dict[str, str] = {
     "hippocampus": "MTL", "amygdala": "MTL", "entorhinal_parahippocampal": "MTL",
@@ -212,7 +212,7 @@ _DK_HAND_ANNOTATION_MAP: dict[str, str] = {
     "clear label": "unlabelled",
 }
 
-# 10-20 scalp channel labels, used to recognize DANDI 000574's (Boran) EEG
+# 10-20 scalp channel labels, used to recognize DANDI 000574's (DANDI 000574) EEG
 # cap contacts by label alone when an NWB electrode-group cross-check isn't
 # available to the caller (e.g. this module's own parser, called on a bare
 # string).  scripts/build_anatomical_census.py additionally cross-checks
@@ -222,8 +222,8 @@ SCALP_1020_LABELS = {
     "t5", "p3", "pz", "p4", "t6", "o1", "o2", "a1", "a2",
 }
 
-# Brainnetome-hybrid coarse codes shared verbatim by DANDI 000574 (Boran) and
-# ds004752 -- both Sarnthein-lab Zurich verbal-Sternberg releases -- whose
+# Brainnetome-hybrid coarse codes shared verbatim by DANDI 000574 and
+# ds004752 -- both Zurich Zurich verbal-Sternberg releases -- whose
 # electrode labels read "{CoarseCode}, {Hemisphere} {CoarseName} {FineCode},
 # {fine description}" (e.g. "Hipp, Left Hippocampus cHipp, caudal
 # hippocampus") or the bare coarse code alone.
@@ -249,7 +249,7 @@ def _parse_rutishauser_suffix(raw: str) -> tuple[str, str | None]:
 
 
 def _parse_brainnetome_hybrid(raw: str) -> tuple[str, str | None]:
-    """"{CoarseCode}, {Hemisphere} ..." -- DANDI 000574 (Boran) / ds004752."""
+    """"{CoarseCode}, {Hemisphere} ..." -- DANDI 000574 / ds004752."""
     s = raw.strip()
     low = s.lower()
     if low in ("unspecific",):
@@ -318,7 +318,7 @@ def normalize_region_label(
 
     ``label_convention`` selects the per-corpus parser (declared in
     ``config/datasets.json``, not sniffed from ``raw``); it defaults to the
-    original Rutishauser-lineage ``{structure}_{left|right}`` convention so
+    original human single-unit DANDI ``{structure}_{left|right}`` convention so
     every existing caller (000469/001187/000673) is unaffected. An
     unrecognized label maps to ``"other"`` with its raw string retained by
     the caller -- never silently absorbed into a known structure. Use
@@ -633,3 +633,128 @@ def load_precomputed_session_geometry(results_dir, glob_pattern: str) -> dict[st
         with np.load(fp, allow_pickle=True) as d:
             sessions[key] = {k: d[k] for k in d.files}
     return sessions
+
+
+def _extract_noise_fraction(session_dict: dict | None) -> float | None:
+    if session_dict is None:
+        return None
+    fa = session_dict.get("dimensionality", {}).get("factor_analysis", {})
+    if fa.get("status") != "fitted":
+        return None
+    return fa.get("observation_noise_variance_fraction")
+
+
+def _paired_quantity(
+    sessions_a: dict[tuple[str, str], dict], sessions_b: dict[tuple[str, str], dict],
+    extractor=_extract_noise_fraction,
+) -> tuple[list[float], list[float], list[str]]:
+    interest, reference, keys = [], [], []
+    for key in sorted(set(sessions_a) & set(sessions_b)):
+        va = extractor(sessions_a[key])
+        vb = extractor(sessions_b[key])
+        if va is None or vb is None:
+            continue
+        interest.append(va)
+        reference.append(vb)
+        keys.append(f"{key[0]}/{key[1]}")
+    return interest, reference, keys
+
+
+def resolve_comparison(
+    sessions_a: dict, sessions_b: dict, rng: np.random.Generator,
+    costs_little_name: str, expensive_name: str, no_resolvable_name: str,
+    extractor=_extract_noise_fraction, extractor_description: str = "a fitted factor-analysis noise fraction",
+) -> dict:
+    interest, reference, keys = _paired_quantity(sessions_a, sessions_b, extractor)
+    n_pairs = len(interest)
+    if n_pairs < 4:
+        return {
+            "status": "not_computable", "n_pairs": n_pairs,
+            "reason": f"fewer than 4 paired sessions ({n_pairs}) with {extractor_description} in both cells",
+        }
+    interest_arr, reference_arr = np.array(interest), np.array(reference)
+    diffs = interest_arr - reference_arr
+    test = paired_sign_flip_test(interest_arr, reference_arr, alternative="two-sided", rng=rng)
+    median_diff = float(np.median(diffs))
+    mdd = minimum_detectable_paired_difference(diffs)
+    if median_diff <= 0:
+        branch = costs_little_name
+    elif test["p_value"] < 0.05:
+        branch = expensive_name
+    else:
+        branch = no_resolvable_name
+    return {
+        "status": "fitted",
+        "n_pairs": n_pairs,
+        "paired_session_keys": keys,
+        "r_obs_median_value_of_interest": float(np.median(interest_arr)),
+        "r_obs_median_reference_value": float(np.median(reference_arr)),
+        "median_difference_interest_minus_reference": median_diff,
+        "mean_difference_interest_minus_reference": test["mean_diff"],
+        "p_value": test["p_value"],
+        "ci_lower_mean_difference": test["ci_lower"],
+        "ci_upper_mean_difference": test["ci_upper"],
+        "minimum_detectable_paired_difference_80pct_power": mdd,
+        "branch": branch,
+    }
+
+
+def sessions_for_cell(checkpoint_sessions: dict, cell_key_template: str, bin_ms: int) -> dict[tuple[str, str], dict]:
+    """Keyed by (patient, session), matching resolve_comparison's own
+    pairing key -- one checkpoint session id (e.g. 'sub-01_ses-01') splits
+    into (patient, session) exactly as scripts/run_band_versus_sensor_
+    decomposition.py's own per_cell_sessions construction does."""
+    cell_key = cell_key_template.format(bin_ms=bin_ms)
+    out = {}
+    for session_id, record in checkpoint_sessions.items():
+        cell = record.get("cells", {}).get(cell_key)
+        if cell is None:
+            continue
+        patient = cell.get("patient", session_id.split("_ses-")[0])
+        out[(patient, session_id)] = cell
+    return out
+
+
+BIN_MS = 100.0
+
+
+N_BINS = 30
+
+
+BIN_S = 0.05
+
+
+PRE_S = 0.8
+
+
+def crop_trial(mat: np.ndarray) -> np.ndarray | None:
+    """(T,C) -> (N_BINS,C), or None if the trial is shorter than the window."""
+    if mat.shape[0] < N_BINS:
+        return None
+    return mat[:N_BINS]
+
+
+PANICHELLO_DELAY_WINDOW_MS = (300.0, 1450.0)
+
+
+def _counts_from_spikes(spikes: np.ndarray, time_ms: np.ndarray) -> np.ndarray:
+    """(trials, units, bins) delay-epoch spike counts at the deciding bin
+    width, from the raw (trials, time, units) spike-count array and its
+    per-sample time axis -- the same binning
+    scripts/run_state_persistence.py's panichello_lag_rows uses (that
+    function restricts to correct trials before binning; this module needs
+    both classes intact, so the restriction happens later, per trial
+    subset, not here)."""
+    starts = np.arange(PANICHELLO_DELAY_WINDOW_MS[0], PANICHELLO_DELAY_WINDOW_MS[1], BIN_MS)
+    binned = [spikes[:, (time_ms >= s) & (time_ms < s + BIN_MS), :].sum(axis=1) for s in starts]
+    return np.stack(binned, axis=2)
+
+
+DECIDING_WIDTH_BINS = 3
+
+
+def delay_counts(spike_lists, onset: np.ndarray, window_s: float, bin_ms: float = BIN_MS) -> np.ndarray:
+    """Raw delay-epoch spike counts (trials, units, bins), the input
+    r_lag_profile and its nulls expect."""
+    rate = build_psth(spike_lists, onset, bin_ms=bin_ms, smooth_ms=0.0, window_s=window_s)
+    return rate * (bin_ms / 1000.0)

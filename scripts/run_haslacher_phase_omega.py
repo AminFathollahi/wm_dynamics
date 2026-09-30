@@ -1,12 +1,8 @@
 #!/usr/bin/env python3
-"""Haslacher et al. (2024) CLAM-tACS reanalysis: does each participant's own
+"""CLAM-tACS reanalysis (doi 10.1016/j.brs.2024.07.007, Brain Stimulation
+17 (2024) 850-859): does each participant's own
 baseline-derived alpha oscillation accompany a reliable phase-dependent
 working-memory benefit?
-
-Citation: Haslacher D, Cavallo A, Reber P, Kattein A, Thiele M, Nasr K,
-Hashemi K, Sokoliuk R, Thut G, Soekadar SR. "Working memory enhancement
-using real-time phase-tuned transcranial alternating current stimulation."
-Brain Stimulation 17 (2024) 850-859. https://doi.org/10.1016/j.brs.2024.07.007
 
 Design, per the dataset's own Data/README.md: BrainVision EEG (`no_stim`
 = baseline, stim OFF; `stim` = task block, stim ON), 64 EEG channels +
@@ -64,6 +60,9 @@ import mne  # noqa: E402
 
 from dynamics import fit_band_matched_omega  # noqa: E402
 from statistics import permutation_pvalue, stable_seed  # noqa: E402
+from preprocessing import ACTIVE_SUBJECTS, CONTROL_SUBJECTS  # noqa: E402
+from preprocessing import PHASE_CONDITIONS, modulation_from_outcomes  # noqa: E402
+from preprocessing import RETENTION_TMIN, RETENTION_TMAX  # noqa: E402
 
 _DATA_CONFIG = json.loads((ROOT / "config" / "datasets.json").read_text())
 _DATA_ROOT = os.environ.get(_DATA_CONFIG["local_data_root_env"])
@@ -73,12 +72,7 @@ DATA_DIR = (
 )
 RESULTS = ROOT / "results"
 
-ACTIVE_SUBJECTS = ([f"PA{i}" for i in range(1, 17)] + ["PA18", "PA19", "PA20", "PA22", "PA23"])
-CONTROL_SUBJECTS = (["PA17", "PA21"] + [f"PA{i}" for i in range(24, 47)])
 ALPHA_BAND = (8.0, 14.0)  # dataset's own definition (Data/README.md sec 4)
-RETENTION_TMIN, RETENTION_TMAX = 0.6, 3.6  # dataset's own retention window (sec 3/7)
-PHASE_CONDITIONS = {3: 30, 4: 90, 5: 150, 6: 210, 1: 270, 2: 330}  # dataset's own code->degrees map
-N_PERM_MODULATION = 2000
 
 
 def load_baseline_epochs(subject: str) -> tuple[np.ndarray, float]:
@@ -110,43 +104,8 @@ def trial_outcomes(subject: str) -> list[tuple[int, int]]:
     return outcomes
 
 
-def _modulation(values_in_phase_order: np.ndarray) -> tuple[float, float]:
-    """Single-cycle DFT modulation depth and optimal phase (rad) -- the
-    dataset README's own method (sec 10), reused directly with attribution."""
-    x = np.asarray(values_in_phase_order, float)
-    n = len(x)
-    phases = np.linspace(0, 2 * np.pi, n, endpoint=False)
-    c = (x * np.exp(-1j * phases)).sum() * 2 / n
-    wrapped = (np.angle(c) + np.pi) % (2 * np.pi) - np.pi
-    return float(np.abs(c)), float(wrapped)
 
 
-def modulation_from_outcomes(outcomes: list[tuple[int, int]], rng: np.random.Generator) -> dict:
-    codes_ordered = sorted(PHASE_CONDITIONS, key=lambda c: PHASE_CONDITIONS[c])
-    by_code = {c: [] for c in codes_ordered}
-    for code, correct in outcomes:
-        by_code[code].append(correct)
-    accuracy = np.array([np.mean(by_code[c]) if by_code[c] else np.nan for c in codes_ordered])
-    if np.any(np.isnan(accuracy)):
-        return {"depth": None, "optimal_phase_deg": None, "p_value": None,
-                "n_trials": len(outcomes), "reason": "at least one phase condition has zero trials"}
-
-    depth_obs, phase_obs = _modulation(accuracy)
-    codes_arr = np.array([c for c, _ in outcomes])
-    correct_arr = np.array([v for _, v in outcomes])
-    null = np.empty(N_PERM_MODULATION)
-    for p in range(N_PERM_MODULATION):
-        shuffled_codes = rng.permutation(codes_arr)
-        acc_p = np.array([correct_arr[shuffled_codes == c].mean() if np.any(shuffled_codes == c)
-                          else np.nan for c in codes_ordered])
-        d_p, _ = _modulation(acc_p) if not np.any(np.isnan(acc_p)) else (np.nan, 0.0)
-        null[p] = d_p
-    valid = null[~np.isnan(null)]
-    p_value = permutation_pvalue(valid >= depth_obs) if len(valid) else float("nan")
-    return {"depth": depth_obs, "optimal_phase_deg": float(np.degrees(phase_obs)),
-            "p_value": float(p_value), "n_trials": len(outcomes),
-            "accuracy_by_phase_deg": {PHASE_CONDITIONS[c]: float(accuracy[i])
-                                      for i, c in enumerate(codes_ordered)}}
 
 
 def run_group(subjects: list[str], group_name: str) -> dict:
@@ -191,8 +150,8 @@ def main():
           f"{control['n_consistent']}/{control['n_subjects']} both (consistent)")
 
     out = {"active": active, "control": control,
-          "_meta": {"citation": "Haslacher et al. 2024, Brain Stimulation, "
-                    "doi:10.1016/j.brs.2024.07.007",
+          "_meta": {"citation": "Brain Stimulation, "
+                    "doi 10.1016/j.brs.2024.07.007",
                     "alpha_band_hz": list(ALPHA_BAND), "retention_window_s": [RETENTION_TMIN, RETENTION_TMAX]}}
     with open(RESULTS / "haslacher_phase_omega.json", "w") as f:
         json.dump(out, f, indent=2, default=lambda o: float(o) if isinstance(o, np.floating) else o)

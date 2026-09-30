@@ -46,7 +46,7 @@ Outputs:
   results/stimulation_site_targeting_map.json
 
 Run:
-    /home/amin/miniconda3/envs/wm_dynamics/bin/python \
+    python \
         scripts/run_stimulation_site_targeting_map.py [--smoke N]
 """
 from __future__ import annotations
@@ -73,20 +73,15 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from provenance import canonical_json, git_commit  # noqa: E402
+from provenance import canonical_json, checkpoint_store, git_commit  # noqa: E402
 from statistics import fdr_bh  # noqa: E402
-from run_human_stimulation_component_response import (  # noqa: E402
-    ALPHA,
-    MEANINGFUL_EFFECT_THRESHOLD_R_UNITS,
-    _bin_averaged,
-    _reference_direction,
-    channel_condition_masks,
-    load_raw_features,
-    subject_aggregated_correlation,
-    subject_clustered_mean_test,
-)
-from run_ram_openloop_pipeline import DATA as OPENLOOP_DATA  # noqa: E402
-from run_ram_closedloop_pipeline import DATA as CLOSEDLOOP_DATA  # noqa: E402
+from run_human_stimulation_component_response import load_raw_features
+from stimulation_events import _reference_direction, channel_condition_masks, subject_aggregated_correlation, subject_clustered_mean_test
+from stimulation_events import ALPHA, _bin_averaged
+from statistics import MEANINGFUL_EFFECT_THRESHOLD_R_UNITS
+from corpus_sessions import DATA as OPENLOOP_DATA
+from project_config import dataset_path  # noqa: E402
+from stimulation_events import load_electrode_table, LABEL_SCHEMES  # noqa: E402
 
 RESULTS = ROOT / "results"
 OUTPUT_PATH = RESULTS / "stimulation_site_targeting_map.json"
@@ -98,16 +93,21 @@ CAUSAL_ARTIFACT = {
     "closed_loop_ds005557": RESULTS / "causal_ram_closedloop.json",
 }
 CORPUS_IS_CAUSAL = {"open_loop_ds005489": True, "closed_loop_ds005557": False}
-CORPUS_DATA_DIR = {"open_loop_ds005489": OPENLOOP_DATA, "closed_loop_ds005557": CLOSEDLOOP_DATA}
+
+
+def _corpus_data_dir(corpus: str) -> Path:
+    if corpus == "open_loop_ds005489":
+        return OPENLOOP_DATA
+    if corpus == "closed_loop_ds005557":
+        return dataset_path("ram_ds005557_closedloop")
+    raise KeyError(corpus)
 
 CONDITION_NAMES = ["full_channel_set", "excluding_stimulated_pair", "excluding_stimulated_shank"]
-LABEL_SCHEMES = ["ind.region", "das.region", "stein.region"]
 
 MIN_CONTROL_TRIALS = 8            # same floor the displacement module applies to its own control pool
 MIN_CHANNELS_WITH_KNOWN_GEOMETRY = 3  # fewest weighted points a carriage-weighted mean distance is trusted with
 MIN_SUBJECTS_PER_REGION_CELL = 4
 
-MISSING_NUMERIC_TOKENS = {"", "n/a", "-999", "nan"}
 
 PREDICTOR_DEFINITION = (
     "Per session and per trusted-channel condition: the fixed reference direction that "
@@ -181,17 +181,8 @@ def load_checkpoint(unit: str) -> dict | None:
 
 
 def save_checkpoint(unit: str, record: dict) -> None:
-    CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
     path = _checkpoint_path(unit)
-    payload = {"_complete": True, "record": record}
-    fd, tmp_name = tempfile.mkstemp(dir=str(CHECKPOINT_DIR), prefix="._tmp_")
-    try:
-        with os.fdopen(fd, "w") as f:
-            f.write(canonical_json(payload))
-        os.replace(tmp_name, path)
-    finally:
-        if os.path.exists(tmp_name):
-            os.remove(tmp_name)
+    checkpoint_store(path, {"_complete": True, "record": record})
 
 
 def run_checkpointed(unit: str, fit_fn):
@@ -205,63 +196,10 @@ def run_checkpointed(unit: str, fit_fn):
 
 # ── Electrode-table anatomy ─────────────────────────────────────────────────
 
-def _numeric_or_nan(value) -> float:
-    """-999 and 'n/a' both appear as missing-value sentinels for numeric
-    fields in this release's electrode tables; neither may enter a distance
-    or an average."""
-    if value is None:
-        return float("nan")
-    token = value.strip().lower()
-    if token in MISSING_NUMERIC_TOKENS:
-        return float("nan")
-    try:
-        return float(value)
-    except ValueError:
-        return float("nan")
 
 
-def _electrode_table_paths(data_dir: Path, session_key: str) -> tuple[Path, Path]:
-    ieeg_json = data_dir / session_key
-    stem = ieeg_json.name.replace("_acq-bipolar_ieeg.json", "")
-    mni_path = ieeg_json.parent / f"{stem}_space-MNI152NLin6ASym_electrodes.tsv"
-    tal_path = ieeg_json.parent / f"{stem}_space-Talairach_electrodes.tsv"
-    return mni_path, tal_path
 
 
-def load_electrode_table(data_dir: Path, session_key: str) -> dict:
-    """MNI coordinates are required for the geometric distance analysis and
-    are read only from the MNI152NLin6ASym-space table. The three
-    anatomical labelling schemes are shipped in both space variants of the
-    table; if the MNI table is absent for a session (a real gap in this
-    release), the region labels are still read from the Talairach-space
-    table so the anatomical map is not forced to drop that session too --
-    the space actually used is recorded on every session."""
-    mni_path, tal_path = _electrode_table_paths(data_dir, session_key)
-    coords: dict[str, tuple[float, float, float]] = {}
-    labels: dict[str, dict[str, str]] = {}
-    space_for_labels = None
-    table_path = mni_path if mni_path.exists() else (tal_path if tal_path.exists() else None)
-    if table_path is not None:
-        with open(table_path) as f:
-            rows = list(csv.DictReader(f, delimiter="\t"))
-        for row in rows:
-            name = row.get("name")
-            if not name:
-                continue
-            labels[name] = {scheme: (row.get(scheme) or "n/a").strip() or "n/a" for scheme in LABEL_SCHEMES}
-        space_for_labels = "MNI152NLin6ASym" if table_path == mni_path else "Talairach"
-    if mni_path.exists():
-        with open(mni_path) as f:
-            rows = list(csv.DictReader(f, delimiter="\t"))
-        for row in rows:
-            name = row.get("name")
-            if not name:
-                continue
-            x, y, z = _numeric_or_nan(row.get("x")), _numeric_or_nan(row.get("y")), _numeric_or_nan(row.get("z"))
-            if np.isfinite(x) and np.isfinite(y) and np.isfinite(z):
-                coords[name] = (x, y, z)
-    return {"coords": coords, "labels": labels, "space_for_labels": space_for_labels,
-            "mni_table_found": mni_path.exists()}
 
 
 def channel_midpoint(channel_name: str, coords: dict) -> tuple[float, float, float] | None:
@@ -369,7 +307,7 @@ def _targeting_predictor_session(session_key: str, corpus: str, anode: str, cath
     """The one new per-session computation this module adds: the carriage-
     weighted mean distance from the driven site to the recording channels,
     for each of the three trusted-channel conditions."""
-    data_dir = CORPUS_DATA_DIR[corpus]
+    data_dir = _corpus_data_dir(corpus)
     electrode = load_electrode_table(data_dir, session_key)
     if not electrode["mni_table_found"]:
         return {"status": "excluded", "reason": "no_mni152_electrode_table",
@@ -403,7 +341,7 @@ def site_labels_for_session(session_key: str, corpus: str, anode: str, cathode: 
     single categorical label is needed to place a session in one region
     cell); anode/cathode agreement is recorded but never resolved by
     picking whichever contact makes a cell bigger."""
-    data_dir = CORPUS_DATA_DIR[corpus]
+    data_dir = _corpus_data_dir(corpus)
     electrode = load_electrode_table(data_dir, session_key)
     if electrode["space_for_labels"] is None:
         return {"status": "excluded", "reason": "no_electrode_table_of_either_space"}

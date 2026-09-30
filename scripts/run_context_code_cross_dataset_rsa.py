@@ -12,7 +12,7 @@ subjects within a dataset. Because an RDM depends only on relative distances
 between condition-averaged patterns, not on the specific basis a given
 subject's principal components happen to span, RDMs (unlike raw activity
 patterns or decoder weights) are directly comparable across datasets with
-non-overlapping feature spaces. Extends the existing Miller-versus-Boran-iEEG
+non-overlapping feature spaces. Extends the existing ECoG n-back corpus-versus-DANDI 000574-iEEG
 comparison (results/09_cross_dataset_rsa.npz) to all six datasets with a
 load/set-size manipulation.
 
@@ -39,12 +39,12 @@ CONDITION_LABELS = ["low-early", "low-late", "high-early", "high-late"]
 # Seconds after delay/maintenance-window onset (times[0] of the array passed
 # in) at which to split "early" vs "late". A sample-index midpoint
 # (Z.shape[1]//2) lands at a different absolute post-onset time in every
-# dataset (Miller's 1.1s maintenance window vs Boran's 3.0s vs DANDI's
+# dataset (ECoG n-back corpus's 1.1s maintenance window vs DANDI 000574's 3.0s vs DANDI's
 # 2.2s epoch, at different sampling rates), so "early"/"late" would not
 # refer to the same delay-relative moment across datasets. This value
-# matches Miller's previous ~850ms split (maintenance onset 0.3s + 0.55s)
+# matches ECoG n-back corpus's previous ~850ms split (maintenance onset 0.3s + 0.55s)
 # and is applied uniformly so the split is delay-relative-time-matched
-# rather than sample-count-matched (audit item 1c-ii).
+# rather than sample-count-matched.
 DELAY_SPLIT_REL_S = 0.55
 
 

@@ -1,7 +1,7 @@
 """run_state_behavior_link.py -- does the cross-unit state predict the
 trial's outcome?
 
-Within a single Panichello 2024 macaque lPFC recording session, is the
+Within a single macaque prefrontal spatial working-memory corpus (Dryad doi:10.5061/dryad.kkwh70sct) recording session, is the
 cross-unit state -- d_perm, the fixed-width across-trial correlation of the
 leading population latent's window means, measured against its per-unit
 permutation null -- stronger on trials the animal answered correctly than on
@@ -66,11 +66,14 @@ from state_persistence import (  # noqa: E402
     rank1_gain_and_residual, slope_across_sessions_test,
 )
 from statistics import minimum_detectable_paired_difference, stable_seed  # noqa: E402
+from corpus_sessions import _panichello_directory  # noqa: E402
+from spike_pipeline import _counts_from_spikes  # noqa: E402
+from statistics import MIN_ERROR_TRIALS_FOR_REACHABILITY  # noqa: E402
+from state_persistence import cheap_first_look  # noqa: E402
 
 BIN_MS = 100.0
 BIN_WIDTH_S = BIN_MS / 1000.0
 DECIDING_WIDTH_BINS = 3
-PANICHELLO_DELAY_WINDOW_MS = (300.0, 1450.0)  # matches scripts/run_state_persistence.py's macaque delay window
 
 # The declared "0.3-0.85 s" early range at the deciding fixed window width:
 # bins 3-8 (0.3-0.8 s). This is the SAME range already established elsewhere
@@ -90,7 +93,6 @@ LAG_RANGE_BINS = (3, 8)
 # Pre-declared reachability floor: a session needs at least this many error
 # trials for the matched-count correlation contrast to have usable sampling
 # error. Computed per session, not assumed from the accuracy figures alone.
-MIN_ERROR_TRIALS_FOR_REACHABILITY = 60
 MIN_RESULT_SESSIONS_TO_PROCEED = 6
 
 N_MATCHED_DRAWS = 200
@@ -115,8 +117,7 @@ FULL_N_NULL_SPLITS_PER_REPLICATE = 6
 # half-splits, and the permutation null's own inner r_lag_profile call needs
 # the same floor). The draw COUNT itself is never reduced below the
 # pre-declared 200 -- only these internal split/replicate counts, disclosed
-# here and again in every session's own "matched_draw_parameters" field and
-# in results/implementation_report.md.
+# here and again in every session's own "matched_draw_parameters" field.
 MATCHED_DRAW_N_SPLITS = 4
 MATCHED_DRAW_N_NULL_REPLICATES = 4
 MATCHED_DRAW_N_NULL_SPLITS_PER_REPLICATE = 3
@@ -124,24 +125,8 @@ MATCHED_DRAW_N_NULL_SPLITS_PER_REPLICATE = 3
 OUTPUT_PATH = Path(__file__).resolve().parents[1] / "results" / "state_behavior_link.json"
 
 
-def _panichello_directory(root: Path) -> Path | None:
-    config = json.loads((Path(__file__).resolve().parents[1] / "config" / "datasets.json").read_text())
-    entry = config["datasets"]["panichello_2024"]  # raise if the registry key is missing/mistyped, not a silent skip
-    path = root / entry["local_path"]
-    return path if path.is_dir() else None
 
 
-def _counts_from_spikes(spikes: np.ndarray, time_ms: np.ndarray) -> np.ndarray:
-    """(trials, units, bins) delay-epoch spike counts at the deciding bin
-    width, from the raw (trials, time, units) spike-count array and its
-    per-sample time axis -- the same binning
-    scripts/run_state_persistence.py's panichello_lag_rows uses (that
-    function restricts to correct trials before binning; this module needs
-    both classes intact, so the restriction happens later, per trial
-    subset, not here)."""
-    starts = np.arange(PANICHELLO_DELAY_WINDOW_MS[0], PANICHELLO_DELAY_WINDOW_MS[1], BIN_MS)
-    binned = [spikes[:, (time_ms >= s) & (time_ms < s + BIN_MS), :].sum(axis=1) for s in starts]
-    return np.stack(binned, axis=2)
 
 
 def full_statistic(counts: np.ndarray, n_splits: int, n_null_replicates: int,
@@ -218,59 +203,8 @@ def matched_correct_draws(counts_all: np.ndarray, correct_idx: np.ndarray, n_err
     }
 
 
-def trial_amplitude_covariates(counts_all: np.ndarray) -> dict:
-    """The three per-trial covariates :func:`cheap_first_look` correlates
-    against trial outcome, computed once so a caller needing the raw
-    per-trial arrays (rather than only their correlation with outcome) does
-    not re-derive them: (a) the per-trial leading-component score of the
-    centred trial x window matrix -- the per-trial gain a rank-1
-    decomposition assigns, via rank1_gain_and_residual exactly as this
-    project's rank-1 gain audit does -- (b) total per-trial spike count in
-    the delay epoch, and (c) trial index within the session. Fit in-sample
-    on the same trials, the same convention macaque_specific_fields uses in
-    scripts/run_state_latent_identity.py."""
-    if counts_all.shape[0] < 16:
-        return {"status": "not_computable", "reason": "fewer than 16 trials"}
-    transform = FrozenPSTHTransform().fit(counts_all)
-    z = transform.transform(counts_all)
-    latent = _leading_latent_projection(z, z)
-    window_means = _window_means_at_width(latent, DECIDING_WIDTH_BINS)
-    if window_means is None or window_means.shape[1] < 2:
-        return {"status": "not_computable", "reason": "fewer than 2 windows at the deciding width"}
-    gain, _h_profile, _residual = rank1_gain_and_residual(window_means)
-    total_spike_count = counts_all.sum(axis=(1, 2))
-    trial_index = np.arange(counts_all.shape[0], dtype=float)
-    return {
-        "status": "computed", "leading_component_score_gain": gain,
-        "total_spike_count": total_spike_count, "trial_index": trial_index,
-    }
 
 
-def cheap_first_look(counts_all: np.ndarray, is_corr: np.ndarray) -> dict:
-    """The cheap first look this project's gain-correlates field should have
-    contained: point-biserial correlation between trial outcome and each of
-    :func:`trial_amplitude_covariates`'s three per-trial covariates.
-    Answers a different question from the matched d_perm contrast: whether
-    the trial's overall amplitude or coherence predicts the outcome, as
-    opposed to whether the cross-unit state's persistence across time does
-    -- report both, one is not a substitute for the other."""
-    covariates = trial_amplitude_covariates(counts_all)
-    if covariates["status"] != "computed":
-        return covariates
-    is_corr_float = is_corr.astype(float)
-
-    def _pointbiserial(x: np.ndarray) -> dict:
-        if np.std(x) == 0.0 or np.std(is_corr_float) == 0.0:
-            return {"status": "not_computable", "reason": "zero variance in outcome or covariate"}
-        result = pointbiserialr(is_corr_float, x)
-        return {"status": "computed", "r": float(result.statistic), "p_value": float(result.pvalue)}
-
-    return {
-        "status": "computed",
-        "leading_component_score_gain": _pointbiserial(covariates["leading_component_score_gain"]),
-        "total_spike_count": _pointbiserial(covariates["total_spike_count"]),
-        "trial_index": _pointbiserial(covariates["trial_index"]),
-    }
 
 
 def analyze_session(path: Path) -> dict:
@@ -404,7 +338,7 @@ def _pool_cheap_first_look(sessions: list[dict], field: str) -> dict:
 
 
 def patch_deciding_contrast_parity() -> None:
-    """One-time fix for an estimator-parity defect caught after the full run
+    """One-time fix for an estimator-parity error caught after the full run
     landed: the deciding contrast's two cells were computed at different
     internal split/replicate settings (matched_correct_draws at the reduced
     settings, error_full_statistic at the full settings), so a d_perm
@@ -462,7 +396,7 @@ def main() -> None:
     if directory is None:
         OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
         OUTPUT_PATH.write_text(json.dumps(
-            {"status": "not_available", "reason": "Panichello_2024 not staged"}, indent=2))
+            {"status": "not_available", "reason": "macaque spatial working-memory corpus not staged"}, indent=2))
         return
     files = sorted(glob.glob(str(directory / "*.mat")))
     session_ids = [Path(p).stem for p in files]
@@ -470,7 +404,7 @@ def main() -> None:
     output = {
         "version": "2026-08-17",
         "scope": (
-            "All 25 Panichello 2024 macaque lPFC sessions read directly from the deposited .mat files "
+            "All 25 macaque spatial working-memory corpus sessions read directly from the deposited .mat files "
             "(cueAng, cueAngIdx, isCorr, spks, tc). Within each session reachable at the pre-declared floor, "
             "the deciding contrast is the cross-unit state's magnitude (mean d_perm over the macaque's own "
             "full reachable lag range at the deciding fixed window width) on correct trials at matched trial "

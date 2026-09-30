@@ -51,67 +51,21 @@ from io_utils import locked_json_update  # noqa: E402
 from provenance import canonical_json  # noqa: E402
 from statistics import minimum_detectable_paired_difference, paired_sign_flip_test, stable_seed  # noqa: E402
 from run_band_versus_sensor_decomposition import load_existing_high_gamma_sessions  # noqa: E402
-from run_band_versus_sensor_decomposition_extensions import (  # noqa: E402
-    load_checkpoint_sessions, sessions_for_cell, _extract_persistence_level_factor_analysis,
-)
+from run_band_versus_sensor_decomposition_extensions import load_checkpoint_sessions
+from spike_pipeline import sessions_for_cell
+from state_persistence import _extract_persistence_level_factor_analysis
+from info_decoding import _one_sample_patient_stats, _paired_patient_stats, _patient_median  # noqa: E402
 
 BAND_SENSOR_ARTIFACT = ROOT / "results" / "band_versus_sensor_decomposition.json"
 MATCHED_MODALITY_ARTIFACT = ROOT / "results" / "observability_matched_modality_test.json"
-SEED = 20260813  # same date-stable convention as the extensions script this reuses
 
 
-def _seed(*parts) -> np.random.Generator:
-    return np.random.default_rng((stable_seed("|".join(str(p) for p in parts)) ^ SEED) & 0xFFFFFFFF)
 
 
-def _patient_median(values_by_patient_session: dict[tuple[str, str], float]) -> dict[str, float]:
-    by_patient: dict[str, list[float]] = {}
-    for (patient, _session), value in values_by_patient_session.items():
-        by_patient.setdefault(patient, []).append(value)
-    return {patient: float(np.median(vals)) for patient, vals in by_patient.items()}
 
 
-def _one_sample_patient_stats(patient_values: dict[str, float]) -> dict:
-    values = np.array(list(patient_values.values()), dtype=float)
-    n = len(values)
-    if n < 2:
-        return {"status": "not_computable", "n_patients": n, "reason": "fewer than 2 patients with a fitted median"}
-    t = stats.ttest_1samp(values, 0.0)
-    w = stats.wilcoxon(values) if n >= 1 and np.any(values != 0) else None
-    return {
-        "status": "computed",
-        "n_patients": n,
-        "mean": float(values.mean()),
-        "median": float(np.median(values)),
-        "n_positive": int((values > 0).sum()),
-        "t_test_p_value": float(t.pvalue),
-        "wilcoxon_p_value": float(w.pvalue) if w is not None else None,
-        "per_patient_median": dict(sorted(patient_values.items())),
-    }
 
 
-def _paired_patient_stats(interest: dict[str, float], reference: dict[str, float], seed_parts: tuple) -> dict:
-    shared = sorted(set(interest) & set(reference))
-    n = len(shared)
-    if n < 2:
-        return {"status": "not_computable", "n_patients": n, "reason": "fewer than 2 patients with both arms fitted"}
-    interest_arr = np.array([interest[p] for p in shared], dtype=float)
-    reference_arr = np.array([reference[p] for p in shared], dtype=float)
-    diffs = interest_arr - reference_arr
-    test = paired_sign_flip_test(interest_arr, reference_arr, alternative="two-sided", rng=_seed(*seed_parts))
-    mdd = minimum_detectable_paired_difference(diffs)
-    return {
-        "status": "computed",
-        "n_patients": n,
-        "patients": shared,
-        "mean_difference_interest_minus_reference": float(diffs.mean()),
-        "median_difference_interest_minus_reference": float(np.median(diffs)),
-        "n_positive": int((diffs > 0).sum()),
-        "p_value": test["p_value"],
-        "ci_lower_mean_difference": test["ci_lower"],
-        "ci_upper_mean_difference": test["ci_upper"],
-        "minimum_detectable_paired_difference_80pct_power": mdd,
-    }
 
 
 def band_sensor_patient_clustered() -> dict:

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Within-patient spike-vs-iEEG confinement-rate agreement for DANDI 000574 (Boran).
+"""Within-patient spike-vs-iEEG confinement-rate agreement for DANDI 000574.
 
-Boran's NWB release is the one dataset in this project where single units and
+DANDI 000574's NWB release is the one dataset in this project where single units and
 macro iEEG/LFP are recorded from the SAME patients on the SAME trials. That
 makes it the sharpest internal-validity check available: if the fitted
 confinement rate lambda is a property of the underlying circuit rather than
@@ -26,10 +26,10 @@ parser and session-identity resolver:
     estimators as `scripts/run_human_drift_spine_000574.py`.
   - iEEG arm: `src/preprocessing.py`'s `load_boran_nwb`/`compute_boran_hgp`,
     with channel QC turned on (`reject_channels=True`) so this arm does not
-    inherit the false-negative gap documented alongside this script (Boran's
+    inherit the false-negative gap documented alongside this script (DANDI 000574's
     loader previously ran no channel QC at all); line-noise notch and
     shank-bipolar referencing follow the same convention already established
-    in `scripts/run_boran_pipeline.py`. Boran is recorded in Zurich (50 Hz
+    in `scripts/run_boran_pipeline.py`. DANDI 000574 is recorded in Zurich (50 Hz
     mains), not a US site -- `mains_hz=50.0` throughout, never 60.
 
 Both arms are binned identically (100 ms, non-overlapping, unsmoothed) over
@@ -73,25 +73,18 @@ from spike_pipeline import (  # noqa: E402
     load_spike_times,
     low_rate_unit_mask,
 )
-from run_human_drift_spine_000574 import (  # noqa: E402
-    RULE_HASH,
-    RULE_PATH,
-    bootstrap_mean,
-    discriminant_direction,
-    patient_level_means,
-    projected_residuals,
-)
+from run_human_drift_spine_000574 import RULE_PATH
+from corpus_sessions import RULE_HASH, patient_level_means
+from statistics import bootstrap_mean
+from drift_dynamics import discriminant_direction, projected_residuals
+from preprocessing import BAD_CHANNEL_MAD_THRESHOLD, BORAN_MAINS_HZ, MAINT_WIN  # noqa: E402
+from preprocessing import MIN_BIPOLAR_CHANNELS, MIN_TRIALS, lfp_maintenance_tensor  # noqa: E402
 
 BIN_MS = 100
 MAINT_ONSET_S = 3.0
-MAINT_WIN = 3.0
 N_COMPONENTS = 8
 N_SPLITS = 5
 MIN_UNITS = 8            # matches scripts/run_000574_units_pipeline.py
-MIN_BIPOLAR_CHANNELS = 4
-MIN_TRIALS = 20
-BORAN_MAINS_HZ = 50.0     # Zurich (Sarnthein lab) -- NOT 60 Hz US; see src/preprocessing.py
-BAD_CHANNEL_MAD_THRESHOLD = 3.0
 DESCRIPTIVE_ONLY_PATIENT_FLOOR = 5  # below this, a handful of patients is a case series, not a population sample -- no population-level CI language
 
 MOMENT_BOOT = 120
@@ -109,115 +102,6 @@ def session_seed(session_key: str) -> int:
     subject_num = int(subject.replace("sub-", ""))
     session_num = int(session)
     return 20260801 + subject_num * 100 + session_num
-
-
-def lfp_maintenance_tensor(
-    ieeg: dict, trial_mask: np.ndarray, n_bins: int, lo: float = 70.0, hi: float = 150.0,
-) -> np.ndarray:
-    """Notch -> bipolar-reference -> band-envelope power -> maintenance-window bin.
-
-    Matches the convention already established in scripts/run_boran_pipeline.py
-    (filter/envelope computed on the full pre-probe-to-post-probe epoch, THEN
-    the maintenance sub-window is sliced out, to keep zero-phase filter edge
-    effects away from the analysis window boundary). ``lo``/``hi`` default to
-    this project's standard high-gamma band; passing a different band (e.g.
-    8-45 Hz) reuses the identical filter-and-envelope path with only the
-    passband changed, which is the intended way to compare bands at fixed
-    sensor and referencing.
-    """
-    epochs = ieeg["epochs"][trial_mask]
-    srate = ieeg["srate"]
-    labels = ieeg["electrode_labels"]
-    n_trials, n_channels, n_samples = epochs.shape
-    notched = np.empty_like(epochs)
-    for trial in range(n_trials):
-        notched[trial] = line_noise_notch(
-            epochs[trial].T, srate, fundamental=BORAN_MAINS_HZ, n_harmonics=3,
-        ).T
-    flat = notched.transpose(0, 2, 1).reshape(-1, n_channels)
-    bipolar_flat, _ = bipolar_reference_by_shank(flat, labels)
-    bipolar = bipolar_flat.reshape(n_trials, n_samples, -1).transpose(0, 2, 1).astype(np.float32)
-    # smooth_ms=0: an estimator that reports a persistence or confinement
-    # contrast must never see a smoothed signal -- a temporal kernel
-    # manufactures autocorrelation indistinguishable from genuine confinement.
-    # compute_boran_hgp's default (50 ms Gaussian, used by the CTG/geometry
-    # pipelines) is correct for those purposes but wrong here; this arm must
-    # match the spike arm's build_psth(..., smooth_ms=0, ...) convention
-    # exactly.
-    band_power = compute_boran_hgp(bipolar, srate=srate, lo=lo, hi=hi, smooth_ms=0.0)
-    maint_mask = (ieeg["times"] >= -MAINT_WIN) & (ieeg["times"] < 0)
-    band_maint = band_power[:, :, maint_mask]
-    edges = np.linspace(0, band_maint.shape[2], n_bins + 1).astype(int)
-    return np.stack(
-        [band_maint[:, :, edges[k]:edges[k + 1]].mean(axis=2) for k in range(n_bins)], axis=2,
-    )
-
-
-MASTOID_LABELS = ("A1", "A2")
-
-
-def scalp_reference_excluding_mastoids(data: np.ndarray, labels: list[str]) -> tuple[np.ndarray, list[str]]:
-    """Common-average reference across scalp channels, excluding the two
-    mastoids from both the average and the analysis -- pre-declared before
-    any scalp session is fit, not improvised per session. The depth path's
-    bipolar-by-shank scheme (shank_bipolar_index_pairs) has no meaning for a
-    scalp 10-20 montage, which has no shank structure to difference along, so
-    it is not reused here.
-
-    Parameters
-    ----------
-    data   : (T, C)
-    labels : length-C electrode labels (10-20 names plus the two mastoids)
-
-    Returns
-    -------
-    referenced  : (T, C - n_mastoids_present)
-    kept_labels : list[str], mastoid labels removed, order otherwise preserved
-    """
-    keep = [i for i, lab in enumerate(labels) if lab not in MASTOID_LABELS]
-    referenced = common_average_reference(data[:, keep])
-    kept_labels = [labels[i] for i in keep]
-    return referenced, kept_labels
-
-
-def scalp_low_band_maintenance_tensor(
-    eeg: dict, trial_mask: np.ndarray, n_bins: int, lo: float = 8.0, hi: float = 45.0,
-) -> tuple[np.ndarray, list[str]]:
-    """Notch -> common-average-reference-excluding-mastoids -> low-band
-    envelope power -> maintenance-window bin. Mirrors lfp_maintenance_tensor's
-    structure exactly (same mains notch, same maintenance window, same
-    binning convention, same unsmoothed envelope); the referencing step
-    differs because a scalp montage has no shank structure to bipolar-
-    reference along (scalp_reference_excluding_mastoids). The 8-45 Hz default
-    is fixed by two physical constraints -- below the 50 Hz mains notch and
-    its harmonics, and below the scalp series' own Nyquist frequency with
-    margin -- not tuned per call.
-
-    Returns
-    -------
-    tensor      : (trials, channels, n_bins) float32
-    kept_labels : list[str], the channel labels surviving mastoid exclusion
-    """
-    epochs = eeg["epochs"][trial_mask]
-    srate = eeg["srate"]
-    labels = eeg["electrode_labels"]
-    n_trials, n_channels, n_samples = epochs.shape
-    notched = np.empty_like(epochs)
-    for trial in range(n_trials):
-        notched[trial] = line_noise_notch(
-            epochs[trial].T, srate, fundamental=BORAN_MAINS_HZ, n_harmonics=3,
-        ).T
-    flat = notched.transpose(0, 2, 1).reshape(-1, n_channels)
-    referenced_flat, kept_labels = scalp_reference_excluding_mastoids(flat, labels)
-    referenced = referenced_flat.reshape(n_trials, n_samples, -1).transpose(0, 2, 1).astype(np.float32)
-    band_power = compute_boran_hgp(referenced, srate=srate, lo=lo, hi=hi, smooth_ms=0.0)
-    maint_mask = (eeg["times"] >= -MAINT_WIN) & (eeg["times"] < 0)
-    band_maint = band_power[:, :, maint_mask]
-    edges = np.linspace(0, band_maint.shape[2], n_bins + 1).astype(int)
-    tensor = np.stack(
-        [band_maint[:, :, edges[k]:edges[k + 1]].mean(axis=2) for k in range(n_bins)], axis=2,
-    )
-    return tensor, kept_labels
 
 
 def fit_modality_fold(
@@ -442,7 +326,7 @@ def main() -> None:
 
     complete = {key: row for key, row in sessions.items() if row["status"] == "complete"}
     if not complete:
-        raise SystemExit("no Boran session produced a dual-modality confinement fit")
+        raise SystemExit("no DANDI 000574 session produced a dual-modality confinement fit")
 
     metric_names = (
         "moment_mean_diff", "moment_mean_log_ratio", "moment_ci_overlap_fraction",
@@ -508,7 +392,7 @@ def main() -> None:
 
     output = {
         "schema_version": "1.0.0", "analysis_id": "boran_modality_consistency",
-        "dataset": "DANDI 000574 (Boran verbal Sternberg) -- co-located single units and iEEG",
+        "dataset": "DANDI 000574 (verbal Sternberg) -- co-located single units and iEEG",
         "canonical_role": (
             "within-patient spike-vs-LFP confinement-rate agreement test. Spiking and iEEG are two "
             "views of the SAME patients and SAME trials, never independent replications."
@@ -538,7 +422,7 @@ def main() -> None:
             "mains_hz": BORAN_MAINS_HZ,
             "bad_channel_mad_threshold": BAD_CHANNEL_MAD_THRESHOLD,
             "note_on_task_premise": (
-                "Boran (Sarnthein lab, University Hospital Zurich) is a 50 Hz-mains site, not a "
+                "DANDI 000574 (recorded in Zurich) is a 50 Hz-mains site, not a "
                 "US 60 Hz site -- mains_hz=50.0 is used throughout, including inside the shared "
                 "reject_bad_channels line-noise criterion"
             ),

@@ -65,4 +65,4 @@ def test_pooled_key_excluded_even_when_present_in_every_source_set():
     combined_correct = (a | b | c | d) - {"pooled"}
     combined_buggy = a | b | c | d - {"pooled"}
     assert "pooled" not in combined_correct
-    assert "pooled" in combined_buggy  # documents the exact defect being guarded against
+    assert "pooled" in combined_buggy  # documents the exact error being guarded against

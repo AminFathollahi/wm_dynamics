@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Descriptive retention diffusion after Alagapan encoding stimulation.
+"""Descriptive retention diffusion after phase-locked intracranial stimulation corpus (doi:10.1016/j.celrep.2019.10.072) encoding stimulation.
 
 Stimulation ends before the analyzed retention window.  The analysis uses
 the recording's own sampling metadata and event-defined retention bounds,
@@ -21,16 +21,12 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from provenance import git_commit  # noqa: E402
-from run_alagapan_phase_omega import DATA_DIR, PATIENTS, load_behavior  # noqa: E402
-from run_alagapan_stimulation_geometry import (  # noqa: E402
-    CONDITIONS,
-    RETENTION_ONSET_BUFFER_S,
-    _baseline_retention_trials,
-    _spectral_sanity_check,
-    _stimulation_retention_trials,
-    STIM_SITES,
-)
-from run_haslacher_phase_diffusion import _phase_diffusion, bin_analog_trials  # noqa: E402
+from run_alagapan_phase_omega import DATA_DIR, load_behavior
+from preprocessing import PATIENTS
+from run_alagapan_stimulation_geometry import _baseline_retention_trials, _stimulation_retention_trials
+from preprocessing import _spectral_sanity_check, STIM_SITES
+from preprocessing import CONDITIONS, RETENTION_ONSET_BUFFER_S
+from preprocessing import _phase_diffusion, bin_analog_trials
 
 N_COMPONENTS = 3
 
@@ -118,14 +114,14 @@ def analyze_patient(patient: str) -> dict:
 
 def main() -> None:
     if "__WM_DYNAMICS_DATA_ROOT_NOT_SET__" in str(DATA_DIR) or not DATA_DIR.is_dir():
-        raise SystemExit("Set WM_DYNAMICS_DATA_ROOT; configured Alagapan data directory is unavailable.")
+        raise SystemExit("Set WM_DYNAMICS_DATA_ROOT; configured phase-locked intracranial stimulation corpus data directory is unavailable.")
     rows = []
     for patient in PATIENTS:
-        print(f"fitting Alagapan retention diffusion {patient}", flush=True)
+        print(f"fitting phase-locked intracranial stimulation corpus retention diffusion {patient}", flush=True)
         rows.append(analyze_patient(patient))
     complete = [row for row in rows if row.get("status") == "complete"]
     output = {
-        "analysis": "Alagapan post-encoding-stimulation retention diffusion",
+        "analysis": "Phase-locked intracranial stimulation corpus post-encoding-stimulation retention diffusion",
         "git_commit": git_commit(ROOT),
         "evidence": {"n_patients": len(complete),
                      "n_artifact_qc_failed": sum(row.get("status") == "artifact_qc_failed" for row in rows),

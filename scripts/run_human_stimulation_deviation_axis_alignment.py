@@ -77,7 +77,7 @@ Outputs:
 
 Run:
     OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 \\
-    /home/amin/miniconda3/envs/wm_dynamics/bin/python \\
+    python \\
     scripts/run_human_stimulation_deviation_axis_alignment.py
 """
 from __future__ import annotations
@@ -104,19 +104,18 @@ for _sub in ("src", "scripts"):
 
 from provenance import _json_safe, checkpoint_safe, git_commit, restore_checkpoint  # noqa: E402
 from spike_pipeline import normalize_region_label  # noqa: E402
-from run_human_stimulation_component_response import (  # noqa: E402
-    CLOSEDLOOP_DATA, OPENLOOP_DATA, _bin_averaged, channel_condition_masks, compute_stimulation_displacement,
-    load_corpus,
-)
-from run_stimulation_site_targeting_map import load_electrode_table  # noqa: E402
-from run_macaque_pfc_microstimulation_stimulation_deviation_axis_alignment import (  # noqa: E402
-    BEHAVIOURAL_REFERENCE_R_UNITS, CONTINUITY_ALIGNMENT_FLOOR_ABS_COSINE, N_ROTATION_DRAWS,
-    _alignment_summary, _bias_only_axis, _bias_only_voids, _classify_arm, _pool_group, displacement_vector,
-    estimate_axis,
-)
-from run_deviation_axis_identity_controls import _vector_reference_alignment_with_draws  # noqa: E402
-from run_dissociation_cross_preparation_test import MIN_TRIALS_WITH_DEFINED_DIRECTION  # noqa: E402
-from run_recording_tier_component_transfer import MTL_STRUCTURES, UNLABELLED_STRUCTURES  # noqa: E402
+from run_human_stimulation_component_response import load_corpus
+from stimulation_events import channel_condition_masks, compute_stimulation_displacement
+from stimulation_events import _bin_averaged
+from corpus_sessions import DATA as OPENLOOP_DATA
+from project_config import dataset_path
+from stimulation_events import load_electrode_table
+from corpus_sessions import BEHAVIOURAL_REFERENCE_R_UNITS, CONTINUITY_ALIGNMENT_FLOOR_ABS_COSINE, _alignment_summary, _bias_only_axis, _bias_only_voids, _classify_arm, displacement_vector, estimate_axis
+from state_persistence import _pool_group
+from info_decoding import N_ROTATION_DRAWS
+from info_decoding import _vector_reference_alignment_with_draws
+from statistics import MIN_TRIALS_WITH_DEFINED_DIRECTION
+from statistics import MTL_STRUCTURES, UNLABELLED_STRUCTURES
 
 RESULTS = ROOT / "results"
 OUTPUT_PATH = RESULTS / "human_stimulation_deviation_axis_alignment.json"
@@ -126,7 +125,6 @@ RECORDING_TIER_TRANSFER_PATH = RESULTS / "recording_tier_component_transfer.json
 CHECKPOINT_DIR = RESULTS / ".checkpoints" / "run_human_stimulation_deviation_axis_alignment"
 SCHEMA_TAG = "v1_control_only_axis_mtl_cortical_tier_split_2026_08_27"
 
-CORPUS_DATA_DIR = {"open_loop_ds005489": OPENLOOP_DATA, "closed_loop_ds005557": CLOSEDLOOP_DATA}
 LABEL_CONVENTION = "bids_desikan_killiany_ind_region"
 DEPTH_TIERS = ("depth_mtl", "depth_cortical")
 ARMS = ("raw_axis", "detrended_axis")
@@ -284,6 +282,14 @@ def _fit_session_tier(arrays: dict, tier_mask: np.ndarray, seed_base: str) -> di
     }
 
 
+def _corpus_data_dir(corpus: str) -> Path:
+    if corpus == "open_loop_ds005489":
+        return OPENLOOP_DATA
+    if corpus == "closed_loop_ds005557":
+        return dataset_path("ram_ds005557_closedloop")
+    raise KeyError(corpus)
+
+
 def _fit_session(rec: dict) -> dict:
     arrays = rec["arrays"]
     ch_names = [str(c) for c in arrays["ch_names"].tolist()]
@@ -291,7 +297,7 @@ def _fit_session(rec: dict) -> dict:
     masks = channel_condition_masks(ch_names, anode, cathode, stim_ch)
     trusted_mask = masks["excluding_stimulated_shank"]
 
-    electrode = load_electrode_table(CORPUS_DATA_DIR[rec["corpus"]], rec["session_key"])
+    electrode = load_electrode_table(_corpus_data_dir(rec["corpus"]), rec["session_key"])
     if electrode["space_for_labels"] is None:
         return {"status": "excluded", "reason": "no_electrode_anatomy_table_of_either_space"}
     labels = electrode["labels"]
@@ -393,7 +399,7 @@ def main() -> None:
     t0 = time.time()
 
     openloop = load_corpus("open_loop_ds005489", OPENLOOP_DATA, derive_stim_from_stim_on=False, smoke=None)
-    closedloop = load_corpus("closed_loop_ds005557", CLOSEDLOOP_DATA, derive_stim_from_stim_on=True, smoke=None)
+    closedloop = load_corpus("closed_loop_ds005557", dataset_path("ram_ds005557_closedloop"), derive_stim_from_stim_on=True, smoke=None)
     all_records = openloop["records"] + closedloop["records"]
 
     zero_drop_reproduction = _reproduce_zero_drop(openloop, closedloop)

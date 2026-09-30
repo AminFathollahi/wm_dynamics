@@ -42,7 +42,7 @@ Outputs:
   results/nonlinear_control_targeting.json
 
 Run:
-    /home/amin/miniconda3/envs/wm_dynamics/bin/python \
+    python \
         scripts/run_nonlinear_control_targeting.py [--smoke N]
 """
 from __future__ import annotations
@@ -75,15 +75,13 @@ from sklearn.multioutput import MultiOutputRegressor  # noqa: E402
 from sklearn.pipeline import make_pipeline  # noqa: E402
 
 from geometry import pca_decompose  # noqa: E402
-from provenance import canonical_json, checkpoint_safe, git_commit, restore_checkpoint  # noqa: E402
+from provenance import canonical_json, checkpoint_load, checkpoint_safe, git_commit, restore_checkpoint  # noqa: E402
 from statistics import stable_seed  # noqa: E402
 import run_nonlinearity_onestep as nlo  # noqa: E402  (admissibility helpers: _pairs, _cv_r2, _null_r2)
-from run_human_stimulation_component_response import (  # noqa: E402
-    ALPHA,
-    MEANINGFUL_EFFECT_THRESHOLD_R_UNITS,
-    load_raw_features,
-    subject_aggregated_correlation,
-)
+from run_human_stimulation_component_response import load_raw_features
+from stimulation_events import subject_aggregated_correlation
+from stimulation_events import ALPHA
+from statistics import MEANINGFUL_EFFECT_THRESHOLD_R_UNITS
 from run_ram_openloop_pipeline import BIN_S, N_PC, PRE_S  # noqa: E402
 from scipy.stats import norm  # noqa: E402
 
@@ -129,13 +127,8 @@ def _checkpoint_path(unit: str) -> Path:
 
 def load_checkpoint(unit: str) -> dict | None:
     path = _checkpoint_path(unit)
-    if not path.exists():
-        return None
-    try:
-        data = json.loads(path.read_text())
-    except (json.JSONDecodeError, OSError, UnicodeDecodeError):
-        return None
-    if not isinstance(data, dict) or data.get("_complete") is not True or data.get("_schema") != SCHEMA:
+    data = checkpoint_load(path)
+    if data is None or data.get("_complete") is not True or data.get("_schema") != SCHEMA:
         return None
     return restore_checkpoint(data["record"])
 
@@ -166,7 +159,7 @@ def run_checkpointed(unit: str, fit_fn):
 # ── Per-session nonlinear dynamics fit, admissibility, and targeting quantity ──
 
 def _make_gbr():
-    return MultiOutputRegressor(GradientBoostingRegressor(random_state=0), n_jobs=nlo.GBR_N_JOBS)
+    return MultiOutputRegressor(GradientBoostingRegressor(random_state=0), n_jobs=nlo.GBR_N_WORKERS)
 
 
 def _make_krr(n_landmarks: int):

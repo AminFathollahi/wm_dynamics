@@ -346,20 +346,20 @@ REGISTRY: list[dict] = [
     _r("scripts/run_state_content_link.py", "iter_sessions_with_labels", ["panichello_2024"],
        "subtractive content test counts", "correct trials only",
        ["content linkage tested on error trials"]),
-    _r("scripts/run_state_latent_identity.py", "macaque_sessions", ["panichello_2024"],
+    _r("src/corpus_sessions.py", "macaque_sessions", ["panichello_2024"],
        "rank-1/residual identity counts", "correct trials only",
        ["latent identity tests on error trials"]),
     _r("scripts/run_count_subsampling_ladder.py", "_load_panichello_sessions", ["panichello_2024"],
        "per-bin count tensor", "all released trials; is_corr attached per trial, not filtered"),
     _r("scripts/run_state_orthogonality_census.py", "session_observables", ["panichello_2024"],
        "orthogonality observables", "all released trials; is_correct attached, not filtered"),
-    _r("scripts/run_rate_free_state_geometry_behavior_link.py", "_session_arrays", ["panichello_2024"],
+    _r("src/corpus_sessions.py", "_session_arrays", ["panichello_2024"],
        "rate-free deviation arrays", "finite-outcome trials; is_corr carried as the behavioural variable"),
-    _r("scripts/run_dominant_latent_identity_and_behaviour_breadth.py", "_load_session", ["panichello_2024"],
+    _r("src/corpus_sessions.py", "_load_session", ["panichello_2024"],
        "dominant-latent amplitude arrays", "finite-outcome trials; is_corr carried as the outcome"),
-    _r("scripts/run_deviation_serial_dependence_and_temporal_locus.py", "_macaque_session_bundle", ["panichello_2024"],
+    _r("src/corpus_sessions.py", "_macaque_session_bundle", ["panichello_2024"],
        "serial-dependence bundle", "released trials; native binary outcome used as covariate, not filter"),
-    _r("scripts/run_behavior_amplitude_rate_controls.py", "_reachable_sessions", ["panichello_2024"],
+    _r("src/corpus_sessions.py", "_reachable_sessions", ["panichello_2024"],
        "amplitude-covariate sessions", "sessions retained only if they hold enough ERROR trials for reachability",
        ["sessions with too few error trials are excluded from the accuracy-predicting component"]),
     _r("scripts/run_state_behavior_link.py", None, ["panichello_2024"], "cross-unit state vs outcome link",
@@ -368,16 +368,16 @@ REGISTRY: list[dict] = [
        "9-class spatial-task files whose per-class trial counts clear the floor; no outcome field read"),
     _r("scripts/run_macaque_pfc_microstimulation_pipeline.py", "load_macaque_pfc_microstimulation_session", ["macaque_pfc_microstimulation"], "pre-binned trial spikerates",
        "one outcome arm per call: separate correct-only / error-only MAT files chosen by the caller"),
-    _r("scripts/run_macaque_pfc_microstimulation_pipeline.py", "crop_trial", ["macaque_pfc_microstimulation"], "fixed-window crops",
+    _r("src/spike_pipeline.py", "crop_trial", ["macaque_pfc_microstimulation"], "fixed-window crops",
        "trials at least N_BINS long; shorter trials dropped"),
     # -- stimulation / scalp / ECoG / iEEG field pipelines --------------------
-    _r("scripts/run_haslacher_stimulation_geometry.py", "_retention_trials", ["haslacher_clam_tacs"],
+    _r("src/preprocessing.py", "_retention_trials", ["haslacher_clam_tacs"],
        "retention-window scalp EEG epochs", "epochs of the requested phase-condition codes; behaviour not read"),
     _r("scripts/run_alagapan_stimulation_geometry.py", "_baseline_retention_trials", ["alagapan_phase_stimulation"],
        "retention-window depth iEEG epochs", "baseline-session epochs whose event type/latency defines a retention window"),
     _r("scripts/run_alagapan_stimulation_geometry.py", "_stimulation_retention_trials", ["alagapan_phase_stimulation"],
        "retention-window depth iEEG epochs", "stimulation-session epochs matched to condition labels; behaviour not read"),
-    _r("scripts/run_wolff_corrected_analysis.py", "valid_mask", ["wolff_eeg_impulse"], "cue/impulse epoch validity",
+    _r("src/preprocessing.py", "valid_mask", ["wolff_eeg_impulse"], "cue/impulse epoch validity",
        "trials not flagged bad by the authors' own bad-trial index; outcome not read"),
     _r("scripts/run_miller_drift_spine.py", "analyze_patient", ["kai_miller_nback"], "high-gamma epochs",
        "stimulus-locked epochs via src/preprocessing.load_subject; n-back level labels restricted to 0/1/2"),
@@ -415,7 +415,7 @@ REGISTRY: list[dict] = [
        "iEEG/scalp band tensors", "artifact-free window-valid trials (errors retained)"),
     _r("scripts/run_latent_model_observation_noise_comparison.py", "_build_dandi_000574_lfp_sessions",
        ["dandi_000574"], "LFP observation-noise tensors", "artifact-free window-valid trials (errors retained)"),
-    _r("scripts/run_state_space_estimation_admissibility.py", "_boran_field_potential_session", ["dandi_000574"],
+    _r("src/corpus_sessions.py", "_boran_field_potential_session", ["dandi_000574"],
        "iEEG/scalp maintenance band power", "trials with no artifact AND correct response",
        ["field-potential outcome prediction", "error-trial band dynamics"]),
     # -- secondary readers with their own admission decisions -----------------
@@ -432,14 +432,14 @@ REGISTRY: list[dict] = [
        ["dimensionality of low-accuracy sessions"]),
     _r("scripts/run_behavior_ctg.py", "_spike_session_outcome_ctg", ["dandi_000469", "dandi_001187", "dandi_000673"],
        "outcome CTG from raw spikes", "raw trials of sessions clearing the accuracy floor; correctness is the DECODED variable, not admission"),
-    _r("scripts/run_behavior_ctg.py", "run_boran_units", ["dandi_000574"], "outcome CTG on Boran units",
+    _r("scripts/run_behavior_ctg.py", "run_boran_units", ["dandi_000574"], "outcome CTG on DANDI 000574 units",
        "artifact-free trials (errors retained); correctness decoded"),
-    _r("scripts/run_behavior_ctg.py", "run_boran_ieeg", ["dandi_000574"], "outcome CTG on Boran iEEG",
+    _r("scripts/run_behavior_ctg.py", "run_boran_ieeg", ["dandi_000574"], "outcome CTG on DANDI 000574 iEEG",
        "artifact-free window-valid trials; correctness decoded"),
     _r("scripts/run_full_trial_content_decoding_000469.py", "process_subject", ["dandi_000469"],
        "full-trial content decoding arrays", "unit-QC'd sessions, restricted to load-1 trials",
        ["full-trial content decoding of error trials"]),
-    _r("scripts/run_multiband_analysis.py", None, ["dandi_000574"], "multiband Boran iEEG epochs",
+    _r("scripts/run_multiband_analysis.py", None, ["dandi_000574"], "multiband DANDI 000574 iEEG epochs",
        "non-artifact trials"),
     _r("scripts/run_recording_tier_component_transfer.py", "_load_000574_trial_table", ["dandi_000574"],
        "tier-transfer trial table", "returns artifact/correct/set_size/start_time; callers apply ~artifact"),
@@ -727,17 +727,11 @@ def measure_rule_discards(root: Path | None) -> dict:
 
     # watters_2026: add_behavior_columns keeps completed trials only
     try:
-        from run_watters_source_replication import watters_task_csvs  # type: ignore
-        csv_paths = watters_task_csvs(root)
-    except Exception:
-        csv_paths = None
-    try:
         import pandas as pd
-        if csv_paths is None:
-            cfg = json.loads(DATASETS_CONFIG.read_text())["datasets"]["watters_2026"]["local_path"]
-            corpus = (root / cfg).parent if Path(cfg).name == "data_for_modeling" else (root / cfg)
-            behav_dir = corpus / "data_for_figures" / "data_for_figures" / "behavior_processing"
-            csv_paths = [behav_dir / f"{variant}.csv" for variant in ("ring", "triangle")]
+        cfg = json.loads(DATASETS_CONFIG.read_text())["datasets"]["watters_2026"]["local_path"]
+        corpus = (root / cfg).parent if Path(cfg).name == "data_for_modeling" else (root / cfg)
+        behav_dir = corpus / "data_for_figures" / "data_for_figures" / "behavior_processing"
+        csv_paths = [behav_dir / f"{variant}.csv" for variant in ("ring", "triangle")]
         tot = adm = inc = 0
         measured = 0
         for fp in csv_paths:
@@ -1046,7 +1040,7 @@ def evaluate_branches(loaders: list[dict], askability: dict, corpora: list[str])
              f"{n} loaders admit trials conditional on an outcome variable")
     else:
         emit(f"outcome_filtering_is_confined_to_{n}_loaders",
-             {"n_trial_level_outcome_filter_loaders": n}, "below the defect-class threshold of 3")
+             {"n_trial_level_outcome_filter_loaders": n}, "below the error-class threshold of 3")
 
     emit("outcome_filtering_extends_beyond_the_human_spine_iterators"
          if outside else "outcome_filtering_confined_to_the_human_spine_iterators",

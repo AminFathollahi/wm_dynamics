@@ -71,7 +71,7 @@ This is a robustness audit and never a comparison between estimators. No sentenc
 artifact or the report may say one method outperformed another.
 
 Run:
-    /home/amin/miniconda3/envs/wm_dynamics/bin/python \
+    python \
         scripts/run_reduction_sensitive_claim_robustness.py \
         [--candidates ...] [--single-item-sessions-limit N] [--multi-object-sessions-limit N] \
         [--n-perm-ctg N] [--n-perm-restatement N]
@@ -104,19 +104,18 @@ from corpus_sessions import data_root, iter_watters  # noqa: E402
 from geometry import _ctg_score_fold_multiclass, temporal_stability_tau  # noqa: E402
 from provenance import canonical_json, checkpoint_safe, git_commit, restore_checkpoint  # noqa: E402
 from statistics import permutation_pvalue, stable_seed  # noqa: E402
-from run_deviation_axis_structure import (  # noqa: E402
-    CORPORA, _macaque_bundles, _reachable_sessions, _watters_bundles, full_reproduction_gate,
-)
-from run_deviation_geometry_estimation_robustness import (  # noqa: E402
-    _combine_restated_cells_across_levels, zero_drop,
-)
-from run_dissociation_cross_preparation_test import BIN_MS, MIN_TRIALS_WITH_DEFINED_DIRECTION  # noqa: E402
-from run_state_space_dimensionality_sweep import CTG_N_SPLITS, CTG_STEP  # noqa: E402
-from run_state_space_estimation_robustness import (  # noqa: E402
-    MAJORITY_SIGNIFICANCE_THRESHOLD, MICROSTIM_CANDIDATES, OPERATING_RANK, STATUS_VOCABULARY,
-    aggregate_claim, class_mean_coordinates, fit_representation, interval_agreement,
-    restated_claim_cell, rung_three_sample_size,
-)
+from run_deviation_axis_structure import _macaque_bundles
+from corpus_sessions import _watters_bundles
+from info_decoding import CORPORA
+from corpus_sessions import _reachable_sessions
+from run_deviation_serial_dependence_and_temporal_locus import full_reproduction_gate
+from info_decoding import _combine_restated_cells_across_levels, zero_drop
+from spike_pipeline import BIN_MS
+from statistics import MIN_TRIALS_WITH_DEFINED_DIRECTION
+from info_decoding import CTG_N_SPLITS, CTG_STEP
+from run_state_space_estimation_robustness import aggregate_claim, fit_representation, rung_three_sample_size
+from info_decoding import restated_claim_cell
+from info_decoding import MAJORITY_SIGNIFICANCE_THRESHOLD, MICROSTIM_CANDIDATES, OPERATING_RANK, STATUS_VOCABULARY, class_mean_coordinates, interval_agreement
 
 RESULTS = ROOT / "results"
 OUTPUT_PATH = RESULTS / "reduction_sensitive_claim_robustness.json"
@@ -126,7 +125,7 @@ OUTPUT_PATH = RESULTS / "reduction_sensitive_claim_robustness.json"
 # covered everything it was pre-declared to cover.
 SHAKEDOWN_OUTPUT_PATH = RESULTS / "reduction_sensitive_claim_robustness.shakedown.json"
 CHECKPOINT_DIR = RESULTS / ".checkpoints" / "run_reduction_sensitive_claim_robustness"
-CHECKPOINT_SCHEMA = "reduction_sensitive_claim_robustness_v1"
+CHECKPOINT_SCHEMA = "reduction_sensitive_claim_robustness_v2"
 
 # The identical admissible six-candidate roster the sibling geometry module runs -- no fork, the
 # same set applied to the same two corpora for a different pair of claims.

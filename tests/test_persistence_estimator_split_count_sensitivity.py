@@ -48,7 +48,7 @@ def test_significant_negative_change_is_partially_attributable_not_cleared():
     # closes none of the gap, yet the pre-declared clearance branch requires "not significant" literally
     # -- so this lands in partially_attributable rather than the clearance branch, even though it is, if
     # anything, stronger evidence against a settings account than a null would be. This is a real
-    # ambiguity in the pre-declared rule's wording (see the implementation report), and this test pins
+    # ambiguity in the pre-declared rule's wording, and this test pins
     # down what the code as written actually does with it rather than what might seem more intuitive.
     change = _tested_change(mean_diff=-0.03, significant=True)
     fraction = _fraction_closed(change, gap=0.178)
@@ -147,7 +147,7 @@ def test_resume_carries_panichello_session_cache_when_human_and_alm_are_complete
     assert human_and_alm_done is True
     assert output["human_delay_arm"] == {"branch": "x"}
     assert output["alm_arm"] == {"branch": "y"}
-    # The exact defect this test pins down: every cached session must survive the resume, not just the
+    # The exact error this test pins down: every cached session must survive the resume, not just the
     # ones that happen to share a branch with the human/ALM copy-over.
     assert set(output["panichello_session_rows"].keys()) == {"210921", "210927"}
 

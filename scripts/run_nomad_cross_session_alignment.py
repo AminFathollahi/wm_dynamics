@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""NoMAD-style cross-session dynamics alignment (Karpowicz et al. 2025, Nat
-Commun, "Stabilizing brain-computer interfaces through alignment of latent
-dynamics", DOI 10.1038/s41467-025-59652-y) on DANDI 000574 (Boran) subjects
+"""NoMAD-style cross-session dynamics alignment (the paper "Stabilizing
+brain-computer interfaces through alignment of latent dynamics",
+doi 10.1038/s41467-025-59652-y) on DANDI 000574 subjects
 with multiple recorded sessions, testing whether aligning each session's
 dynamics to a shared reference lets a SINGLE fixed behavioral decoder
 (trained once, on the reference session only) transfer to later sessions
@@ -13,7 +13,7 @@ to Python 3.7.7 + TensorFlow 2 + CUDA 10.0/cuDNN 7.6 -- incompatible with this
 machine's GPU (RTX 5070 Ti, Blackwell architecture, needs CUDA 12.8+) and this
 project's Python 3.11 env. The suggested modern PyTorch LFADS backbone
 (arsedler9/lfads-torch) is GitHub-only with no PyPI release. Both repositories
-were confirmed reachable on 2026-08-01; network access is not the blocker.
+were confirmed reachable; network access is not the blocker.
 This script instead implements NoMAD's alignment MECHANISM
 directly (the actual contribution being tested): fit a small GRU generator
 + readout on a REFERENCE session, freeze the generator, then for every other

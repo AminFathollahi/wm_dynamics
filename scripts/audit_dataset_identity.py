@@ -25,7 +25,7 @@ from provenance import canonical_json, sha256_file  # noqa: E402
 
 RELEASES = ("000469", "000574", "000673", "001187")
 
-# Historical value (superseded 2026-08-03): overlap grouping originally keyed
+# Overlap grouping keyed
 # on the full ``native_identifier`` string, which embeds the release-local
 # upload-order folder ("sub-N") ahead of the patient code, e.g. 000673's
 # "sub-1_ses-1_P55CS" vs 001187's "sub-2_ses-1_P55CS" for the SAME patient
@@ -56,6 +56,23 @@ def text(value: Any) -> str:
     return str(value)
 
 
+def _object_element_bytes(value: Any, source: h5py.File) -> bytes:
+    if isinstance(value, h5py.Reference):
+        return source[value].name.encode() if value else b""
+    return text(value).encode()
+
+
+def _object_sample_bytes(sample: np.ndarray, source: h5py.File) -> bytes:
+    fields = sample.dtype.names
+    parts = []
+    for element in sample:
+        if fields:
+            parts.extend(_object_element_bytes(element[field], source) for field in fields)
+        else:
+            parts.append(_object_element_bytes(element, source))
+    return b"\x00".join(parts)
+
+
 def compact_hash(group: h5py.Group | None) -> str | None:
     if group is None:
         return None
@@ -80,7 +97,13 @@ def compact_hash(group: h5py.Group | None) -> str | None:
                     head = np.asarray(node[: min(64, node.shape[0])]).reshape(-1)
                     tail = np.asarray(node[max(0, node.shape[0] - 64) :]).reshape(-1)
                     sample = np.concatenate((head, tail))
-                digest.update(np.ascontiguousarray(sample).tobytes())
+                # Object dtype (plain or compound-with-object, e.g. variable-length
+                # strings and HDF5 references) holds Python-object pointers that
+                # tobytes() would serialize as memory addresses, not content.
+                if sample.dtype.hasobject:
+                    digest.update(_object_sample_bytes(sample, node.file))
+                else:
+                    digest.update(np.ascontiguousarray(sample).tobytes())
             except (TypeError, ValueError, OSError):
                 pass
     return digest.hexdigest()

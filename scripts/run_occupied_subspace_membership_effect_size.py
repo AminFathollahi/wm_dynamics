@@ -2,7 +2,7 @@
 null-hypothesis test, whether the residual-direction axis lies inside the occupied state space, for the
 two macaque corpora the delivered occupied-state-space decomposition covers.
 
-THE DEFECT THIS REPLACES, verified numerically before anything below is trusted. The delivered rank
+THE ERROR THIS REPLACES, verified numerically before anything below is trusted. The delivered rank
 re-estimation validated two rank selectors on synthetic data and applied them to real cells, then asked
 whether the axis's off-fraction was "significantly above" either of two nulls. One of those nulls --
 `_within_subspace_null_decomposition` in the module this one reuses -- builds its null directions as
@@ -76,22 +76,22 @@ for _sub in ("src", "scripts"):
 
 from corpus_sessions import data_root  # noqa: E402
 from provenance import _json_safe, git_commit  # noqa: E402
-from run_component_identity_subspace_atlas import N_BOOT_SESSION_CLUSTER, Z_80_POWER  # noqa: E402
-from run_deviation_axis_structure import (  # noqa: E402
-    CORPORA, N_RANDOM_AXIS_DRAWS, _collect_axis_entries, _trial_count_weighted, leading_eigenvector,
-)
-from run_occupied_subspace_rank_estimation import (  # noqa: E402
-    ESTIMATOR_NAMES, _cell_under_estimator, _gate_status_for_corpus, _load_checkpoint, _run_corpus,
-    run_synthetic_recovery_gate,
-)
+from info_decoding import N_BOOT_SESSION_CLUSTER
+from statistics import Z_80_POWER
+from info_decoding import _collect_axis_entries
+from subspace_identity import leading_eigenvector
+from info_decoding import CORPORA, N_RANDOM_AXIS_DRAWS
+from run_multi_object_interference_and_locus_within_item_count import _trial_count_weighted
+from run_occupied_subspace_rank_estimation import _cell_under_estimator, _load_checkpoint, _run_corpus, run_synthetic_recovery_gate
+from info_decoding import ESTIMATOR_NAMES, _gate_status_for_corpus
 from run_occupied_subspace_rank_selection_repair import _load_corpora_and_accounting  # noqa: E402
 from statistics import stable_seed  # noqa: E402
+from info_decoding import _whole_session_cluster_bootstrap, MIN_SESSIONS_FOR_CLUSTER_BOOTSTRAP  # noqa: E402
 
 OUTPUT_PATH = ROOT / "results" / "occupied_subspace_membership_effect_size.json"
 ANALYSIS_VERSION = "2026-09-06"
 
 N_REPRODUCTION_GATE_SESSION_LEVELS_PER_CORPUS = 6  # x2 estimators x2 corpora = 24 individual checks, >= 10
-MIN_SESSIONS_FOR_CLUSTER_BOOTSTRAP = 4  # matches the whole-session bootstrap's own minimum elsewhere in this project
 
 DECISION_RULE_DECLARED_BEFORE_FITTING = (
     "THE EFFECT SIZE, per corpus x session x item-count-level x estimator: contrast = within_fraction - "
@@ -117,9 +117,9 @@ DECISION_RULE_DECLARED_BEFORE_FITTING = (
     "'inconclusive_too_few_sessions_with_a_detected_subspace_to_pool'; (2) if the interval's lower bound is "
     "above 0 -> 'above_chance'; (3) if the interval's upper bound is below 0 -> 'at_or_below_chance'; "
     "(4) otherwise (interval straddles 0) -> 'inconclusive_confidence_interval_includes_zero'. An estimator "
-    "not validated by the synthetic gate at this corpus's scale never reaches this rule; it is reported with "
-    "its raw numbers and excluded from every branch with the reason 'excluded_failed_synthetic_gate_at_this_"
-    "corpus_scale'.\n"
+    "not validated by the synthetic gate at this corpus's scale never reaches this rule; it is excluded "
+    "from every branch with the reason 'excluded_failed_synthetic_gate_at_this_corpus_scale' and carries no "
+    "pooled numbers for that corpus.\n"
     "ONE BRANCH PER CORPUS, from the set of estimators that are BOTH validated by the gate AND reach an "
     "'above_chance' or 'at_or_below_chance' verdict (the 'evaluable' estimators for that corpus; estimators "
     "are never averaged or otherwise combined into a single number -- agreement or disagreement among "
@@ -154,22 +154,6 @@ DECISION_RULE_DECLARED_BEFORE_FITTING = (
 # resampling draws (never a trial-count formula).
 # =======================================================================================================
 
-def _whole_session_cluster_bootstrap(values: list[float], seed_tag: str) -> dict:
-    arr = np.asarray([v for v in values if v is not None], dtype=float)
-    n = int(arr.size)
-    if n < MIN_SESSIONS_FOR_CLUSTER_BOOTSTRAP:
-        return {"status": "not_computable", "n_sessions": n,
-                "reason": f"fewer than {MIN_SESSIONS_FOR_CLUSTER_BOOTSTRAP} sessions have a detected subspace to pool"}
-    rng = np.random.default_rng(stable_seed(seed_tag))
-    boot_means = np.array([arr[rng.integers(0, n, size=n)].mean() for _ in range(N_BOOT_SESSION_CLUSTER)])
-    se = float(np.std(boot_means, ddof=1))
-    ci_low, ci_high = (float(x) for x in np.percentile(boot_means, [2.5, 97.5]))
-    return {
-        "status": "computed", "n_sessions": n, "n_bootstrap_draws": N_BOOT_SESSION_CLUSTER,
-        "pooled_mean": float(arr.mean()), "cluster_bootstrap_ci_95pct": [ci_low, ci_high],
-        "cluster_bootstrap_se": se, "z_multiplier_80pct_power": Z_80_POWER,
-        "minimum_detectable_difference_at_80pct_power": Z_80_POWER * se,
-    }
 
 
 def _estimator_verdict(contrast_pooled: dict) -> str:

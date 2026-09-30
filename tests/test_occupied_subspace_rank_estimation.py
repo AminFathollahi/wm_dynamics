@@ -3,7 +3,7 @@
 The single most important test here pins the property the delivered `_cv_pca_rank` selector lacks: a
 genuine interior minimum. `entry_holdout_rank` must recover a known low true rank from synthetic data
 (never trivially return the ambient ceiling the way the degenerate selector does), and its held-out-entry
-error curve must not be monotone non-increasing -- if it were, it would share the same defect this module
+error curve must not be monotone non-increasing -- if it were, it would share the same error this module
 exists to repair.
 """
 
@@ -17,11 +17,9 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from run_deviation_axis_structure import _cv_pca_rank, _occupied_space_decomposition  # noqa: E402
-from run_occupied_subspace_rank_estimation import (  # noqa: E402
-    _gate_status_for_corpus, _within_subspace_null_decomposition, classify_final_branch, entry_holdout_rank,
-    permutation_eigenvalue_rank, _whole_session_cluster_bootstrap_mdd,
-)
+from info_decoding import _cv_pca_rank, _occupied_space_decomposition
+from run_occupied_subspace_rank_estimation import _within_subspace_null_decomposition, classify_final_branch, entry_holdout_rank, permutation_eigenvalue_rank, _whole_session_cluster_bootstrap_mdd
+from info_decoding import _gate_status_for_corpus
 
 
 def _low_rank_synthetic(n: int, p: int, true_rank: int, noise_relative: float, seed: int) -> np.ndarray:
@@ -43,7 +41,7 @@ def test_entry_holdout_rank_recovers_known_low_rank_synthetic():
 
 
 def test_entry_holdout_rank_is_not_monotonic_unlike_the_degenerate_selector():
-    """Contrast with the defect this module replaces: the degenerate `_cv_pca_rank` selector's held-out
+    """Contrast with the error this module replaces: the degenerate `_cv_pca_rank` selector's held-out
     error is monotone non-increasing by construction and always selects the top of its candidate range.
     entry_holdout_rank's held-out-ENTRY error must NOT be monotone non-increasing -- inverting small
     singular values past the true rank must make the held-out prediction worse, not better or flat."""

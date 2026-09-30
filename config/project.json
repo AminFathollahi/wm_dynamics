@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0.0",
   "paths": {
-    "data_root": "/media/amin/ADATA HD710 PRO/Research/Representation/Working Memory/data",
+    "data_root": "",
     "results": "results",
     "figures": "figures",
     "provenance": "provenance",
@@ -14,10 +14,16 @@
     "data_root": "WM_DYNAMICS_DATA_ROOT",
     "results": "WM_DYNAMICS_RESULTS_DIR",
     "figures": "WM_DYNAMICS_FIGURES_DIR",
-    "lfads_python": "WM_DYNAMICS_LFADS_PYTHON"
+    "lfads_python": "WM_DYNAMICS_LFADS_PYTHON",
+    "ssm_python": "WM_DYNAMICS_SSM_PYTHON",
+    "ndt_python": "WM_DYNAMICS_NDT_PYTHON",
+    "ndt_repo": "WM_DYNAMICS_NDT_REPO"
   },
   "executables": {
-    "lfads_python": "/home/amin/envs/lfads_torch_py310/bin/python"
+    "lfads_python": "",
+    "ssm_python": "",
+    "ndt_python": "",
+    "ndt_repo": ""
   },
   "defaults": {
     "random_seed": 42,

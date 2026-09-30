@@ -7,7 +7,7 @@ hands it a (trial, unit) activity array and a treatment flag -- human
 intracranial field-potential power and macaque intracortical spike counts
 are both just (n_trials, n_units) matrices to the functions below. Nothing
 here reads a file or knows a corpus identifier; window boundaries, channel
-selection, and counterfactual choice are the caller's job (driven from
+selection, and counterfactual choice are the caller's responsibility (driven from
 results/stimulation_design_census.json, not from this module).
 
 `rate_free_state_deviation` is moved here unchanged from
@@ -184,3 +184,48 @@ def cluster_bootstrap_pooled_effect(session_values: NDArray, cluster_ids: list, 
         "ci_lower": test["ci_lower"], "ci_upper": test["ci_upper"],
         "mdd": mdd,
     }
+
+
+def _pool_arm(arm_id: str, per_session_rows: list[dict], counterfactual_label: str, windows_measured: dict) -> dict:
+    """Windows come only from the census (`windows_measured`, one entry per
+    window keyed exactly as the census row spells it); a window whose census
+    status is not 'measured' is never computed here and is carried into the
+    artifact as a structural void with the census's own reason -- this
+    corpus never gets a window forced onto it that its own design row does
+    not certify."""
+    result: dict = {"arm_id": arm_id, "windows": {}}
+    for window_name, census_field in windows_measured.items():
+        if census_field.get("status") != "measured":
+            result["windows"][window_name] = {"status": "structural_void", "reason": census_field.get("reason")}
+            continue
+        per_session_summary, dev_vals, dev_ids, nuis_vals, nuis_ids = {}, [], [], [], []
+        for row in per_session_rows:
+            w = row["windows"].get(window_name)
+            if w is None:
+                per_session_summary[row["session_key"]] = {"status": "window_not_available_for_this_session"}
+                continue
+            eff = window_treatment_effect(w["control_activity"], w["treated_activity"])
+            nuis = nuisance_treatment_effect(w["control_total"], w["treated_total"])
+            per_session_summary[row["session_key"]] = {
+                "cluster_id": row["cluster_id"],
+                "rate_free_deviation_status": eff.get("status"),
+                "rate_free_deviation_normalised_displacement": eff.get("normalised_displacement"),
+                "nuisance_status": nuis.get("status"),
+                "nuisance_normalised_change": nuis.get("normalised_change"),
+            }
+            if eff.get("status") == "computed" and eff.get("normalised_displacement") is not None:
+                dev_vals.append(eff["normalised_displacement"]); dev_ids.append(row["cluster_id"])
+            if nuis.get("status") == "computed" and nuis.get("normalised_change") is not None:
+                nuis_vals.append(nuis["normalised_change"]); nuis_ids.append(row["cluster_id"])
+        pooled_dev = (cluster_bootstrap_pooled_effect(np.array(dev_vals), dev_ids, f"panel|{arm_id}|{window_name}|deviation")
+                      if dev_vals else {"status": "not_computable", "reason": "no session produced a finite normalised displacement"})
+        pooled_nuis = (cluster_bootstrap_pooled_effect(np.array(nuis_vals), nuis_ids, f"panel|{arm_id}|{window_name}|nuisance")
+                       if nuis_vals else {"status": "not_computable", "reason": "no session produced a finite nuisance change"})
+        result["windows"][window_name] = {
+            "status": "computed", "window_seconds": census_field.get("value"), "counterfactual": counterfactual_label,
+            "n_sessions_contributing_deviation": len(dev_vals), "n_sessions_contributing_nuisance": len(nuis_vals),
+            "rate_free_deviation_biomarker": {"role": "candidate", "pooled": pooled_dev},
+            "nuisance_total_activity_biomarker": {"role": "nuisance_control_not_a_candidate", "pooled": pooled_nuis},
+            "per_session": per_session_summary,
+        }
+    return result

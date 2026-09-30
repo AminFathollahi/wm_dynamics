@@ -27,9 +27,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import run_common_basis_target_transfer as m  # noqa: E402
 import run_macaque_pfc_microstimulation_pipeline as macaque_pfc_microstimulation  # noqa: E402
-from run_target_transfer import _cluster_bootstrap_over_sessions  # noqa: E402
+from statistics import _cluster_bootstrap_over_sessions
+from spike_pipeline import N_BINS
 
-N_BINS = macaque_pfc_microstimulation.N_BINS
+N_BINS = N_BINS
 CANONICAL_IDS = list(range(1, 11))  # 10 channels; only ids 1 and 2 carry any signal
 GOOD_CHANNEL, BAD_CHANNEL = 1, 2
 

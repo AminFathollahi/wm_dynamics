@@ -48,7 +48,7 @@ verdict genuinely disagrees across the estimators above, and even then only afte
 sample size has been sized and reported, never spent automatically.
 
 Run:
-    /home/amin/miniconda3/envs/wm_dynamics/bin/python \
+    python \
         scripts/run_deviation_geometry_estimation_robustness.py \
         [--candidates ...] [--single-item-sessions-limit N] [--multi-object-sessions-limit N] \
         [--n-perm-restatement N]
@@ -80,17 +80,19 @@ for _sub in ("src", "scripts"):
 from corpus_sessions import data_root, iter_watters  # noqa: E402
 from provenance import canonical_json, git_commit  # noqa: E402
 from statistics import minimum_detectable_paired_difference, permutation_pvalue, stable_seed  # noqa: E402
-from run_component_and_content_specific_serial_pull import _trial_count_weighted  # noqa: E402
-from run_deviation_axis_structure import (  # noqa: E402
-    CORPORA, _macaque_bundles, _reachable_sessions, _watters_bundles, _weighted_combine_draws,
-    full_reproduction_gate,
-)
-from run_dissociation_cross_preparation_test import BIN_MS, MIN_TRIALS_WITH_DEFINED_DIRECTION  # noqa: E402
-from run_state_space_estimation_robustness import (  # noqa: E402
-    MAJORITY_SIGNIFICANCE_THRESHOLD, MICROSTIM_CANDIDATES, OPERATING_RANK, STATUS_VOCABULARY,
-    aggregate_claim, class_mean_coordinates, decide_claim_standing, fit_representation,
-    interval_agreement, restated_claim_cell, rung_three_sample_size,
-)
+from run_multi_object_interference_and_locus_within_item_count import _trial_count_weighted
+from run_deviation_axis_structure import _macaque_bundles
+from corpus_sessions import _watters_bundles
+from info_decoding import _weighted_combine_draws
+from info_decoding import CORPORA
+from corpus_sessions import _reachable_sessions
+from run_deviation_serial_dependence_and_temporal_locus import full_reproduction_gate
+from spike_pipeline import BIN_MS
+from statistics import MIN_TRIALS_WITH_DEFINED_DIRECTION
+from run_state_space_estimation_robustness import aggregate_claim, fit_representation, rung_three_sample_size
+from info_decoding import restated_claim_cell
+from info_decoding import MAJORITY_SIGNIFICANCE_THRESHOLD, MICROSTIM_CANDIDATES, OPERATING_RANK, STATUS_VOCABULARY, class_mean_coordinates, decide_claim_standing, interval_agreement
+from info_decoding import _combine_restated_cells_across_levels, zero_drop  # noqa: E402
 
 RESULTS = ROOT / "results"
 OUTPUT_PATH = RESULTS / "deviation_geometry_estimation_robustness.json"
@@ -208,32 +210,6 @@ def single_item_candidate_cells(bundle: dict, candidate: str, args) -> dict:
 
 # ── Multi-object corpus: one fit per (session, item-count level), combined per session ────────────
 
-def _combine_restated_cells_across_levels(level_cells: list[tuple[int, dict]], n_perm: int) -> dict:
-    """Trial-count-weighted combination of per-item-count-level restatement cells into one
-    session-level cell. The predictable fraction and its null mean are weighted-averaged the same way
-    this corpus's own primary behavioural estimator combines any within-level statistic across levels;
-    the null distribution itself is combined the identical draw-index-weighted way the delivered
-    rotation-null machinery already uses, so the combined p-value is judged against a null built the
-    same way as the combined effect -- never a p-value picked from whichever level happened to have
-    the smallest one."""
-    computed = [(n, c) for n, c in level_cells if c.get("status") == "computed"]
-    if not computed:
-        return {"status": "not_computable", "reason": "no item-count level reached the trial floor"}
-    frac = _trial_count_weighted([(n, c["predictable_fraction"]) for n, c in computed])
-    null_mean = _trial_count_weighted([(n, c["null_mean"]) for n, c in computed])
-    padded = []
-    for n, c in computed:
-        vals = list(c.get("null_values", []))
-        vals = vals + [float("nan")] * (n_perm - len(vals))
-        padded.append((n, np.asarray(vals[:n_perm], dtype=float)))
-    pooled_null = _weighted_combine_draws(padded)
-    pooled_null = pooled_null[np.isfinite(pooled_null)] if pooled_null is not None else np.array([])
-    p_value = permutation_pvalue(pooled_null >= frac) if len(pooled_null) else None
-    return {"status": "computed", "predictable_fraction": float(frac), "null_mean": float(null_mean),
-            "effect_size": float(frac - null_mean), "p_value": p_value,
-            "n_pooled_null_draws": int(len(pooled_null)), "n_levels_combined": len(computed),
-            "n_trials": int(sum(n for n, _ in computed))}
-
 
 def multi_object_candidate_cells(bundle: dict, counts_raw: np.ndarray, candidate: str, args) -> dict:
     key = bundle["session"]
@@ -322,23 +298,6 @@ def build_corpus_claims(records_by_candidate: dict[str, list[dict]]) -> dict:
                 "would_require_a_budget_decision_if_run": not sizing.get("feasible_within_budget", False)}
         claims[cell_key] = block
     return claims
-
-
-def zero_drop(records_by_candidate: dict[str, list[dict]]) -> dict:
-    per_candidate = {}
-    for candidate, recs in sorted(records_by_candidate.items()):
-        statuses: dict[str, int] = {}
-        exclusions = []
-        for rec in recs:
-            st = rec.get("status", "missing")
-            statuses[st] = statuses.get(st, 0) + 1
-            if st in ("excluded", "fit_failed"):
-                exclusions.append({"session_key": rec.get("session_key"), "reason": rec.get("reason")})
-        per_candidate[candidate] = {
-            "n_seen": len(recs), "statuses": statuses,
-            "seen_equals_tested_plus_excluded": len(recs) == sum(statuses.values()),
-            "exclusions_with_reasons": exclusions}
-    return per_candidate
 
 
 # ── Main ─────────────────────────────────────────────────────────────────────────

@@ -19,8 +19,9 @@ def test_author_qc_audit_covers_every_in_scope_dataset_and_never_auto_eligibiliz
                        check=True, cwd=ROOT, capture_output=True, text=True)
         audit = json.loads(tmp_output.read_text())
     datasets = {row["dataset"]: row for row in audit["datasets"]}
-    required_tokens = ("000469", "001187", "000574", "Boran", "Miller", "Wolff", "ALM",
-                       "microstimulation", "RAM", "Haslacher", "Alagapan", "TES1", "Panichello", "Watters")
+    required_tokens = ("000469", "001187", "000574", "ECoG n-back", "Impulse-perturbation", "motor cortex",
+                       "microstimulation", "RAM", "tACS", "scalp EEG", "intracranial stimulation", "TES1",
+                       "spatial working memory", "multi-object working memory")
     assert all(any(token in name for name in datasets) for token in required_tokens)
     ram = next(row for name, row in datasets.items() if "RAM" in name)
     if ram["artifact_present"]:

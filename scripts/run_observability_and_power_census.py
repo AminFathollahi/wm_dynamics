@@ -68,9 +68,9 @@ from preprocessing import (  # noqa: E402
 )
 from provenance import canonical_json, git_commit  # noqa: E402
 from statistics import stable_seed  # noqa: E402
+from statistics import N_SPLITS  # noqa: E402
 
 SEED = 20260907
-N_SPLITS = 32  # matches results/observability_census.json's own N_SPLITS
 EXISTING_CENSUS_PATH = ROOT / "results" / "observability_census.json"
 # A subdirectory, not a top-level results/ file: the zero-drop narrative-map
 # test (tests/test_narrative_map_covers_every_result.py) only scans
@@ -178,11 +178,10 @@ def boran_lfp_rows() -> list[dict]:
     it is what the later observability-matched spike-vs-LFP modality test
     depends on. Reuses scripts/run_boran_modality_consistency.py's session
     registry and LFP-tensor construction (registry_sessions,
-    lfp_maintenance_tensor) rather than re-deriving Boran NWB loading."""
-    from run_boran_modality_consistency import (
-        BAD_CHANNEL_MAD_THRESHOLD, BORAN_MAINS_HZ, MAINT_WIN, MIN_BIPOLAR_CHANNELS,
-        MIN_TRIALS, lfp_maintenance_tensor, registry_sessions,
-    )
+    lfp_maintenance_tensor) rather than re-deriving DANDI 000574 NWB loading."""
+    from run_boran_modality_consistency import registry_sessions
+    from preprocessing import MIN_BIPOLAR_CHANNELS, MIN_TRIALS, lfp_maintenance_tensor
+    from preprocessing import BAD_CHANNEL_MAD_THRESHOLD, BORAN_MAINS_HZ, MAINT_WIN
 
     root = data_root()
     rows: list[dict] = []
@@ -256,10 +255,9 @@ def boran_scalp_low_band_rows() -> list[dict]:
     grain would count. Reuses run_boran_modality_consistency.registry_sessions
     and src.preprocessing.load_boran_nwb rather than writing a third loader.
     """
-    from run_boran_modality_consistency import (
-        BAD_CHANNEL_MAD_THRESHOLD, BORAN_MAINS_HZ, MAINT_WIN, MIN_BIPOLAR_CHANNELS,
-        MIN_TRIALS, registry_sessions, scalp_low_band_maintenance_tensor,
-    )
+    from run_boran_modality_consistency import registry_sessions
+    from preprocessing import MIN_BIPOLAR_CHANNELS, MIN_TRIALS, scalp_low_band_maintenance_tensor
+    from preprocessing import BAD_CHANNEL_MAD_THRESHOLD, BORAN_MAINS_HZ, MAINT_WIN
 
     root = data_root()
     rows: list[dict] = []
@@ -412,7 +410,7 @@ def panichello_unit_rows() -> list[dict]:
     rows: list[dict] = []
     if not directory.is_dir():
         return [_error_row("panichello_2024", "all", "all", "pooled", "delay", 100, "single_unit",
-                            "Panichello_2024 not staged at the configured path")]
+                            "macaque spatial working-memory corpus not staged at the configured path")]
     delay_window_ms = (300.0, 1450.0)
     for path in sorted(glob.glob(str(directory / "*.mat"))):
         session = Path(path).stem
@@ -445,7 +443,10 @@ def pfc3_unit_rows() -> list[dict]:
     construction scripts/run_pfc3_content_ctg.py already uses for its own
     content-CTG test) -- reused here rather than re-derived, and flagged
     explicitly as non-simultaneous on every row this builder emits."""
-    from run_pfc3_content_ctg import BIN_MS, DATA_DIR, MIN_TRIALS_PER_CLASS, N_NEURONS_TARGET, WINDOW_S, load_neuron_spatial
+    from run_pfc3_content_ctg import BIN_MS, MIN_TRIALS_PER_CLASS, WINDOW_S, load_neuron_spatial
+    from corpus_sessions import N_NEURONS_TARGET
+    from project_config import dataset_path
+    DATA_DIR = dataset_path("pfc3")
 
     if not DATA_DIR.is_dir():
         return [_error_row("pfc3", "all", "all", "pooled", "delay", BIN_MS, "single_unit",
@@ -504,7 +505,9 @@ def macaque_pfc_microstimulation_unit_rows() -> list[dict]:
     Reuses scripts/run_macaque_pfc_microstimulation_pipeline.py's session loader and shorted-
     channel exclusion rather than re-deriving macaque PFC microstimulation's two mixed MAT-file
     generations."""
-    from run_macaque_pfc_microstimulation_pipeline import BIN_S, DATA, N_BINS, SESSIONS, crop_trial, load_macaque_pfc_microstimulation_session
+    from run_macaque_pfc_microstimulation_pipeline import DATA, SESSIONS, load_macaque_pfc_microstimulation_session
+    from spike_pipeline import crop_trial
+    from spike_pipeline import BIN_S, N_BINS
 
     if not DATA.is_dir():
         return [_error_row("macaque_pfc_microstimulation", "all", "all", "pooled", "delay", int(BIN_S * 1000), "single_unit",
@@ -544,7 +547,8 @@ def alagapan_ieeg_rows() -> list[dict]:
     condition. High-gamma power, same estimator convention as every other
     intracranial arm in this project. Reuses
     scripts/run_alagapan_stimulation_geometry.py's baseline-trial loader."""
-    from run_alagapan_phase_omega import DATA_DIR, PATIENTS
+    from run_alagapan_phase_omega import DATA_DIR
+    from preprocessing import PATIENTS
     from run_alagapan_stimulation_geometry import _baseline_retention_trials
 
     if not DATA_DIR.is_dir():
@@ -586,8 +590,10 @@ def haslacher_scalp_rows() -> list[dict]:
     meaningful for this baseline pool). Reuses
     scripts/run_haslacher_stimulation_geometry.py's author-native
     preprocessing and retention-window epoching."""
-    from run_haslacher_phase_omega import ACTIVE_SUBJECTS, CONTROL_SUBJECTS, DATA_DIR
-    from run_haslacher_stimulation_geometry import _preprocess_author_native, _retention_trials
+    from run_haslacher_phase_omega import DATA_DIR
+    from preprocessing import ACTIVE_SUBJECTS, CONTROL_SUBJECTS
+    from run_haslacher_stimulation_geometry import _preprocess_author_native
+    from preprocessing import _retention_trials
 
     if not DATA_DIR.is_dir():
         return [_error_row("haslacher_clam_tacs", "all", "all", "pooled", "delay", 100, "scalp_eeg",
@@ -632,11 +638,12 @@ def _hilbert_alpha_envelope(trials: np.ndarray, srate: float) -> np.ndarray:
 
 
 def wolff_scalp_rows() -> list[dict]:
-    """Human scalp EEG, Wolff et al. 2017 continuous-report task, the
+    """Human scalp EEG, the impulse-perturbation continuous-report task, the
     post-impulse window (the delay-period impulse perturbation this task
     uses to read out WM state mid-maintenance) -- 8-12 Hz alpha power, same
     preprocessing convention as scripts/run_wolff_corrected_analysis.py."""
-    from run_wolff_corrected_analysis import data_directory, prepare_epoch, valid_mask
+    from preprocessing import prepare_epoch, valid_mask
+    from corpus_sessions import data_directory
 
     try:
         directory = data_directory()
@@ -677,14 +684,16 @@ def wolff_scalp_rows() -> list[dict]:
 
 
 def miller_ecog_rows() -> list[dict]:
-    """Kai Miller ECoG, N-back task. No explicit maintenance delay exists in
+    """ECoG n-back corpus, N-back task. No explicit maintenance delay exists in
     this task: items are held across an
     inter-stimulus interval to the next comparison, not a cued maintenance
     window) -- the stimulus-locked epoch is reported under epoch
     "stimulus_locked_no_delay_period", not "delay", so this row is never
     mistaken for a Sternberg-style maintenance measurement. Reuses
     scripts/run_miller_drift_spine.py's loading and binning pipeline."""
-    from run_miller_drift_spine import AXIS_WINDOW, BIN_MS as MILLER_BIN_MS, PRE_MS, POST_MS, bin_time_axis
+    from run_miller_drift_spine import BIN_MS as MILLER_BIN_MS
+    from preprocessing import PRE_MS, POST_MS, bin_time_axis
+    from preprocessing import AXIS_WINDOW
 
     if not MILLER_ECOG_DATA_DIR.is_dir():
         return [_error_row("kai_miller_nback", "all", "all", "pooled", "stimulus_locked_no_delay_period",
@@ -814,14 +823,14 @@ NOT_COMPUTABLE_THIS_PASS = {
         "(spikes_per_trial/<animal>/<date>/<probe>/good/<unit>_spike_counts.pkl, a per-trial list of "
         "per-bin spike counts, plus a companion <unit>_trials.pkl of trial metadata whose schema this "
         "project's codebase does not document or parse anywhere) but no loader in this codebase builds a "
-        "population tensor from it -- every existing Watters script (scripts/run_watters_source_replication.py, "
+        "population tensor from it -- every existing macaque multi-object corpus script (scripts/run_watters_source_replication.py, "
         "scripts/run_watters_item_count_drift.py) instead reuses the OSF data_for_figures release's already-"
         "fitted per-unit likelihoods and per-trial latent gains, which is a processed model-comparison cache, "
         "not a binned population matrix the nugget-fraction estimator can consume. Building and validating a "
         "correct trial-metadata-aligned loader for the raw pickle format was not reachable in the time "
-        "budget available here; guessing at the trial-metadata schema risked a silently wrong tensor, which this "
-        "project's own standing rule -- say what is not computable and why, rather than relax the analysis "
-        "until it fits) weighs against. Left as a named gap, not a silent omission."
+        "budget available here; guessing at the trial-metadata schema risked a silently wrong tensor, which the "
+        "policy of saying what is not computable and why, rather than relaxing the analysis "
+        "until it fits, weighs against. Left as a named gap, not a silent omission."
     ),
     "ram_ds005557_closedloop": (
         "Same BIDS layout and loader as ram_ds005489_openloop (see that builder), not run here for "
@@ -1111,7 +1120,7 @@ class AdmissionMatrixKeyMissing(KeyError):
     """Raised when a pre-declared comparison names a cell that does not
     exist in the admission matrix. A missing key is an error to be raised,
     never an empty set silently substituted and compared -- the exact
-    defect class this replaces (see the census's own
+    error class this replaces (see the census's own
     admission_matrix_key_lookup_defect record)."""
 
 
@@ -1211,7 +1220,7 @@ def evaluate_census_headline(matrix: dict, rule: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# The small-worldness null definition defect. The actual code fix lives in
+# The small-worldness null definition error. The actual code fix lives in
 # src/small_worldness.py, src/microcircuit_graph.py and
 # scripts/run_functional_microcircuit_graph.py; this function only records
 # the finding and what changed, for this census artifact's own record.
@@ -1266,7 +1275,7 @@ def fewer_than_three_positive_lags_status_meaning(all_rows: list[dict]) -> dict:
 
 
 def admission_matrix_key_lookup_defect() -> dict:
-    """A record of a defect class, not just one incident: a pre-declared
+    """A record of an error class, not just one incident: a pre-declared
     branch resolved by a dict lookup that can silently return nothing.
     census_headline_result's first computed value here hardcoded "pooled"
     as the structure label for BOTH grains being compared; the LFP grain's
@@ -1301,7 +1310,7 @@ def admission_matrix_key_lookup_defect() -> dict:
         ),
         "defect_class": "a pre-declared branch must never be resolvable by a dictionary lookup that can return nothing; a missing key is an error condition, not a legitimate value to compare",
         "prior_instance_in_this_project": (
-            "the same defect shape -- a branch decided by an absence rather than a measurement -- has "
+            "the same error shape -- a branch decided by an absence rather than a measurement -- has "
             "now occurred twice in this project; this is the second instance, not an isolated incident"
         ),
     }

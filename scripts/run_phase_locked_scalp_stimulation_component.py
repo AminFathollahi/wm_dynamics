@@ -57,7 +57,7 @@ is hard-coded to the stimulation-ON block, needed because the behaviour-link
 test asks about the OFF block specifically).
 
 Run:
-    /home/amin/miniconda3/envs/wm_dynamics/bin/python \
+    python \
         scripts/run_phase_locked_scalp_stimulation_component.py
 """
 from __future__ import annotations
@@ -91,27 +91,25 @@ from sklearn.decomposition import PCA  # noqa: E402
 
 from corpus_sessions import data_root  # noqa: E402
 from preprocessing import band_power  # noqa: E402
-from provenance import canonical_json, git_commit  # noqa: E402
+from provenance import canonical_json, checkpoint_store, git_commit  # noqa: E402
 from statistics import (  # noqa: E402
     Z_80_POWER, bootstrap_ci, minimum_detectable_paired_difference, partial_correlation_permutation_test,
     permutation_pvalue, stable_seed,
 )
-from run_haslacher_phase_omega import (  # noqa: E402
-    ACTIVE_SUBJECTS, CONTROL_SUBJECTS, DATA_DIR, PHASE_CONDITIONS, RETENTION_TMAX, RETENTION_TMIN,
-    modulation_from_outcomes, trial_outcomes,
-)
-from run_haslacher_stimulation_geometry import (  # noqa: E402
-    AUX_CHANNELS, NOT_OF_INTEREST, PROTECT, SATURATION_THRESHOLD, SFREQ_ANALYSIS,
-    _preprocess_author_native, _retention_trials, _sass,
-)
-from run_haslacher_phase_diffusion import (  # noqa: E402
-    active_control_difference, bin_analog_trials, group_vector_test, harmonic_coefficients,
-)
-from run_recording_tier_component_transfer import (  # noqa: E402
-    MEANINGFUL_EFFECT_THRESHOLD_R_UNITS, N_ROTATION_NULL_DRAWS, _bias_only_values,
-    _patient_clustered_test, existence_tier as presence_test_tier, discover_000574_sessions, load_000574_session_tiers,
-    rate_free_state_deviation, rotation_null_variance_test,
-)
+from run_haslacher_phase_omega import DATA_DIR, trial_outcomes
+from preprocessing import RETENTION_TMAX, RETENTION_TMIN
+from preprocessing import PHASE_CONDITIONS, modulation_from_outcomes
+from preprocessing import ACTIVE_SUBJECTS, CONTROL_SUBJECTS
+from run_haslacher_stimulation_geometry import _preprocess_author_native
+from preprocessing import _retention_trials, _sass
+from preprocessing import AUX_CHANNELS, NOT_OF_INTEREST, PROTECT, SATURATION_THRESHOLD, SFREQ_ANALYSIS
+from preprocessing import harmonic_coefficients
+from preprocessing import active_control_difference, bin_analog_trials, group_vector_test
+from run_recording_tier_component_transfer import load_000574_session_tiers
+from state_persistence import _patient_clustered_test, existence_tier as presence_test_tier
+from corpus_sessions import discover_000574_sessions
+from statistics import rate_free_state_deviation, rotation_null_variance_test
+from statistics import MEANINGFUL_EFFECT_THRESHOLD_R_UNITS, N_ROTATION_NULL_DRAWS, _bias_only_values
 
 OUTPUT_PATH = ROOT / "results" / "phase_locked_scalp_stimulation_component.json"
 CHECKPOINT_DIR = ROOT / "results" / ".checkpoints" / "run_phase_locked_scalp_stimulation_component"
@@ -622,17 +620,8 @@ def load_checkpoint(participant: str) -> dict | None:
 
 
 def save_checkpoint(participant: str, record: dict) -> None:
-    CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
     path = _checkpoint_path(participant)
-    payload = {"_complete": True, "record": record}
-    fd, tmp_name = tempfile.mkstemp(dir=str(CHECKPOINT_DIR), prefix="._tmp_")
-    try:
-        with os.fdopen(fd, "w") as f:
-            f.write(canonical_json(payload))
-        os.replace(tmp_name, path)
-    finally:
-        if os.path.exists(tmp_name):
-            os.remove(tmp_name)
+    checkpoint_store(path, {"_complete": True, "record": record})
 
 
 def _run_and_checkpoint(subject: str, group: str) -> tuple[str, dict]:

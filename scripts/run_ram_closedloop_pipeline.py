@@ -52,17 +52,17 @@ from io_utils import locked_json_update  # noqa: E402
 
 from run_ram_openloop_pipeline import build_session_features  # noqa: E402
 
-DATA = dataset_path("ram_ds005557_closedloop")
 RESULTS = ROOT / "results"
 MAX_SUBJECTS = 38
 
 
-def _find_stim_sessions() -> list[Path]:
-    return sorted(DATA.glob("sub-*/ses-*/ieeg/*_acq-bipolar_ieeg.json"))
+def _find_stim_sessions(data: Path) -> list[Path]:
+    return sorted(data.glob("sub-*/ses-*/ieeg/*_acq-bipolar_ieeg.json"))
 
 
 def main():
-    sessions = _find_stim_sessions()
+    data = dataset_path("ram_ds005557_closedloop")
+    sessions = _find_stim_sessions(data)
     print(f"Found {len(sessions)} candidate bipolar+stim sessions (ds005557, closed-loop)")
 
     all_rows, per_session = [], {}
@@ -71,9 +71,9 @@ def main():
         subj = ieeg_json.parts[-4]
         if len(n_subjects_done) >= MAX_SUBJECTS and subj not in n_subjects_done:
             continue
-        print(f"  {ieeg_json.relative_to(DATA)} ...", end=" ")
+        print(f"  {ieeg_json.relative_to(data)} ...", end=" ")
         try:
-            feat = build_session_features(ieeg_json, data_root=DATA, derive_stim_from_stim_on=True)
+            feat = build_session_features(ieeg_json, data_root=data, derive_stim_from_stim_on=True)
         except Exception as e:
             print(f"FAILED: {e}")
             continue

@@ -1,4 +1,4 @@
-"""Focused regression tests for the Boran spike-vs-iEEG modality-consistency arm."""
+"""Focused regression tests for the DANDI 000574 spike-vs-iEEG modality-consistency arm."""
 
 from __future__ import annotations
 
@@ -11,16 +11,11 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from run_boran_modality_consistency import (  # noqa: E402
-    _modality_pair,
-    lfp_maintenance_tensor,
-    session_seed,
-)
+from run_boran_modality_consistency import _modality_pair, session_seed
+from preprocessing import lfp_maintenance_tensor
+from project_config import dataset_path
 
-BORAN_NWB = Path(
-    "/media/amin/EXTERNAL_USB/SMAF/Research/Representation/Working Memory"
-    "/data/000574/sub-01/sub-01_ses-01.nwb"
-)
+BORAN_NWB = dataset_path("dandi_000574", "sub-01", "sub-01_ses-01.nwb", required=False) or Path("unset")
 
 
 def _identifiable_estimate(lambda_rate: float, ci=(0.5, 2.0)):
@@ -67,7 +62,7 @@ class TestModalityPair:
         assert _modality_pair(lfp_fit, spike_fit, "moment") is None
 
 
-@pytest.mark.skipif(not BORAN_NWB.exists(), reason="DANDI 000574 data not on external drive")
+@pytest.mark.skipif(not BORAN_NWB.exists(), reason="DANDI 000574 data not configured")
 class TestLfpMaintenanceTensor:
     def test_output_shape_and_finite(self):
         from preprocessing import load_boran_nwb
@@ -84,7 +79,7 @@ class TestLfpMaintenanceTensor:
         assert np.all(np.isfinite(tensor))
 
 
-@pytest.mark.skipif(not BORAN_NWB.exists(), reason="DANDI 000574 data not on external drive")
+@pytest.mark.skipif(not BORAN_NWB.exists(), reason="DANDI 000574 data not configured")
 class TestAnalyzeSessionSmoke:
     def test_one_real_session_runs_end_to_end(self):
         from run_boran_modality_consistency import analyze_session

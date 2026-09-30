@@ -26,7 +26,7 @@ qualifying-subset re-fit.
 Output: results/vstar_identifiability.json.
 
 Run:
-    /home/amin/miniconda3/envs/wm_dynamics/bin/python scripts/run_vstar_identifiability.py
+    python scripts/run_vstar_identifiability.py
 """
 from __future__ import annotations
 
@@ -169,7 +169,7 @@ def main():
     # Degenerate-statistic correlations, reported for reference only.
     corr_boot_cos_degenerate = spearman_permutation_test(gap_mod_degenerate, boot_cos, rng=rng)
     corr_rank_degenerate = spearman_permutation_test(gap_mod_degenerate, rank_cos, rng=rng)
-    # Corrected-statistic correlations: the real PART-26 test.
+    # Corrected-statistic correlations: the test of interest.
     corr_boot_cos = spearman_permutation_test(gap_mod, boot_cos, rng=rng)
     corr_rank = spearman_permutation_test(gap_mod, rank_cos, rng=rng)
 

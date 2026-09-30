@@ -34,9 +34,8 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 from provenance import canonical_json, git_commit, sha256_file  # noqa: E402
 from statistics import bootstrap_ci  # noqa: E402
-from build_structure_paired_contrasts import (  # noqa: E402
-    extract_000469, extract_000574, extract_001187_000673, extract_lfp,
-)
+from build_structure_paired_contrasts import extract_000469, extract_000574, extract_001187_000673
+from statistics import extract_lfp
 
 MIN_STRUCTURE_PATIENTS = 3
 RESULTS = ROOT / "results"
@@ -45,7 +44,7 @@ RESULTS = ROOT / "results"
 DATASET_TASK = {
     "dandi_000469": "Sternberg repeated-item, load 1",
     "dandi_001187_000673_content_axis_battery": "Sternberg novel-picture, load 1 (of 1 vs 3 manipulation)",
-    "dandi_000574": "Boran verbal Sternberg (set_size 4/6/8)",
+    "dandi_000574": "Verbal Sternberg (set_size 4/6/8)",
     "ds004752": "Verbal Sternberg maintenance window",
     "ds005489_openloop": "RAM free recall, math-distractor retention interval (not WM maintenance)",
     "ds005557_closedloop": "RAM free recall, math-distractor retention interval (not WM maintenance)",
@@ -258,7 +257,7 @@ def main() -> None:
     )
     # Python's `-` binds tighter than `|`, so "A | B | C | D - {'pooled'}" only ever removed
     # "pooled" from D -- it leaked back in from A/B/C's own "pooled" region keys and entered the
-    # ordering as if it were a peer anatomical structure (the same defect
+    # ordering as if it were a peer anatomical structure (the same error
     # fix_lambda_ordering_underpowered_leakage.py already fixed once for a different artifact).
     NON_ANATOMICAL_LABELS = {"unlabelled", "unspecific"}
     all_regions = sorted(all_regions_with_pooled - {"pooled"} - NON_ANATOMICAL_LABELS)

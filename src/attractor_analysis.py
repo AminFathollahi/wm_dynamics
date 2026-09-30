@@ -3,18 +3,17 @@ local-linear fixed-point/Jacobian classification on population latent
 trajectories.
 
 Implements the three attractor-identification methods scored against the
-mouse ALM ground truth (Inagaki et al. 2019, Nature 566:212-217) before any
-of them is licensed to describe an unvalidated human corpus:
+mouse ALM ground truth (doi 10.1038/s41586-019-0919-7, Nature 566:212-217)
+before any of them is licensed to describe an unvalidated human corpus:
   - Vietoris-Rips persistent homology (Betti numbers at the largest
-    persistence gap), via ripser (Bauer 2021, J Appl Comput Topol 5:391-423).
-  - Recurrence quantification analysis (Marwan et al. 2007, Phys Rep
-    438:237-329): recurrence rate, determinism, laminarity, trapping time,
-    and connected-component recurrence clusters.
-  - Fixed-point discovery and Jacobian classification in the spirit of
-    Sussillo & Barak 2013 (Neural Comput 25:626-649), adapted to a
-    discrete-time local-linear map (the data are binned, not a continuous
-    RNN) found by Newton iteration on a k-nearest-neighbour local-linear
-    regression of x[t+1] on x[t].
+    persistence gap), via ripser (J Appl Comput Topol 5:391-423).
+  - Recurrence quantification analysis (Phys Rep 438:237-329): recurrence
+    rate, determinism, laminarity, trapping time, and connected-component
+    recurrence clusters.
+  - Fixed-point discovery and Jacobian classification via Newton iteration
+    on a discrete-time local-linear map (the data are binned, not a
+    continuous RNN) found by k-nearest-neighbour local-linear regression
+    of x[t+1] on x[t].
 """
 
 from __future__ import annotations
@@ -168,8 +167,8 @@ def _line_lengths(binary_1d: NDArray, min_len: int) -> list[int]:
 def recurrence_quantification(trajectory: NDArray, threshold: float, min_diag: int = 2, min_vert: int = 2) -> dict:
     """Recurrence rate, determinism, laminarity, and trapping time.
 
-    Definitions follow Marwan et al. 2007 (Phys Rep 438:237-329):
-    determinism is the fraction of recurrent points forming diagonal line
+    Definitions follow the standard recurrence-quantification-analysis
+    conventions (Phys Rep 438:237-329): determinism is the fraction of recurrent points forming diagonal line
     structures of length >= min_diag; laminarity is the fraction forming
     vertical line structures of length >= min_vert; trapping time is the
     mean vertical-line length.
@@ -317,8 +316,8 @@ def find_fixed_points(
     """Search for fixed points from many initial conditions, cluster, and classify.
 
     Locates fixed points of the local-linear discrete map by minimising
-    ||f(x)-x|| via Newton iteration (Sussillo & Barak 2013 style, adapted to
-    a discrete-time k-NN local-linear map since the data are binned).
+    ||f(x)-x|| via Newton iteration, adapted to a discrete-time k-NN
+    local-linear map since the data are binned.
     Initial conditions are half drawn from the observed data (states the
     system actually visits, including transition/decision regions near
     saddles) and half uniform-random over the observed bounding box (unbiased

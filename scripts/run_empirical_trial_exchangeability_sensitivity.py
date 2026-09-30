@@ -16,17 +16,11 @@ for subdirectory in ("src", "scripts"):
 
 from corpus_sessions import data_root  # noqa: E402
 from provenance import _json_safe, git_commit  # noqa: E402
-from run_within_session_permutation_control import (  # noqa: E402
-    _blocks_for_levels,
-    _circular_outcome_shift,
-    _circular_residual_shift,
-    _load_multi_object_corpus,
-    _panichello_reachable_sessions,
-    _qualifying_levels_from_arrays,
-    MIN_TRIALS_FOR_BEHAVIOURAL_CORRELATION,
-    rate_free_session_arrays,
-    within_session_permutation_test,
-)
+from run_within_session_permutation_control import _load_multi_object_corpus, _qualifying_levels_from_arrays, within_session_permutation_test
+from info_decoding import _blocks_for_levels, _circular_outcome_shift, _circular_residual_shift
+from corpus_sessions import _reachable_sessions as _panichello_reachable_sessions
+from corpus_sessions import MIN_TRIALS_FOR_BEHAVIOURAL_CORRELATION
+from corpus_sessions import _session_arrays as rate_free_session_arrays
 
 OUTPUT_PATH = ROOT / "results" / "empirical_trial_exchangeability_sensitivity.json"
 N_PERMUTATIONS = 10000

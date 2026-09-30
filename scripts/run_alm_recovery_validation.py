@@ -214,7 +214,7 @@ def main() -> None:
     output = {
         "schema_version": "1.0.0",
         "analysis_id": "alm_unperturbed_confinement_predicts_opto_recovery",
-        "dataset": "Inagaki ALM silicon-probe perturbation release, Figshare 7489253",
+        "dataset": "Mouse ALM silicon-probe perturbation release, Figshare 7489253",
         "code_commit": git_commit(ROOT),
         "source_hash": sha256_file(Path(__file__)),
         "metadata_decision": {

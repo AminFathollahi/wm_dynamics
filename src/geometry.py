@@ -3,28 +3,13 @@ geometry.py — Neural manifold geometry analysis.
 
 Implements:
   - PCA decomposition (SVD-based, publication standard)
-  - Participation ratio (intrinsic dimensionality; Abbott et al. 2011)
-  - Principal angles between subspaces (Björck & Golub 1973)
-  - Representational similarity analysis (RSA / RDM; Kriegeskorte et al. 2008)
+  - Participation ratio (intrinsic dimensionality)
+  - Principal angles between subspaces
+  - Representational similarity analysis (RSA / RDM)
   - Cross-temporal generalization decoding matrix
   - Subspace overlap metric
   - Time-resolved geometric biomarkers
   - Electrode capacity analysis for BCI feasibility
-
-References
-----------
-Cunningham JP & Yu BM (2014) Dimensionality reduction for large-scale
-  neural recordings. Nat Neurosci 17(11):1500-9.
-Russo AA et al. (2018) Motor cortex embeds muscle-like commands in an
-  untangled population response. Neuron 97(4):953-66.
-Abbott LF et al. (2011) Interactions between intrinsic and
-  stimulus-evoked activity in recurrent neural networks.
-Panichello MF & Buschman TJ (2021) Shared mechanisms underlie the
-  control of working memory and attention. Nature 592(7855):601-5.
-Kriegeskorte N et al. (2008) Representational similarity analysis —
-  connecting the branches of systems neuroscience. Front Syst Neurosci 2:4.
-King JR & Dehaene S (2014) Characterizing the dynamics of mental
-  representations: the temporal generalization method. Trends Cogn Sci 18(4):203-10.
 """
 
 from __future__ import annotations
@@ -123,8 +108,8 @@ def participation_ratio(eigenvalues: NDArray) -> float:
     PR = 1 when a single eigenvalue dominates (collapsed manifold).
     PR = D when all eigenvalues are equal (maximally uniform; D = n_dims).
 
-    Equivalent to inverse participation ratio (IPR) inverted. Used as a
-    dimensionality index in Abbott et al. 2011, Gao et al. 2017.
+    Equivalent to inverse participation ratio (IPR) inverted. A standard
+    dimensionality index in the recurrent-network and neural-manifold literature.
 
     Parameters
     ----------
@@ -140,7 +125,7 @@ def participation_ratio(eigenvalues: NDArray) -> float:
 
 
 def twonn_dimension(X: NDArray, discard_fraction: float = 0.1) -> float:
-    """TwoNN intrinsic-dimensionality estimator (Facco et al. 2017, Sci Rep 7:12140).
+    """TwoNN intrinsic-dimensionality estimator (Sci Rep 7:12140).
 
     Uses only the first two nearest-neighbour distances per point, so it is
     far less sensitive to curvature/non-uniform density over a large
@@ -167,7 +152,7 @@ def twonn_dimension(X: NDArray, discard_fraction: float = 0.1) -> float:
     n_valid = len(mu_sorted)
     # F_empirical(mu_(i)) = i / n_valid for the i-th order statistic (1-indexed);
     # the top discard_fraction is dropped before fitting since F is close to 1
-    # there and -log(1-F) blows up on sampling noise (Facco et al. 2017 Sec. 2).
+    # there and -log(1-F) blows up on sampling noise (see the original TwoNN paper, Sec. 2).
     f_emp = np.arange(1, n_valid + 1) / n_valid
     keep = int(n_valid * (1.0 - discard_fraction))
     mu_fit, f_fit = mu_sorted[:keep], f_emp[:keep]
@@ -182,11 +167,11 @@ def twonn_dimension(X: NDArray, discard_fraction: float = 0.1) -> float:
 
 
 def levina_bickel_mle_dimension(X: NDArray, k: int = 20) -> float:
-    """Levina & Bickel (2004, NeurIPS) maximum-likelihood dimension estimator.
+    """Maximum-likelihood intrinsic-dimension estimator (NeurIPS 2004).
 
     For each point i, with r_1 <= ... <= r_k its distances to its k nearest
     neighbours, the local MLE is d_hat_i = [(k-1)^-1 * sum_{j=1}^{k-1}
-    log(r_k / r_j)]^-1. Following Levina & Bickel's own recommendation, the
+    log(r_k / r_j)]^-1. Following the original paper's own recommendation, the
     reported estimate averages 1/d_hat_i across points before inverting
     (not the per-point d_hat_i directly, which is upward-biased).
     """
@@ -383,14 +368,14 @@ def select_latent_dim(
 def principal_angles(A: NDArray, B: NDArray) -> NDArray:
     """Principal angles between subspaces spanned by columns of A and B.
 
-    Algorithm (Björck & Golub 1973):
+    Algorithm:
       1. QR-factorise A → Qₐ and B → Qᵦ (orthonormal bases)
       2. SVD of QₐᵀQᵦ → singular values σᵢ = cos(θᵢ)
       3. θᵢ = arccos(σᵢ)  ∈ [0, π/2]
 
     Interpretation: θ_min ≈ 0 → subspaces nearly parallel (representations
     overlap/interfere); θ_min ≈ π/2 → subspaces orthogonal (representations
-    fully separated). See Panichello & Buschman 2021.
+    fully separated).
 
     Parameters
     ----------
@@ -650,7 +635,7 @@ def representational_dissimilarity_matrix(
 
     Metrics
     -------
-    'correlation'  : 1 - Pearson r  (Kriegeskorte et al. 2008; most common in RSA)
+    'correlation'  : 1 - Pearson r  (the most common metric in RSA)
     'euclidean'    : ‖xᵢ - xⱼ‖₂
     'cosine'       : 1 - cos(θ)
 
@@ -689,7 +674,7 @@ def rsa_compare(
 ) -> float:
     """Compare two RDMs via Spearman rank correlation of their lower triangles.
 
-    This is the standard RSA metric (Kriegeskorte et al. 2008). The lower
+    This is the standard RSA comparison metric. The lower
     triangle excludes self-comparisons (diagonal = 0 by construction).
 
     Parameters
@@ -727,7 +712,7 @@ def cross_temporal_generalization(
 
     Train a linear SVM at each time point t₁; test at every time point t₂.
     The (T, T) result is called the "temporal generalization matrix"
-    (King & Dehaene 2014, Trends Cogn Sci).
+    (Trends Cogn Sci 18(4):203-10).
 
     Diagonal = standard time-resolved decoding accuracy.
     Off-diagonal generalization > chance → temporally stable code.
@@ -844,15 +829,14 @@ def distance_to_attractor(
     test_state: NDArray,
     test_labels: NDArray,
 ) -> NDArray:
-    """Normalized distance-to-attractor (Daume et al. 2025, following
-    Kaminski et al. 2017).
+    """Normalized distance-to-attractor.
 
     For each held-out trial and time point: the Euclidean distance to its
     own-condition centroid divided by the mean distance to every other
     condition's centroid. DA < 1 means the state is nearest its own
     (correct) attractor. Centroids are computed from TRAINING trials only —
     computing them from all trials (including the one being scored) is
-    exactly the selection bias Daume et al. control for, and produces
+    exactly the selection bias this normalization controls for, and produces
     DA < 1 trivially.
 
     Parameters
@@ -929,8 +913,8 @@ def coding_direction_stability(
     this asks "does it use the same geometric direction?"
     - C ≈ 1 everywhere → same axis is predictive at all times → fixed-point attractor
     - C low off-diagonal → code rotates → ring-like or oscillatory dynamics
-    (Murray et al. 2017, PNAS; Stokes et al. 2013, Neuron — extended here to
-    human iEEG HGP for the first time)
+    (the stable- versus rotating-code distinction from PNAS 2017 and Neuron
+    2013 — extended here to human iEEG HGP for the first time)
 
     For >2 classes (e.g. item identity), a one-vs-rest weight vector w_c(t) is
     fit per class and C[i,j] is the mean over classes of |w_c(tᵢ)·w_c(tⱼ)|,
@@ -1187,13 +1171,13 @@ def spatiotemporal_participation_ratio(
     Computed identically regardless of dataset: for each trial, treat the
     T time samples during the window as observations of a C-dimensional
     channel/unit vector, pool across trials, and compute PR of the resulting
-    C×C covariance spectrum — the same method used for Miller's full-channel
+    C×C covariance spectrum — the same method used for ECoG n-back corpus's full-channel
     per-trial spatiotemporal PCA. Using a fixed method (rather than PR of an
     already-PCA-reduced, capped-at-k latent space) makes PR comparable across
     datasets with very different channel/unit counts.
 
     pr_cv (primary) is a held-out, in-fold-fit / held-out-eval estimator, the
-    finite-sample-corrected analogue of cvPCA (Stringer et al. 2019): the
+    finite-sample-corrected analogue of cvPCA: the
     covariance eigenvectors are fit on a TRAIN split of trials only, and PR is
     computed from the variance those fixed, independently-derived directions
     explain in the disjoint held-out trial split. A single split's own
@@ -2288,7 +2272,7 @@ def marginalize_condition_time(
 ) -> dict:
     """Simplified (marginalization-based) dPCA: condition-independent vs -dependent variance.
 
-    Full dPCA (Kobak et al. 2016, eLife) decomposes population activity into
+    Full dPCA (doi 10.7554/eLife.10989) decomposes population activity into
     variance marginalized over each task parameter. This implements the
     two-factor (time × condition) case directly via ANOVA-style marginalization
     without the external dPCA package: the condition-averaged PSTH is split into
@@ -2401,7 +2385,7 @@ def phase_scramble_trials(Z: NDArray, rng: np.random.Generator) -> NDArray:
     across trials — the standard "could this just be smoothed noise" null.
 
     Uses ONE random phase perturbation per trial, ADDED to every channel's
-    own phase at each frequency (Prichard & Theiler 1994 multivariate
+    own phase at each frequency (the standard multivariate phase-randomised
     surrogate construction) rather than replacing each channel's phase
     independently. Because the same perturbation is added to every channel,
     the phase DIFFERENCE between any two channels at a given frequency — and

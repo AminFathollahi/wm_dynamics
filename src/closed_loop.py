@@ -1,5 +1,5 @@
 """
-closed_loop.py — In-silico closed-loop control of a fitted WM plant (R4/R5).
+closed_loop.py — In-silico closed-loop control of a fitted WM plant.
 
 Two public functions:
   simulate_closed_loop — run loop-ON vs loop-OFF on a fitted plant and score
@@ -363,3 +363,81 @@ def robustness_sweep(
         "failure_boundary_nonlinearity_scale": _boundary(nonlinearity_sweep, "nonlinearity_scale"),
         "failure_threshold": failure_threshold,
     }
+
+
+def _fit_outcome_decoder_and_margin(Z: np.ndarray, correct: np.ndarray, peak_t_idx: int | None = None):
+    """Out-of-fold correct-vs-error decoder on real, uncontrolled states
+    (guardrail 2). Fits AT THE SAME PEAK-AUC TIMEPOINT results/behavior_ctg.json
+    (Step B) already identified for this cohort -- a per-timestep-pooled/
+    majority-vote decoder was tried first and reliably predicted zero trials
+    as "error" for every DANDI 000574 iEEG subject (near-chance cv_acc ~0.50; the
+    outcome signal Step B found is concentrated at specific delay timepoints,
+    diluted to nothing when pooled across the whole trial). peak_t_idx=None
+    falls back to the mid-trial timepoint. Returns (predict_fn, margin_fn,
+    pred_error_trial, correct_centroid, decoder_cv_acc)."""
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.pipeline import Pipeline
+    from sklearn.model_selection import StratifiedKFold, cross_val_predict, cross_val_score
+
+    N, T, k = Z.shape
+    ti = peak_t_idx if peak_t_idx is not None else T // 2
+    ti = int(np.clip(ti, 0, T - 1))
+    X = Z[:, ti, :]
+    labels = correct.astype(int)   # 1 = correct, 0 = error
+
+    n_splits = min(5, int(np.min(np.bincount(labels))))
+    pipe = Pipeline([("scaler", StandardScaler()), ("clf", LogisticRegression(C=1.0, max_iter=1000))])
+    if n_splits < 2:
+        return None
+    cv = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=0)
+    cv_acc = float(cross_val_score(pipe, X, labels, cv=cv, scoring="balanced_accuracy").mean())
+    pred_error_trial = (cross_val_predict(pipe, X, labels, cv=cv) == 0)
+
+    pipe.fit(X, labels)   # final decoder used inside the simulation loop
+    predict_fn = lambda Xq: pipe.predict(Xq)
+
+    def margin_fn(Xq: np.ndarray) -> np.ndarray:
+        return pipe.decision_function(Xq)   # >0 favors "correct" (class 1)
+
+    correct_centroid = Z[correct, ti, :].mean(axis=0)
+    return predict_fn, margin_fn, pred_error_trial, correct_centroid, cv_acc
+
+
+U_BUDGET = 1.0
+
+
+def _flip_one_trial(A, B_true, B_hat, x0, target, decoder, margin_fn, horizon,
+                    obs_noise, proc_noise, rng, random_dir: bool = False):
+    """Drive ONE real predicted-error trial's own starting state through the
+    on-demand controller. n_trials=1 in the underlying call: this trial's x0
+    is fixed, only the process/observation noise is resampled.
+
+    D3 null control (random_dir=True): the SAME on-demand/LQR machinery
+    (same duty-cycle trigger, same u_budget, same B_hat mismatch), but the
+    actuator itself (B_true) is replaced by a random unit direction in the
+    SAME latent space -- same convention as the causal-benchmark leaderboard's
+    random_alignment arm (run_macaque_pfc_microstimulation_pipeline.py) elsewhere in this project.
+    An informed direction should flip trials; an uninformed one should not."""
+    if random_dir:
+        n = A.shape[0]
+        rand_dir = rng.standard_normal((n, 1))
+        rand_dir /= np.linalg.norm(rand_dir) + 1e-12
+        res = simulate_closed_loop(
+            A, rand_dir, x0, target, decoder, label=1, trigger="decoder",
+            A_hat=A, B_hat=rand_dir, obs_noise=obs_noise, proc_noise=proc_noise, u_budget=U_BUDGET,
+            horizon=horizon, n_trials=1, n_boot=1, rng=rng,
+        )
+    else:
+        res = simulate_closed_loop(
+            A, B_true, x0, target, decoder, label=1, trigger="decoder",
+            A_hat=A, B_hat=B_hat, obs_noise=obs_noise, proc_noise=proc_noise, u_budget=U_BUDGET,
+            horizon=horizon, n_trials=1, n_boot=1, rng=rng,
+        )
+    x_final = res["x_traj_on"][0, -1]
+    x_final_off = res["x_traj_off"][0, -1]
+    pred_final = decoder(x_final.reshape(1, -1))[0]
+    flipped = bool(pred_final == 1)
+    margin_delta = float(margin_fn(x_final.reshape(1, -1))[0] - margin_fn(x_final_off.reshape(1, -1))[0])
+    duty = res["duty_cycle"]
+    return flipped, margin_delta, duty

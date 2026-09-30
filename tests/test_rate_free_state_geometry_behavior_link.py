@@ -16,9 +16,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from run_rate_free_state_geometry_behavior_link import (  # noqa: E402
-    MEANINGFUL_EFFECT_THRESHOLD_R_UNITS, _classify, rate_free_state_deviation,
-)
+from run_rate_free_state_geometry_behavior_link import _classify, rate_free_state_deviation
+from statistics import MEANINGFUL_EFFECT_THRESHOLD_R_UNITS
 
 
 def test_leave_one_out_excludes_trial_from_its_own_reference():

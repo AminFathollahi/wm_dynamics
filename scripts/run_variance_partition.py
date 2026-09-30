@@ -201,7 +201,7 @@ def deciding_contrast(delay_100ms_pooled_human_rows: list[dict], matched_power: 
     elif alm_exceeds_human_ci:
         branch = "position_without_flow"
     else:
-        # Off the predeclared branch list per house rule 0.9: position clears its
+        # Off the predeclared branch list: position clears its
         # null and flow does not, but the matched-power sensitivity condition
         # that would confirm the absence is a floor (rather than a non-result)
         # was not met. Reported explicitly rather than forced onto the nearest
@@ -273,9 +273,9 @@ def main() -> None:
         "scope": (
             "Human corpora: DANDI 000469, 001187, 000574 via src/corpus_sessions.iter_all_corpora, "
             "all four epochs, 100 and 200 ms bins, per-session Poisson null (20 replicates). "
-            "Mouse ALM (Inagaki) registered as a comparison row plus a four-regime matched-power arm "
+            "Mouse ALM (doi:10.25378/janelia.7489253) registered as a comparison row plus a four-regime matched-power arm "
             "(unit count, trial count, delay length in bins) against the human median at 100 ms delay. "
-            "LFP corpora (ds004752, ds005489, ds005557, tACS) and the Panichello/Watters macaque "
+            "LFP corpora (ds004752, ds005489, ds005557, tACS) and the macaque prefrontal spatial working-memory corpus (Dryad doi:10.5061/dryad.kkwh70sct)/macaque multi-object working-memory corpus (doi:10.64898/2026.01.27.702062) macaque "
             "attribution arms are NOT included in this run -- see lfp_corpora and macaque_attribution "
             "fields for the explicit reason -- so the deciding contrast covers human single-unit "
             "corpora only, exactly as the predeclared rule specifies."
@@ -291,7 +291,7 @@ def main() -> None:
             "macaque_prefrontal_panichello": {
                 "status": "not_run",
                 "reason": "Deferred under a tight compute-time budget; requires reading area "
-                          "labels out of the Panichello .mat files, which this run did not attempt.",
+                          "labels out of the macaque spatial working-memory corpus .mat files, which this run did not attempt.",
             },
             "macaque_maintenance_watters": {
                 "status": "not_run",

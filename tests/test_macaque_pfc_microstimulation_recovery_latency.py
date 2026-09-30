@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -15,7 +16,9 @@ from run_macaque_pfc_microstimulation_recovery_latency import (  # noqa: E402
     condition_recovery,
     fit_cross_fold_projections,
     pooled_latency_vs_recovery,
+    pre_stimulation_offset_diagnostics,
 )
+from provenance import checkpoint_safe, restore_checkpoint  # noqa: E402
 
 
 def _make_rows(rng, n_units=10, n_control_per_angle=60, n_stim_per_angle=15):
@@ -77,3 +80,34 @@ def test_pooled_latency_vs_recovery_not_computable_below_two_sessions():
     result = pooled_latency_vs_recovery([{"status": "complete", "animal": "Wa",
                                           "latency_vs_peak_recovery_distance": {"rho": 0.3, "n": 20}}])
     assert result["status"] == "not_computable"
+
+
+def _condition(offset, angle_offsets):
+    return {
+        "pre_stimulation_offset": offset, "n_stim_trials_used": 15, "n_control_trials_used": 60,
+        "mean_occurrence_index": 2.0,
+        "pre_stimulation_offset_by_angle": {
+            str(angle): {"pre_stimulation_offset": value, "n_stim_trials": 5}
+            for angle, value in angle_offsets.items()
+        },
+    }
+
+
+def test_pre_stimulation_offset_diagnostics_pools_a_resumed_sessions_by_angle_table():
+    """analyze_session builds pre_stimulation_offset_by_angle keyed by str(condition/angle). A
+    session served from load_checkpoint on a resumed run comes back through restore_checkpoint before
+    this pooling loop sees it, and the loop keys a single shared by_angle dict off whatever type
+    "angle" happens to be -- pre-fix, a resumed session's int keys and a fresh session's str keys
+    split the same angle into two entries. Round-trip one session (simulating a resumed one) and pool
+    it together with a freshly-built session (still str-keyed): both must land under the same key."""
+    fresh_session = {"status": "complete", "conditions": {
+        f"c{i}": _condition(0.1 * i, {0: 0.1 * i, 45: 0.2 * i}) for i in range(4)
+    }}
+    resumed_session_raw = {"status": "complete", "conditions": {
+        f"c{i}": _condition(0.1 * i, {0: 0.1 * i, 45: 0.2 * i}) for i in range(4, 8)
+    }}
+    resumed_session = restore_checkpoint(json.loads(json.dumps(checkpoint_safe(resumed_session_raw))))
+
+    result = pre_stimulation_offset_diagnostics([fresh_session, resumed_session])
+    assert result["n_conditions"] == 8
+    assert set(result["by_angle"]) == {"0", "45"}

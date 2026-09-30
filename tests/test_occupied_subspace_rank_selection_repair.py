@@ -1,6 +1,6 @@
 """Tests for scripts/run_occupied_subspace_rank_selection_repair.py.
 
-The single most important test here pins the defect mechanism independently of any dataset: a
+The single most important test here pins the error mechanism independently of any dataset: a
 training fold whose trial count meets or exceeds the ambient unit count makes the original selector's
 candidate range reach a COMPLETE orthonormal basis of the ambient space, forcing held-out
 reconstruction error to numerical zero at the top of the range regardless of whether the data is
@@ -18,7 +18,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from run_deviation_axis_structure import _cv_pca_rank  # noqa: E402
+from info_decoding import _cv_pca_rank
 from run_occupied_subspace_rank_selection_repair import (  # noqa: E402
     _cv_pca_rank_capped, _session_cluster_bootstrap_mdd,
 )

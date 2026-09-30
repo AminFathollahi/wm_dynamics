@@ -3,14 +3,14 @@
 
 This project already validated that a polynomial-plus-delay-embedding
 Koopman lifting (dynamics.koopman_edmd) does not materially improve on plain
-DMD's one-step reconstruction (Miller subjects: EDMD R^2_orig 0.971-0.989 vs.
+DMD's one-step reconstruction (ECoG n-back corpus subjects: EDMD R^2_orig 0.971-0.989 vs.
 plain-DMD R^2 0.978-0.996, results/all_statistics.json's "dmd_koopman_sindy"
 entry) -- the 8-D PCA latent is already close to Koopman-invariant, so
 lifting recovers nothing extra. This script does not rebuild that R^2
 comparison; it extracts the ROTATION FREQUENCY from the same lifted fit as
 an additional, independent robustness check: if EDMD's richer eigenbasis
 agreed with the R^2 convergence result but disagreed sharply on omega, that
-would itself be informative. Extended from Miller (where the R^2 result
+would itself be informative. Extended from ECoG n-back corpus (where the R^2 result
 already lives) to macaque PFC microstimulation (the cohort this project's rotation claims
 actually concern).
 
@@ -78,7 +78,7 @@ def check_cohort(dataset: str, iterator) -> dict:
 
 
 def main():
-    print("Miller (existing EDMD-convergence cohort) ...")
+    print("ECoG n-back corpus (existing EDMD-convergence cohort) ...")
     miller = check_cohort("miller", vea._iter_miller)
 
     print("\nmacaque PFC microstimulation (this project's rotation-claim cohort) ...")

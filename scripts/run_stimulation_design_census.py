@@ -7,7 +7,7 @@ never from a README or a planning document.
 This is an inventory, not an analysis: no estimator is fit here. Every field
 of every row is either a value read directly from the data at run time, or
 an explicit structural void carrying a reason string -- there is no third
-state (a present-but-empty field with no reason is treated as a defect by
+state (a present-but-empty field with no reason is treated as an error by
 this script's own completeness gate, `validate_row`).
 
 Decision rules are declared once, as code, before any corpus is read, and
@@ -24,7 +24,7 @@ MAT-file struct decoding that already exists elsewhere in this repository.
 Output: results/stimulation_design_census.json
 
 Run:
-    /home/amin/miniconda3/envs/wm_dynamics/bin/python \
+    python \
         scripts/run_stimulation_design_census.py
 """
 from __future__ import annotations
@@ -42,51 +42,44 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from project_config import data_root, dataset_path  # noqa: E402
+from project_config import data_root, dataset_path
 from provenance import canonical_json, git_commit  # noqa: E402
 from statistics import stable_seed  # noqa: E402
 
 # Human intracranial free-recall stimulation (RAM ds005489 / ds005557):
 # reuse the existing event-table parser and derived-feature builders wholesale.
-from run_stimulation_timing_and_parameter_structure import (  # noqa: E402
-    OPENLOOP_CORPUS, CLOSEDLOOP_CORPUS, CLOSEDLOOP_OWNER_MATCH_WINDOW_S,
-    discover_sessions, discover_subject_dirs, read_events,
-    process_openloop_session, process_closedloop_session,
-    run_corpus, pool_item_attributability, pool_parameter_census,
-    build_trains_openloop, build_trains_closedloop, match_train_owner,
-)
+from run_stimulation_timing_and_parameter_structure import discover_sessions, discover_subject_dirs, read_events, process_openloop_session, process_closedloop_session, run_corpus, build_trains_openloop, build_trains_closedloop
+from stimulation_events import pool_item_attributability, pool_parameter_census, match_train_owner
+from stimulation_events import OPENLOOP_CORPUS, CLOSEDLOOP_CORPUS, CLOSEDLOOP_OWNER_MATCH_WINDOW_S
 
 # haslacher_clam_tacs (phase-locked closed-loop tACS during working-memory retention): reuse the existing subject lists,
 # data directory resolution, and event-marker readers.
-from run_haslacher_phase_omega import (  # noqa: E402
-    ACTIVE_SUBJECTS, CONTROL_SUBJECTS, DATA_DIR as CLAM_DATA_DIR,
-    PHASE_CONDITIONS, RETENTION_TMIN, RETENTION_TMAX, trial_outcomes as clam_trial_outcomes,
-)
+from run_haslacher_phase_omega import DATA_DIR as CLAM_DATA_DIR, trial_outcomes as clam_trial_outcomes
+from preprocessing import RETENTION_TMIN, RETENTION_TMAX
+from preprocessing import PHASE_CONDITIONS
+from preprocessing import ACTIVE_SUBJECTS, CONTROL_SUBJECTS
 
 # ds005034 randomised transcranial verum/sham: reuse the existing participant
 # inventory and event-table reader.
-from run_ds005034_tacs_aftereffect import (  # noqa: E402
-    paired_inventory as ds005034_paired_inventory, load_events as ds005034_load_events,
-    SESSIONS as DS005034_SESSIONS, BASELINE_WINDOW as DS005034_BASELINE_WINDOW,
-    DELAY_WINDOW as DS005034_DELAY_WINDOW, CELLS as DS005034_CELLS,
-)
+from corpus_sessions import paired_inventory as ds005034_paired_inventory
+from preprocessing import load_events as ds005034_load_events
+from corpus_sessions import SESSIONS as DS005034_SESSIONS
+from preprocessing import BASELINE_WINDOW as DS005034_BASELINE_WINDOW, DELAY_WINDOW as DS005034_DELAY_WINDOW, CELLS as DS005034_CELLS
 
 # Macaque dlPFC delay-period microstimulation: reuse the existing session
 # list, data root, and MAT-file struct parsers (both generations).
-from run_macaque_pfc_microstimulation_pipeline import (  # noqa: E402
-    SESSIONS as MACAQUE_SESSIONS, DATA as MACAQUE_DATA, PRE_S as MACAQUE_PRE_S,
-    N_BINS as MACAQUE_N_BINS, BIN_S as MACAQUE_BIN_S, DLPFC_MARKOV_AREA,
-    _ascii_to_str, _parse_chan_token,
-)
+from run_macaque_pfc_microstimulation_pipeline import SESSIONS as MACAQUE_SESSIONS, DATA as MACAQUE_DATA
+from dynamics import _ascii_to_str, _parse_chan_token
+from spike_pipeline import PRE_S as MACAQUE_PRE_S, N_BINS as MACAQUE_N_BINS, BIN_S as MACAQUE_BIN_S
+from dynamics import DLPFC_CONNECTOME_AREA
 
 # alagapan_phase_stimulation (multi-site phase-lag human retention-period stimulation):
 # reuse the existing patient roster, data directory, montage and condition reader.
-from run_alagapan_phase_omega import PATIENTS as ALAGAPAN_PATIENTS, DATA_DIR as ALAGAPAN_DATA_DIR  # noqa: E402
-from run_alagapan_stimulation_geometry import (  # noqa: E402
-    CONDITIONS as ALAGAPAN_CONDITIONS, STIM_SITES as ALAGAPAN_STIM_SITES,
-    RETENTION_ONSET_BUFFER_S as ALAGAPAN_RETENTION_ONSET_BUFFER_S,
-    _trial_conditions as alagapan_trial_conditions,
-)
+from run_alagapan_phase_omega import DATA_DIR as ALAGAPAN_DATA_DIR
+from preprocessing import PATIENTS as ALAGAPAN_PATIENTS
+from run_alagapan_stimulation_geometry import _trial_conditions as alagapan_trial_conditions
+from preprocessing import STIM_SITES as ALAGAPAN_STIM_SITES
+from preprocessing import CONDITIONS as ALAGAPAN_CONDITIONS, RETENTION_ONSET_BUFFER_S as ALAGAPAN_RETENTION_ONSET_BUFFER_S
 
 # Passive human single-unit corpora that already define this project's
 # candidate biomarkers: reuse the shared iterator module's constants and
@@ -96,12 +89,13 @@ from corpus_sessions import (  # noqa: E402
     MIN_TRIALS as PASSIVE_MIN_TRIALS, alm_data_directory, watters_directories,
     watters_session_dates, watters_behaviour,
 )
-from run_human_drift_spine_001187_000673 import canonical_sessions, _trial_group  # noqa: E402
-from run_panichello_pipeline import data_directory as panichello_data_directory, monkey_for_session  # noqa: E402
+from run_human_drift_spine_001187_000673 import canonical_sessions
+from corpus_sessions import _trial_group
+from run_panichello_pipeline import data_directory as panichello_data_directory
+from corpus_sessions import monkey_for_session
 
 RESULTS = ROOT / "results"
 OUT_PATH = RESULTS / "stimulation_design_census.json"
-DATA_ROOT = data_root()
 CENSUS_SEED = stable_seed("stimulation_design_census")  # no stochastic step reads this; kept for
                                                           # provenance symmetry with this project's
                                                           # other scope blocks, which all carry a seed.
@@ -263,7 +257,7 @@ def validate_row(row: dict) -> list[str]:
     """Every REQUIRED_ROW_FIELDS entry must be present. The two identifier
     fields must be non-empty strings; every other field must be a
     MEASURED/VOID tagged value (never a bare None, list or scalar). Returns
-    the list of defects; an empty list means the row is complete."""
+    the list of errors; an empty list means the row is complete."""
     defects = []
     for field in REQUIRED_ROW_FIELDS:
         if field not in row:
@@ -799,7 +793,8 @@ def census_clam_control() -> dict:
 # ═══════════════════════════════════════════════════════════════════════════
 
 def census_ds005034() -> dict:
-    dataset_root = DATA_ROOT / "ds005034" if (DATA_ROOT / "ds005034").is_dir() else DATA_ROOT
+    data_root_dir = data_root()
+    dataset_root = data_root_dir / "ds005034" if (data_root_dir / "ds005034").is_dir() else data_root_dir
     inventory = ds005034_paired_inventory(dataset_root)
 
     trial_counts = {}
@@ -861,8 +856,8 @@ def census_ds005034() -> dict:
         "charge": VOID("amplitude/current is not read by this census"),
         "within_participant_dose_variation": MEASURED(
             {"timing_condition": False}, "exactly two levels (verum, sham) exist for every participant; no "
-                                          "continuous within-participant timing sweep is present, per the "
-                                          "randomised-design ruling for this corpus"),
+                                          "continuous within-participant timing sweep is present, as "
+                                          "the design of this corpus is randomised"),
         "within_site_dose_variation": VOID("site/montage is not read by this census (see stimulation_site)"),
         "monotone_rescaling_notes": VOID("no dose parameter beyond a fixed target band is read by this census"),
         "pre_stimulation_window_s": MEASURED(DS005034_BASELINE_WINDOW[1] - DS005034_BASELINE_WINDOW[0],
@@ -974,8 +969,8 @@ def census_macaque_pfc_microstimulation() -> dict:
         "is_working_memory_maintenance_stimulation": MEASURED(True, "stim-onset-aligned crop starts at "
                                                                        f"-{MACAQUE_PRE_S} s and stimulation is "
                                                                        "delivered mid-delay by design"),
-        "recording_region": MEASURED(f"dorsolateral PFC, area {DLPFC_MARKOV_AREA} (Utah arrays; area-level only, "
-                                      "no per-electrode histology in this release)", "module DLPFC_MARKOV_AREA constant"),
+        "recording_region": MEASURED(f"dorsolateral PFC, area {DLPFC_CONNECTOME_AREA} (Utah arrays; area-level only, "
+                                      "no per-electrode histology in this release)", "module DLPFC_CONNECTOME_AREA constant"),
         "recording_modality": MEASURED("multi-unit spikerate (Utah array), 192 channels (Sa, 2 arrays) or 96 "
                                         "channels (Wa, 1 array)", "params.channels per session"),
         "stimulation_site": MEASURED(
@@ -1212,7 +1207,7 @@ def _passive_row(**overrides) -> dict:
 
 
 def census_dandi_000469() -> dict:
-    directory = DATA_ROOT / "000469"
+    directory = data_root() / "000469"
     subject_dirs = sorted(directory.glob("sub-*")) if directory.is_dir() else []
     seen, included, excluded = [], 0, {}
     n_trials_total = 0
@@ -1274,7 +1269,7 @@ def census_dandi_001187() -> dict:
         seen.append(meta["patient"])
         # primary_path already includes its own release-name prefix (e.g. "001187/sub-22/..."),
         # matching src/corpus_sessions.py's iter_dandi_001187 convention exactly.
-        path = DATA_ROOT / meta["primary_path"]
+        path = data_root() / meta["primary_path"]
         if not path.exists():
             excluded[meta["patient"]] = "primary NWB path not found on disk"
             continue
@@ -1319,7 +1314,7 @@ def census_dandi_001187() -> dict:
 
 
 def census_dandi_000574() -> dict:
-    directory = DATA_ROOT / "000574"
+    directory = data_root() / "000574"
     subject_dirs = sorted(directory.glob("sub-*")) if directory.is_dir() else []
     seen, included, excluded = [], 0, {}
     n_trials_total = 0
@@ -1372,7 +1367,7 @@ def census_dandi_000574() -> dict:
 
 
 def census_inagaki_alm5() -> dict:
-    directory = alm_data_directory(DATA_ROOT)
+    directory = alm_data_directory(data_root())
     files = sorted(directory.glob("*.mat")) if directory.is_dir() else []
     return _passive_row(
         corpus_id="inagaki_alm5", arm_id="passive_alm_delay_period_control_trials",
@@ -1407,11 +1402,12 @@ def census_inagaki_alm5() -> dict:
 
 
 def census_watters() -> dict:
-    dates = watters_session_dates(DATA_ROOT)
-    behaviour = watters_behaviour(DATA_ROOT)
+    data_root_dir = data_root()
+    dates = watters_session_dates(data_root_dir)
+    behaviour = watters_behaviour(data_root_dir)
     n_trials_total = len(behaviour)
     n_sessions_with_spike_cache = 0
-    spikes_dir, _ = watters_directories(DATA_ROOT)
+    spikes_dir, _ = watters_directories(data_root_dir)
     for animal, session_date, _variant in dates:
         if (spikes_dir / animal / session_date).is_dir():
             n_sessions_with_spike_cache += 1
@@ -1522,7 +1518,7 @@ def main() -> None:
         "scope": {
             "n_corpus_arm_rows": len(rows),
             "corpora": sorted({row["corpus_id"] for row in rows}),
-            "data_root": str(DATA_ROOT),
+            "data_root": str(data_root()),
             "seed": CENSUS_SEED,
             "git_commit": git_commit(ROOT),
             "wall_clock_seconds": None,  # filled in just before write

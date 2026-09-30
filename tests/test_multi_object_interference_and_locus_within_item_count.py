@@ -8,6 +8,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import json
+
 import numpy as np
 import pytest
 
@@ -18,6 +20,7 @@ from run_multi_object_interference_and_locus_within_item_count import (  # noqa:
     _aggregate_level_trial_counts, _interference_branch_within_item_count, _temporal_locus_branch_within_item_count,
     _close, _decisive_partial_within_item_count, _trial_count_weighted,
 )
+from provenance import checkpoint_safe, restore_checkpoint  # noqa: E402
 
 
 # ---------------------------------------------------------------------------------------------------
@@ -98,6 +101,20 @@ def test_aggregate_level_trial_counts_sums_across_sessions():
         {"status": "too_few_trials_for_lag_profile"},
     ]
     agg = _aggregate_level_trial_counts(sessions)
+    assert agg["total_trials_by_item_count_level"] == {"1": 50}
+    assert agg["n_sessions_contributing_by_item_count_level"] == {"1": 2}
+
+
+def test_aggregate_level_trial_counts_pools_a_resumed_and_a_fresh_session_under_one_key():
+    """per_level is stored keyed by str(level). A resumed session comes back through
+    restore_checkpoint before this aggregation loop sees it; pre-fix, a resumed session's int-keyed
+    per_level and a fresh session's str-keyed per_level split the same item-count level into two
+    dict entries here. One session round-tripped (simulating a resume) pooled with one fresh session
+    must land under a single "1" key, not both "1" and 1."""
+    fresh = {"status": "computed", "per_level": {"1": {"status": "computed", "n_trials": 20}}}
+    resumed_raw = {"status": "computed", "per_level": {"1": {"status": "computed", "n_trials": 30}}}
+    resumed = restore_checkpoint(json.loads(json.dumps(checkpoint_safe(resumed_raw))))
+    agg = _aggregate_level_trial_counts([fresh, resumed])
     assert agg["total_trials_by_item_count_level"] == {"1": 50}
     assert agg["n_sessions_contributing_by_item_count_level"] == {"1": 2}
 

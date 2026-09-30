@@ -2,32 +2,31 @@
 preprocessing.py — multi-dataset iEEG signal processing pipeline.
 
 Datasets supported:
-  1. Kai Miller N-back ECoG (Miller 2019 Nat Hum Behav library, "memory_nback")
+  1. ECoG n-back corpus N-back ECoG (Nat Hum Behav library, "memory_nback")
        4 subjects (al, ca, cc, ug); ECoG; 1000 Hz (Synamps2, scalp/mastoid ref,
-       0.15-200 Hz instrument bandpass -- Miller 2019 Methods, "Recordings");
+       0.15-200 Hz instrument bandpass -- the dataset's own Methods, "Recordings");
        0/1/2-back house-repetition detection (NOT verbal -- stimuli are house
        pictures; see the dataset's own README_memory_nback_dataset_notes.docx).
        MAT format. Functions: load_subject, load_miller_nback, compute_hgp
 
-  2. DANDI 000574 — Boran et al. (2020) Sternberg WM
+  2. DANDI 000574 — Sternberg WM
        9 subjects; iEEG + EEG + LFP + single units (MTL: hippocampus, amygdala,
        temporal cortex); NWB format; Sternberg set sizes 4/6/8
-       References: Boran, Fedele, Steiner, Hilfiker, Stieglitz, Grunwald &
-       Sarnthein (2020) Sci Data 7:30, doi:10.1038/s41597-020-0364-3; Sarnthein
-       lab Zurich
+       Source: doi 10.1038/s41597-020-0364-3, Sci Data 7:30; recorded
+       in Zurich
        Functions: load_boran_nwb, compute_boran_hgp
 
-  3. TES1 — Huang et al. (2017) eLife transcranial electrical stimulation
+  3. TES1 — doi 10.7554/eLife.18834 transcranial electrical stimulation
        17 subjects; intracranial voltage induced by 1 mA tES; MNI coordinates
        Provides the input matrix B for LQR control (tES → brain field mapping)
        Functions: load_tes1_stimulation, build_tes1_input_matrix
 
 
 Signal processing methods:
-  Crone et al. (1998) for high-gamma extraction
-  Engel et al. (2005) for common average reference rationale
-  Vogelstein et al. (2010) for AR(1) deconvolution framework
-  Ray & Maunsell (2011) for broadband HGP as MUA proxy
+  high-gamma extraction (standard broadband conventions)
+  common average reference rationale (published re-referencing analysis)
+  AR(1) deconvolution framework (published calcium-deconvolution method)
+  broadband HGP as MUA proxy (published spike-band relationship)
 """
 
 from __future__ import annotations
@@ -39,6 +38,19 @@ import numpy as np
 import scipy.signal as sig
 import scipy.io as sio
 from pathlib import Path
+from scipy.signal import welch
+import itertools
+from info_decoding import MIN_TRIALS_PER_CLASS, MIN_TRIALS_PER_CLASS_COMPARISON
+from statistics import _choose_n_splits, stable_seed
+from geometry import _fit_pca_fold, _project_fold, _ctg_score_fold, _ctg_splits
+from statistics import _standardize_train_test
+import csv
+from scipy.signal import detrend, resample_poly, windows
+from drift_dynamics import fit_gaussian_state_space, leave_one_out_condition_residuals
+from statistics import permutation_pvalue
+from scipy import linalg
+import mne
+from scipy.signal import butter, hilbert, sosfiltfilt
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 try:  # package import in tests; flat import in directly-run legacy scripts
@@ -56,7 +68,7 @@ BORAN_DATA_DIR = dataset_path("dandi_000574", required=False)
 TES1_ZIP_PATH = data_asset_path("tes1_zip", required=False)
 
 SUBJECTS = ["al", "ca", "cc", "ug"]
-SRATE = 1000  # Hz (Miller) -- confirmed from Miller 2019 Nat Hum Behav Methods
+SRATE = 1000  # Hz (ECoG n-back corpus) -- confirmed from ECoG n-back corpus 2019 Nat Hum Behav Methods
               # ("Electrical potentials were sampled at 1000 Hz"), NOT 1200 Hz.
 BORAN_SRATE_IEEG = 1398  # Hz (DANDI 000574 iEEG)
 BORAN_SRATE_LFP = 22370  # Hz (DANDI 000574 raw LFP)
@@ -68,7 +80,7 @@ TARGET_CODES = {0: "no_stim", 1: "non_target", 2: "target"}
 # ── Loading ────────────────────────────────────────────────────────────────────
 
 def load_subject(subj: str, data_dir: Path = DATA_DIR) -> dict:
-    """Load one subject's N-back iEEG data from the Miller dataset.
+    """Load one subject's N-back iEEG data from the ECoG n-back corpus dataset.
 
     Parameters
     ----------
@@ -183,7 +195,7 @@ def common_average_reference(data: np.ndarray) -> np.ndarray:
     """Subtract the cross-electrode mean at each time point.
 
     Removes volume-conducted and reference-electrode artefacts while
-    preserving spatially local signals (Engel et al. 2005, Clin. Neurophysiol.).
+    preserving spatially local signals (published local-reference analysis).
 
     Parameters
     ----------
@@ -202,8 +214,8 @@ def line_noise_notch(
     """Notch out mains frequency + harmonics (e.g. 50/100/150 Hz for EU sites).
 
     Required for any high-gamma (70-150 Hz) path at a 50 Hz-mains site (e.g.
-    Boran/Zurich): the 2nd/3rd mains harmonics (100, 150 Hz) otherwise fall
-    inside the HGP band uncorrected. Miller (US, 60 Hz) already goes through
+    DANDI 000574/Zurich): the 2nd/3rd mains harmonics (100, 150 Hz) otherwise fall
+    inside the HGP band uncorrected. ECoG n-back corpus (US, 60 Hz) already goes through
     preprocess(), which does notch -- this covers 50 Hz sites.
 
     Parameters
@@ -385,7 +397,7 @@ def preprocess(
 ) -> np.ndarray:
     """Full preprocessing pipeline: CAR → notch (line noise + harmonics).
 
-    The Miller dataset has only an instrument-imposed 0.15-200 Hz bandpass;
+    The ECoG n-back corpus dataset has only an instrument-imposed 0.15-200 Hz bandpass;
     CAR and line-noise removal are what this function adds.
 
     Parameters
@@ -423,7 +435,7 @@ def high_gamma_power(
       4. Gaussian smoothing (σ = smooth_ms) to reduce trial-to-trial noise
 
     High-gamma is broadband, tracks local MUA, and is the best non-invasive
-    correlate of cognitive state in ECoG (Ray & Maunsell 2011; Nir et al. 2007).
+    correlate of cognitive state in ECoG (published high-gamma studies).
 
     Parameters
     ----------
@@ -512,7 +524,7 @@ def baseline_normalize(
     """Z-score each channel relative to pre-stimulus baseline.
 
     Baseline is pooled across trials (grand-average baseline), matching
-    the convention in Crone et al. 1998 and Miller et al. 2007.
+    the published high-gamma baseline convention.
 
     Parameters
     ----------
@@ -553,7 +565,7 @@ def run_pipeline(
     return ep
 
 
-# ── Miller convenience wrappers (used by notebooks 07/08) ─────────────────────
+# ── ECoG n-back corpus convenience wrappers (used by notebooks 07/08) ─────────────────────
 
 def load_miller_nback(
     mat_path: str,
@@ -561,7 +573,7 @@ def load_miller_nback(
     post_ms: float = 1500.0,
     bad_ch_threshold: float = 3.0,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Load one Miller N-back MAT file and return epoch tensor.
+    """Load one ECoG n-back corpus N-back MAT file and return epoch tensor.
 
     Convenience wrapper over load_subject → preprocess → high_gamma_power →
     epoch_data for use in production notebooks.
@@ -618,7 +630,7 @@ def compute_hgp(
     return out
 
 
-# ── DANDI 000574 — Boran et al. Sternberg WM ──────────────────────────────────
+# ── DANDI 000574 — DANDI 000574 Sternberg WM ──────────────────────────────────
 
 def load_boran_nwb(
     nwb_path: str,
@@ -628,7 +640,7 @@ def load_boran_nwb(
     bad_channel_mad_threshold: float = 3.0,
     mains_hz: float = 50.0,
 ) -> dict:
-    """Load Boran et al. Sternberg WM task from NWB file (DANDI 000574).
+    """Load DANDI 000574 Sternberg WM task from NWB file (DANDI 000574).
 
     Task structure (time relative to probe onset at t=0):
       Fixation:    [-6, -5] s
@@ -639,7 +651,7 @@ def load_boran_nwb(
     Uses h5py to avoid requiring pynwb. Electrode brain areas include MTL
     (hippocampus CA1/CA3, amygdala, entorhinal), superior/middle temporal
     gyrus, and scalp EEG — enabling multi-region geometry analysis not
-    possible with the Miller dataset.
+    possible with the ECoG n-back corpus dataset.
 
     Parameters
     ----------
@@ -761,7 +773,7 @@ def compute_boran_hgp(
     hi: float = 150.0,
     smooth_ms: float = 50.0,
 ) -> np.ndarray:
-    """High-gamma power for Boran Sternberg epochs.
+    """High-gamma power for DANDI 000574 Sternberg epochs.
 
     Parameters
     ----------
@@ -779,7 +791,7 @@ def boran_baseline_normalize(
     times: np.ndarray,
     baseline_window: tuple[float, float] = (-6.5, -6.0),
 ) -> np.ndarray:
-    """Z-score Boran epochs relative to pre-fixation baseline.
+    """Z-score DANDI 000574 epochs relative to pre-fixation baseline.
 
     Uses far pre-fixation [-6.5, -6.0]s to avoid contamination by
     anticipatory activity (which begins at fixation onset ~-6s).
@@ -801,13 +813,13 @@ def boran_baseline_normalize(
     return (epochs - mu) / sd
 
 
-# ── TES1 — Huang et al. 2017 eLife tES stimulation field ──────────────────────
+# ── TES1 — published eLife tES stimulation field ──────────────────────
 
 def load_tes1_stimulation(
     zip_path: str | Path | None = None,
     subject: str | None = None,
 ) -> dict | list[dict]:
-    """Load tES-induced intracranial voltages from Huang et al. 2017 eLife.
+    """Load tES-induced intracranial voltages from the published eLife TES1 release.
 
     TES1 (CRCNS) provides the voltage at each intracranial electrode induced
     by 1 mA transcranial stimulation. This gives the input matrix B for our
@@ -897,7 +909,7 @@ def build_tes1_input_matrix(
     where u_t is the stimulation current vector (amps) and B maps current to
     the neural state change (via induced voltage field).
 
-    Huang et al. 2017 (eLife 6:e18834) report no spatial-smoothness constant
+    The TES1 release (eLife 6:e18834) reports no spatial-smoothness constant
     for the field and, if anything, argue AGAINST transporting one subject's
     field onto another's anatomy without a subject-specific model (their
     cross-subject prediction is significantly worse than subject-specific
@@ -1039,7 +1051,7 @@ def phase_amplitude_coupling(
 ) -> np.ndarray:
     """Modulation index (MI) PAC: theta phase × HGP amplitude coupling.
 
-    Uses the Tort et al. (2010) modulation index: for each channel, compute
+    Uses the KL-divergence modulation index: for each channel, compute
     the distribution of HGP amplitude across theta phase bins.  MI measures
     how non-uniform this distribution is (KL divergence from uniform).
 
@@ -1094,9 +1106,9 @@ def time_resolved_pac(
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Time-resolved PAC modulation index in sliding windows (trPAC).
 
-    Tort et al. (2010) MI computed in overlapping windows.  During WM
+    KL-divergence MI computed in overlapping windows.  During WM
     maintenance, theta-HGP trPAC should be elevated above baseline and above
-    chance — directly testing the Lisman-Jensen (2005) theta-gamma WM model.
+    chance — directly testing the theta-gamma working-memory model.
 
     Parameters
     ----------
@@ -1144,3 +1156,750 @@ def time_resolved_pac(
 
     t_cent = starts + win_s // 2
     return mi_t, t_cent, bin_ctrs
+
+
+PATIENTS = {
+    "P1": {"band": "theta", "band_range": (4.0, 8.0), "stim_freq_hz": 4.0},
+    "P2": {"band": "alpha", "band_range": (8.0, 12.0), "stim_freq_hz": 10.0},
+    "P3": {"band": "alpha", "band_range": (8.0, 12.0), "stim_freq_hz": 10.0},
+}
+
+
+CONDITIONS = ("In Phase", "Anti Phase", "Sham")
+
+
+RETENTION_ONSET_BUFFER_S = 0.25
+
+
+STIM_SITES = {
+    "P1": [["LFA1", "LFA2"], ["LPA1", "LPA2"]],
+    "P2": [["LAF5", "LAF6"], ["LAP5", "LAP6"]],
+    "P3": [["RAF6", "RAF7"], ["RSP5", "RSP6"]],
+}
+
+
+def _spectral_sanity_check(baseline_pooled: np.ndarray, condition_pooled: np.ndarray,
+                            srate: float) -> dict:
+    """Compare power spectra of stimulation-session vs baseline retention data
+    as a coarse check against residual stimulation-artifact contamination
+    (mirrors the SASS-validation logic in run_haslacher_phase_omega.py's
+    dataset documentation): a plausible neural difference should not look like
+    a broadband gain change."""
+    f_b, p_b = welch(baseline_pooled, fs=srate, axis=-1, nperseg=min(256, baseline_pooled.shape[-1]))
+    f_c, p_c = welch(condition_pooled, fs=srate, axis=-1, nperseg=min(256, condition_pooled.shape[-1]))
+    ratio = np.mean(p_c) / np.mean(p_b) if np.mean(p_b) > 0 else float("nan")
+    return {"mean_power_ratio_condition_over_baseline": float(ratio),
+            "note": ("ratio far from 1 across the whole spectrum is more consistent with "
+                     "residual broadband artifact than a band-specific neural effect; "
+                     "reported as a caveat, not used to suppress the result")}
+
+
+BAD_CHANNEL_MAD_THRESHOLD = 3.0
+
+
+BORAN_MAINS_HZ = 50.0
+
+
+MAINT_WIN = 3.0
+
+
+MIN_BIPOLAR_CHANNELS = 4
+
+
+MIN_TRIALS = 20
+
+
+def lfp_maintenance_tensor(
+    ieeg: dict, trial_mask: np.ndarray, n_bins: int, lo: float = 70.0, hi: float = 150.0,
+) -> np.ndarray:
+    """Notch -> bipolar-reference -> band-envelope power -> maintenance-window bin.
+
+    Matches the convention already established in scripts/run_boran_pipeline.py
+    (filter/envelope computed on the full pre-probe-to-post-probe epoch, THEN
+    the maintenance sub-window is sliced out, to keep zero-phase filter edge
+    effects away from the analysis window boundary). ``lo``/``hi`` default to
+    this project's standard high-gamma band; passing a different band (e.g.
+    8-45 Hz) reuses the identical filter-and-envelope path with only the
+    passband changed, which is the intended way to compare bands at fixed
+    sensor and referencing.
+    """
+    epochs = ieeg["epochs"][trial_mask]
+    srate = ieeg["srate"]
+    labels = ieeg["electrode_labels"]
+    n_trials, n_channels, n_samples = epochs.shape
+    notched = np.empty_like(epochs)
+    for trial in range(n_trials):
+        notched[trial] = line_noise_notch(
+            epochs[trial].T, srate, fundamental=BORAN_MAINS_HZ, n_harmonics=3,
+        ).T
+    flat = notched.transpose(0, 2, 1).reshape(-1, n_channels)
+    bipolar_flat, _ = bipolar_reference_by_shank(flat, labels)
+    bipolar = bipolar_flat.reshape(n_trials, n_samples, -1).transpose(0, 2, 1).astype(np.float32)
+    # smooth_ms=0: an estimator that reports a persistence or confinement
+    # contrast must never see a smoothed signal -- a temporal kernel
+    # manufactures autocorrelation indistinguishable from genuine confinement.
+    # compute_boran_hgp's default (50 ms Gaussian, used by the CTG/geometry
+    # pipelines) is correct for those purposes but wrong here; this arm must
+    # match the spike arm's build_psth(..., smooth_ms=0, ...) convention
+    # exactly.
+    band_power = compute_boran_hgp(bipolar, srate=srate, lo=lo, hi=hi, smooth_ms=0.0)
+    maint_mask = (ieeg["times"] >= -MAINT_WIN) & (ieeg["times"] < 0)
+    band_maint = band_power[:, :, maint_mask]
+    edges = np.linspace(0, band_maint.shape[2], n_bins + 1).astype(int)
+    return np.stack(
+        [band_maint[:, :, edges[k]:edges[k + 1]].mean(axis=2) for k in range(n_bins)], axis=2,
+    )
+
+
+FIELD_BANDS = ("theta", "alpha", "beta", "gamma", "hgp")
+
+
+FIELD_NYQUIST_MARGIN = 0.8
+
+
+def multiband_maintenance_tensor(
+    epochs: np.ndarray, times: np.ndarray, labels: list[str], srate: float,
+    window_s: tuple[float, float], n_bins: int, referencing: str = "bipolar",
+    bands: tuple[str, ...] = FIELD_BANDS, mains_hz: float = BORAN_MAINS_HZ,
+) -> dict:
+    """Notch -> reference once -> per-band Hilbert-envelope power (band_power) ->
+    maintenance-window bin, bands stacked as a trailing channel x band feature axis.
+
+    Referencing and the mains notch happen exactly once regardless of how many
+    bands are requested (unlike calling a single-band tensor function once per
+    band, which would redo both for every band). A band whose high edge reaches
+    FIELD_NYQUIST_MARGIN x this signal's own Nyquist frequency is dropped and
+    named in ``dropped_bands`` rather than handed to band_power's bandpass_filter,
+    which raises past the true Nyquist.
+
+    Parameters
+    ----------
+    epochs   : (trials, channels, samples) raw signal, already cut to cover window_s
+    times    : (samples,) seconds, same time origin as window_s
+    labels   : length-channels electrode labels
+    srate    : sampling rate, Hz
+    window_s : (t0, t1) maintenance sub-window to bin, in ``times``' own time base
+    n_bins   : number of equal-width maintenance bins
+    referencing : 'bipolar' (bipolar_reference_by_shank, depth contacts) or
+                  'as_released' (identity, no re-referencing beyond the notch)
+
+    Returns
+    -------
+    dict:
+      tensor         : (trials, n_bins, n_channels_out * n_kept_bands) float32,
+                        log10 power, channel-major (every kept band of channel 0,
+                        then channel 1, ...)
+      channel_labels : list[str], length n_channels_out
+      kept_bands     : list[str], bands actually stacked, BAND_DEFINITIONS order
+      dropped_bands  : list[str], bands dropped for reaching the Nyquist margin
+    """
+    n_trials, n_channels, n_samples = epochs.shape
+    notched = np.empty_like(epochs, dtype=np.float64)
+    for trial in range(n_trials):
+        notched[trial] = line_noise_notch(
+            epochs[trial].T, srate, fundamental=mains_hz, n_harmonics=3,
+        ).T
+    flat = notched.transpose(0, 2, 1).reshape(-1, n_channels)
+    if referencing == "bipolar":
+        referenced_flat, out_labels = bipolar_reference_by_shank(flat, labels)
+    elif referencing == "as_released":
+        referenced_flat, out_labels = flat, list(labels)
+    else:
+        raise ValueError(f"unknown referencing: {referencing!r}")
+    n_out = referenced_flat.shape[1]
+    referenced = referenced_flat.reshape(n_trials, n_samples, n_out).transpose(0, 2, 1)
+
+    nyquist = srate / 2.0
+    kept_bands, dropped_bands, band_power_by_band = [], [], []
+    for band_name in bands:
+        lo, hi = BAND_DEFINITIONS[band_name]
+        if hi >= FIELD_NYQUIST_MARGIN * nyquist:
+            dropped_bands.append(band_name)
+            continue
+        kept_bands.append(band_name)
+        power = np.empty_like(referenced, dtype=np.float64)
+        for trial in range(n_trials):
+            power[trial] = band_power(referenced[trial].T, (lo, hi), srate=srate, smooth_ms=0.0).T
+        band_power_by_band.append(power)
+    if not kept_bands:
+        raise ValueError(
+            f"every requested band's high edge reaches {FIELD_NYQUIST_MARGIN:g} x Nyquist "
+            f"({nyquist:g} Hz) at a {srate:g} Hz sampling rate"
+        )
+
+    win_mask = (times >= window_s[0]) & (times < window_s[1])
+    edges = np.linspace(0, int(win_mask.sum()), n_bins + 1).astype(int)
+    binned_by_band = []
+    for power in band_power_by_band:
+        win_power = power[:, :, win_mask]
+        binned = np.stack(
+            [np.log10(np.clip(win_power[:, :, edges[k]:edges[k + 1]].mean(axis=2), 1e-12, None))
+             for k in range(n_bins)], axis=2,
+        )  # (trials, channels_out, n_bins)
+        binned_by_band.append(binned)
+    stacked = np.stack(binned_by_band, axis=-1)  # (trials, channels_out, n_bins, n_kept_bands)
+    tensor = stacked.transpose(0, 2, 1, 3).reshape(n_trials, n_bins, n_out * len(kept_bands))
+    return {
+        "tensor": tensor.astype(np.float32), "channel_labels": out_labels,
+        "kept_bands": kept_bands, "dropped_bands": dropped_bands,
+    }
+
+
+MASTOID_LABELS = ("A1", "A2")
+
+
+def scalp_reference_excluding_mastoids(data: np.ndarray, labels: list[str]) -> tuple[np.ndarray, list[str]]:
+    """Common-average reference across scalp channels, excluding the two
+    mastoids from both the average and the analysis -- pre-declared before
+    any scalp session is fit, not improvised per session. The depth path's
+    bipolar-by-shank scheme (shank_bipolar_index_pairs) has no meaning for a
+    scalp 10-20 montage, which has no shank structure to difference along, so
+    it is not reused here.
+
+    Parameters
+    ----------
+    data   : (T, C)
+    labels : length-C electrode labels (10-20 names plus the two mastoids)
+
+    Returns
+    -------
+    referenced  : (T, C - n_mastoids_present)
+    kept_labels : list[str], mastoid labels removed, order otherwise preserved
+    """
+    keep = [i for i, lab in enumerate(labels) if lab not in MASTOID_LABELS]
+    referenced = common_average_reference(data[:, keep])
+    kept_labels = [labels[i] for i in keep]
+    return referenced, kept_labels
+
+
+def scalp_low_band_maintenance_tensor(
+    eeg: dict, trial_mask: np.ndarray, n_bins: int, lo: float = 8.0, hi: float = 45.0,
+) -> tuple[np.ndarray, list[str]]:
+    """Notch -> common-average-reference-excluding-mastoids -> low-band
+    envelope power -> maintenance-window bin. Mirrors lfp_maintenance_tensor's
+    structure exactly (same mains notch, same maintenance window, same
+    binning convention, same unsmoothed envelope); the referencing step
+    differs because a scalp montage has no shank structure to bipolar-
+    reference along (scalp_reference_excluding_mastoids). The 8-45 Hz default
+    is fixed by two physical constraints -- below the 50 Hz mains notch and
+    its harmonics, and below the scalp series' own Nyquist frequency with
+    margin -- not tuned per call.
+
+    Returns
+    -------
+    tensor      : (trials, channels, n_bins) float32
+    kept_labels : list[str], the channel labels surviving mastoid exclusion
+    """
+    epochs = eeg["epochs"][trial_mask]
+    srate = eeg["srate"]
+    labels = eeg["electrode_labels"]
+    n_trials, n_channels, n_samples = epochs.shape
+    notched = np.empty_like(epochs)
+    for trial in range(n_trials):
+        notched[trial] = line_noise_notch(
+            epochs[trial].T, srate, fundamental=BORAN_MAINS_HZ, n_harmonics=3,
+        ).T
+    flat = notched.transpose(0, 2, 1).reshape(-1, n_channels)
+    referenced_flat, kept_labels = scalp_reference_excluding_mastoids(flat, labels)
+    referenced = referenced_flat.reshape(n_trials, n_samples, -1).transpose(0, 2, 1).astype(np.float32)
+    band_power = compute_boran_hgp(referenced, srate=srate, lo=lo, hi=hi, smooth_ms=0.0)
+    maint_mask = (eeg["times"] >= -MAINT_WIN) & (eeg["times"] < 0)
+    band_maint = band_power[:, :, maint_mask]
+    edges = np.linspace(0, band_maint.shape[2], n_bins + 1).astype(int)
+    tensor = np.stack(
+        [band_maint[:, :, edges[k]:edges[k + 1]].mean(axis=2) for k in range(n_bins)], axis=2,
+    )
+    return tensor, kept_labels
+
+
+def session_cells(sess):
+    tc, load = sess["task_condition"], sess["load"]
+    psth = sess["counts"]
+    out = {}
+
+    for op_a, op_b in OPERATION_PAIRS:
+        name = f"operation_{op_a}_vs_{op_b}"
+        mask = np.isin(tc, (op_a, op_b))
+        y = (tc[mask] == op_b).astype(float)
+        tag = f"ds005034_{sess['session']}_{name}"
+        out[name] = fit_cell(tag, psth[mask], y)
+
+    name = "operation_forward_vs_transform"
+    y = (tc != "forward").astype(float)
+    out[name] = fit_cell(f"ds005034_{sess['session']}_{name}", psth, y)
+
+    for op in OPERATION_LEVELS:
+        name = f"load_within_{op}"
+        mask = tc == op
+        y = (load[mask] == 6).astype(float)
+        out[name] = fit_cell(f"ds005034_{sess['session']}_{name}", psth[mask], y)
+
+    return out
+
+
+OPERATION_LEVELS = ("forward", "backward", "alphabetical")
+
+
+OPERATION_PAIRS = (("forward", "backward"), ("forward", "alphabetical"), ("backward", "alphabetical"))
+
+
+def fit_cell(tag, psth, y_raw):
+    y = np.asarray(y_raw)
+    classes, counts = np.unique(y, return_counts=True)
+    if len(classes) < 2 or counts.min() < MIN_TRIALS_PER_CLASS:
+        return None
+    n_units = psth.shape[1]
+    n_comp = max(2, min(N_PC, n_units - 1))
+    n_splits = _choose_n_splits(y)
+    rng = np.random.default_rng(stable_seed(tag))
+    auc_mat = within_window_ctg(psth, y, n_comp, n_splits, rng)
+    stats = window_stats(auc_mat)
+    stats["min_class_count"] = int(counts.min())
+    stats["admitted_at_comparison_floor"] = bool(counts.min() >= MIN_TRIALS_PER_CLASS_COMPARISON)
+    return stats
+
+
+N_PC = 8
+
+
+BANDS = {"theta": (4.0, 8.0), "alpha": (8.0, 13.0), "beta": (13.0, 20.0)}
+
+
+BASELINE_WINDOW = (-3.7, -2.7)
+
+
+CELLS = tuple(itertools.product(("forward", "backward", "alphabetical"), (4, 6)))
+
+
+DELAY_WINDOW = (0.5, 6.5)
+
+
+MAX_GLOBAL_BAD_FRACTION = 0.20
+
+
+POSTERIOR_ROI = (
+    "E60", "E62", "E85", "E59", "E67", "E77", "E91", "E58", "E66",
+    "E72", "E84", "E96", "E65", "E90", "E70", "E75", "E83",
+)
+
+
+def within_window_ctg(psth, y, n_components, n_splits, rng):
+    y = np.asarray(y)
+    t_idx = np.arange(psth.shape[2])
+    fold_mats = []
+    for tr_idx, te_idx in _ctg_splits(y, n_splits, rng, None):
+        X_tr, X_te = _standardize_train_test(psth[tr_idx], psth[te_idx], psth.shape[2], joint=True)
+        mu, V = _fit_pca_fold(X_tr, n_components)
+        Z_tr, Z_te = _project_fold(X_tr, mu, V), _project_fold(X_te, mu, V)
+        fold_mats.append(_ctg_score_fold(Z_tr, y[tr_idx], Z_te, y[te_idx], t_idx))
+    return np.nanmean(np.stack(fold_mats), axis=0)
+
+
+def window_stats(auc_mat):
+    n = auc_mat.shape[0]
+    offdiag_mask = ~np.eye(n, dtype=bool)
+    return {
+        "offdiag_effect": float(np.nanmean(auc_mat[offdiag_mask]) - 0.5),
+        "diag_mean_auc": float(np.nanmean(np.diag(auc_mat))),
+    }
+
+
+TARGET_SFREQ = 250.0
+
+
+THETA_ROI = ("E15", "E18", "E10", "E11", "E16")
+
+
+def _global_bad_channels(data_uv: np.ndarray, info, seed: int) -> list[str]:
+    import mne
+    from pyprep.find_noisy_channels import NoisyChannels
+
+    n_times = data_uv.shape[1]
+    width = int(2 * 1000)
+    starts = np.linspace(0, max(n_times - width, 0), 60).astype(int)
+    sampled = np.concatenate([data_uv[:, start:start + width] for start in starts], axis=1)
+    sampled = resample_poly(sampled, int(TARGET_SFREQ), 1000, axis=1) / 1e6
+    sampled = bandpass_filter(sampled.T, 1.0, 45.0, TARGET_SFREQ).T
+    sample_raw = mne.io.RawArray(sampled, info, verbose="ERROR")
+    detector = NoisyChannels(sample_raw, random_state=seed, ransac=True)
+    detector.find_all_bads(ransac=True, channel_wise=True, max_chunk_size=30)
+    return sorted(detector.get_bads())
+
+
+def _interpolate(data_uv: np.ndarray, info, bad_names: list[str]) -> np.ndarray:
+    if not bad_names:
+        return data_uv
+    import mne
+
+    raw = mne.io.RawArray(data_uv / 1e6, info, verbose="ERROR")
+    raw.info["bads"] = bad_names
+    raw.interpolate_bads(reset_bads=True, verbose="ERROR")
+    return raw.get_data() * 1e6
+
+
+def _mne_session_context(set_path: Path):
+    import mne
+
+    raw = mne.io.read_raw_eeglab(set_path, preload=False, verbose="ERROR")
+    montage = raw.get_montage()
+    info = mne.create_info(raw.ch_names, TARGET_SFREQ, ch_types="eeg")
+    info.set_montage(montage, on_missing="raise")
+    identity = mne.io.RawArray(np.eye(len(raw.ch_names)), info, verbose="ERROR")
+    csd = mne.preprocessing.compute_current_source_density(
+        identity, lambda2=1e-5, stiffness=4, n_legendre_terms=50, copy=True,
+    )
+    return raw, info, csd.get_data()
+
+
+def load_events(path: Path) -> list[dict]:
+    with path.open() as handle:
+        rows = list(csv.DictReader(handle, delimiter="\t"))
+    delays = []
+    for row in rows:
+        if row["value"] not in EVENT_MAP:
+            continue
+        task, load = EVENT_MAP[row["value"]]
+        delays.append({"onset": float(row["onset"]), "task": task, "load": load, "code": row["value"]})
+    return delays
+
+
+EVENT_MAP = {
+    "DIN104": ("forward", 4), "DIN106": ("forward", 6),
+    "DIN114": ("backward", 4), "DIN116": ("backward", 6),
+    "DIN124": ("alphabetical", 4), "DIN126": ("alphabetical", 6),
+}
+
+
+def periodogram_band_power(
+    data: np.ndarray, sfreq: float, interval: tuple[float, float], times: np.ndarray,
+    csd_transform: np.ndarray,
+) -> np.ndarray:
+    mask = (times >= interval[0]) & (times < interval[1])
+    segment = detrend(data[:, mask], axis=1, type="linear")
+    taper = windows.hann(segment.shape[1], sym=False)
+    spectrum = np.fft.rfft(segment * taper[None, :], axis=1)
+    spectrum = csd_transform @ spectrum
+    frequencies = np.fft.rfftfreq(segment.shape[1], 1.0 / sfreq)
+    scale = sfreq * np.sum(taper**2)
+    power = np.abs(spectrum) ** 2 / scale
+    return np.stack([
+        power[:, (frequencies >= lo) & (frequencies < hi)].mean(axis=1)
+        for lo, hi in BANDS.values()
+    ], axis=1)
+
+
+BIN_MS = 100
+
+
+N_PERM = 5000
+
+
+def _phase_diffusion(trials: np.ndarray, center: np.ndarray, scale: np.ndarray,
+                     pca: PCA, sampling_rate: float) -> dict:
+    binned = bin_analog_trials(trials, sampling_rate)
+    latent = pca.transform(((binned.transpose(0, 2, 1) - center) / scale).reshape(-1, len(center)))
+    latent = latent.reshape(len(binned), binned.shape[-1], -1)
+    residuals, _ = leave_one_out_condition_residuals(latent, np.zeros(len(latent), dtype=int))
+    state_rows = []
+    increment_diffusion = []
+    dt = BIN_MS / 1000.0
+    for component in range(latent.shape[-1]):
+        values = residuals[..., component]
+        estimate = fit_gaussian_state_space(values, dt)
+        state_rows.append(estimate.to_dict())
+        increment_diffusion.append(float(np.nanmean(np.diff(values, axis=1) ** 2) / (2.0 * dt)))
+    process = [row["diffusion"] for row in state_rows if row.get("diffusion") is not None
+               and np.isfinite(row["diffusion"])]
+    return {
+        "state_space_total_diffusion": float(np.sum(process)) if process else None,
+        "legacy_increment_total_diffusion": float(np.sum(increment_diffusion)),
+        "state_space_components": state_rows,
+        "n_trials": int(len(trials)),
+        "n_components_estimable": len(process),
+        "n_lambda_precision_identified": sum(
+            row.get("lambda_ci") is not None and row["lambda_ci"][0] > 0 for row in state_rows
+        ),
+    }
+
+
+def active_control_difference(rows: list[dict], key: str, n_perm: int = N_PERM) -> dict | None:
+    groups = {}
+    for group in ("active", "control"):
+        vectors = []
+        for row in rows:
+            harmonic = row.get(key)
+            if row.get("group") == group and harmonic is not None:
+                vectors.append([harmonic["cosine"], harmonic["sine"]])
+        groups[group] = np.asarray(vectors, dtype=float)
+    if min(len(groups["active"]), len(groups["control"])) < 3:
+        return None
+    observed = groups["active"].mean(0) - groups["control"].mean(0)
+    pooled = np.vstack((groups["active"], groups["control"]))
+    rng = np.random.default_rng(stable_seed(f"haslacher_active_control_{key}"))
+    null = np.empty(n_perm)
+    n_active = len(groups["active"])
+    for index in range(n_perm):
+        permuted = pooled[rng.permutation(len(pooled))]
+        null[index] = np.linalg.norm(permuted[:n_active].mean(0) - permuted[n_active:].mean(0))
+    magnitude = float(np.linalg.norm(observed))
+    return {"difference_cosine": float(observed[0]), "difference_sine": float(observed[1]),
+            "difference_amplitude": magnitude,
+            "participant_label_permutation_p_value": float((1 + np.sum(null >= magnitude)) / (n_perm + 1)),
+            "n_active": len(groups["active"]), "n_control": len(groups["control"])}
+
+
+def bin_analog_trials(trials: np.ndarray, sampling_rate: float, bin_ms: int = BIN_MS) -> np.ndarray:
+    """Average analog samples into nonoverlapping bins without smoothing."""
+    values = np.asarray(trials, dtype=float)
+    samples = int(round(sampling_rate * bin_ms / 1000.0))
+    n_bins = values.shape[-1] // samples
+    if values.ndim != 3 or samples < 1 or n_bins < 4:
+        raise ValueError("trials must be (trial, channel, time) with at least four bins")
+    return values[..., :n_bins * samples].reshape(values.shape[0], values.shape[1], n_bins, samples).mean(-1)
+
+
+def group_vector_test(rows: list[dict], key_path: tuple[str, ...], seed: str,
+                      n_perm: int = N_PERM) -> dict | None:
+    """Population circular-vector test with participant-level phase rotations."""
+    vectors = []
+    for row in rows:
+        value = row
+        for key in key_path:
+            value = value.get(key) if isinstance(value, dict) else None
+        if value is not None:
+            vectors.append([value["cosine"], value["sine"]])
+    vectors = np.asarray(vectors, dtype=float)
+    if len(vectors) < 3:
+        return None
+    observed = vectors.mean(axis=0)
+    rng = np.random.default_rng(stable_seed(seed))
+    null = np.empty(n_perm)
+    angles = np.arange(6) * np.pi / 3.0
+    for index in range(n_perm):
+        rotations = rng.choice(angles, size=len(vectors))
+        cosine, sine = np.cos(rotations), np.sin(rotations)
+        rotated = np.column_stack((vectors[:, 0] * cosine - vectors[:, 1] * sine,
+                                   vectors[:, 0] * sine + vectors[:, 1] * cosine))
+        null[index] = np.linalg.norm(rotated.mean(axis=0))
+    bootstrap = np.array([vectors[rng.integers(0, len(vectors), len(vectors))].mean(axis=0)
+                          for _ in range(2000)])
+    magnitude = float(np.linalg.norm(observed))
+    return {"mean_cosine": float(observed[0]), "mean_sine": float(observed[1]),
+            "population_amplitude": magnitude,
+            "optimal_phase_deg": float(np.degrees(np.arctan2(observed[1], observed[0])) % 360.0),
+            "participant_bootstrap_cosine_ci": np.quantile(bootstrap[:, 0], [0.025, 0.975]).tolist(),
+            "participant_bootstrap_sine_ci": np.quantile(bootstrap[:, 1], [0.025, 0.975]).tolist(),
+            "circular_rotation_p_value": float((1 + np.sum(null >= magnitude)) / (n_perm + 1)),
+            "n_participants": int(len(vectors))}
+
+
+ACTIVE_SUBJECTS = ([f"PA{i}" for i in range(1, 17)] + ["PA18", "PA19", "PA20", "PA22", "PA23"])
+
+
+CONTROL_SUBJECTS = (["PA17", "PA21"] + [f"PA{i}" for i in range(24, 47)])
+
+
+PHASE_CONDITIONS = {3: 30, 4: 90, 5: 150, 6: 210, 1: 270, 2: 330}
+
+
+def _modulation(values_in_phase_order: np.ndarray) -> tuple[float, float]:
+    """Single-cycle DFT modulation depth and optimal phase (rad) -- the
+    dataset README's own method (sec 10), reused directly with attribution."""
+    x = np.asarray(values_in_phase_order, float)
+    n = len(x)
+    phases = np.linspace(0, 2 * np.pi, n, endpoint=False)
+    c = (x * np.exp(-1j * phases)).sum() * 2 / n
+    wrapped = (np.angle(c) + np.pi) % (2 * np.pi) - np.pi
+    return float(np.abs(c)), float(wrapped)
+
+
+def modulation_from_outcomes(outcomes: list[tuple[int, int]], rng: np.random.Generator) -> dict:
+    codes_ordered = sorted(PHASE_CONDITIONS, key=lambda c: PHASE_CONDITIONS[c])
+    by_code = {c: [] for c in codes_ordered}
+    for code, correct in outcomes:
+        by_code[code].append(correct)
+    accuracy = np.array([np.mean(by_code[c]) if by_code[c] else np.nan for c in codes_ordered])
+    if np.any(np.isnan(accuracy)):
+        return {"depth": None, "optimal_phase_deg": None, "p_value": None,
+                "n_trials": len(outcomes), "reason": "at least one phase condition has zero trials"}
+
+    depth_obs, phase_obs = _modulation(accuracy)
+    codes_arr = np.array([c for c, _ in outcomes])
+    correct_arr = np.array([v for _, v in outcomes])
+    null = np.empty(N_PERM_MODULATION)
+    for p in range(N_PERM_MODULATION):
+        shuffled_codes = rng.permutation(codes_arr)
+        acc_p = np.array([correct_arr[shuffled_codes == c].mean() if np.any(shuffled_codes == c)
+                          else np.nan for c in codes_ordered])
+        d_p, _ = _modulation(acc_p) if not np.any(np.isnan(acc_p)) else (np.nan, 0.0)
+        null[p] = d_p
+    valid = null[~np.isnan(null)]
+    p_value = permutation_pvalue(valid >= depth_obs) if len(valid) else float("nan")
+    return {"depth": depth_obs, "optimal_phase_deg": float(np.degrees(phase_obs)),
+            "p_value": float(p_value), "n_trials": len(outcomes),
+            "accuracy_by_phase_deg": {PHASE_CONDITIONS[c]: float(accuracy[i])
+                                      for i, c in enumerate(codes_ordered)}}
+
+
+N_PERM_MODULATION = 2000
+
+
+def harmonic_coefficients(values: dict[int, float]) -> dict | None:
+    """Fit one circular harmonic to six phase-condition values."""
+    ordered = sorted(PHASE_CONDITIONS, key=lambda code: PHASE_CONDITIONS[code])
+    if any(code not in values or not np.isfinite(values[code]) for code in ordered):
+        return None
+    phase = np.deg2rad([PHASE_CONDITIONS[code] for code in ordered])
+    y = np.array([values[code] for code in ordered], dtype=float)
+    design = np.column_stack((np.ones(len(y)), np.cos(phase), np.sin(phase)))
+    intercept, cosine, sine = np.linalg.lstsq(design, y, rcond=None)[0]
+    return {"intercept": float(intercept), "cosine": float(cosine), "sine": float(sine),
+            "amplitude": float(np.hypot(cosine, sine)),
+            "optimal_phase_deg": float(np.degrees(np.arctan2(sine, cosine)) % 360.0)}
+
+
+AUX_CHANNELS = ["envelope", "stim"]
+
+
+GRAMIAN_HORIZON = 20
+
+
+NOT_OF_INTEREST = {
+    "active": ["Fp1", "Fpz", "Fp2", "FC1", "Fz", "FC2", "C1", "Cz", "C2", "CP1",
+               "CPz", "CP2", "F9", "F10", "FT9", "FT10", "TP9", "TP10", "O1", "O2"],
+    "control": ["Fp1", "Fpz", "Fp2", "FC1", "C5", "FC2", "C1", "Cz", "C2", "CP1",
+                "CPz", "CP2", "F9", "F10", "FT9", "FT10", "TP9", "TP10", "O1", "O2"],
+}
+
+
+N_RANDOM_DIRS = 20
+
+
+PROTECT = ["Pz", "PO7", "PO8", "P3", "P4"]
+
+
+SATURATION_THRESHOLD = 0.418
+
+
+SFREQ_ANALYSIS = 200.0
+
+
+RETENTION_TMIN, RETENTION_TMAX = 0.6, 3.6  # dataset's own retention window (sec 3/7)
+
+
+def _retention_trials(raw: "mne.io.Raw", codes: list[int] | None = None) -> dict[int, np.ndarray]:
+    """Per-phase-condition (N, C, T) retention-window trials. `codes=None`
+    pools all six conditions (used for the no_stim baseline, where the
+    phase-condition label is not behaviorally meaningful)."""
+    events, _ = mne.events_from_annotations(raw, verbose="ERROR")
+    event_id = list(PHASE_CONDITIONS) if codes is None else codes
+    epochs = mne.Epochs(raw, events, event_id=event_id, tmin=RETENTION_TMIN, tmax=RETENTION_TMAX,
+                        baseline=None, preload=True, on_missing="ignore", verbose="ERROR")
+    data = epochs.get_data(copy=True)  # (N, C, T)
+    trial_codes = epochs.events[:, 2]
+    if codes is None:
+        return {0: data}
+    return {c: data[trial_codes == c] for c in codes}
+
+
+def _sass(no_stim: "mne.io.Raw", stim: "mne.io.Raw") -> int:
+    """Project the tACS artifact out of `stim` in place, using `no_stim` as
+    the artifact-free reference (published SASS method, NeuroImage 2021,
+    228:117571). Reused directly from the dataset's own Data/README.md
+    section 6, with attribution."""
+    picks = [ch for ch in stim.ch_names if ch not in AUX_CHANNELS]
+    ix = [stim.ch_names.index(ch) for ch in picks]
+
+    c_stim = np.cov(stim.get_data(picks))
+    c_nostim = np.cov(no_stim.get_data(picks))
+
+    eigvals, eigvecs = linalg.eig(c_stim, c_nostim)
+    order = np.argsort(eigvals.real)[::-1]
+    d = eigvecs.real[:, order].T
+    m = linalg.pinv(d)
+
+    dists = []
+    for k in range(len(picks)):
+        keep = np.ones(m.shape[0])
+        keep[:k] = 0
+        p = m @ np.diag(keep) @ d
+        dists.append(np.linalg.norm(c_nostim - p @ c_stim @ p.T, ord="nuc"))
+    k = int(np.argmin(dists))
+
+    keep = np.ones(m.shape[0])
+    keep[:k] = 0
+    p = m @ np.diag(keep) @ d
+    stim._data[ix] = p @ stim._data[ix]
+    return k
+
+
+def _stimulation_channel_weight(group: str, ch_names: list[str]) -> dict | None:
+    """(C,) averaged indicator over this group's stimulation electrodes that
+    survived saturated-channel rejection, or None if none survived."""
+    idx = [ch_names.index(ch) for ch in STIM_ELECTRODES[group] if ch in ch_names]
+    if not idx:
+        return None
+    weight = np.zeros(len(ch_names))
+    weight[idx] = 1.0 / len(idx)
+    return {"weight": weight, "n_electrodes_found": len(idx),
+            "n_electrodes_expected": len(STIM_ELECTRODES[group])}
+
+
+STIM_ELECTRODES = {"active": ["O1", "O2"], "control": ["Fpz", "Cz"]}
+
+
+AXIS_WINDOW = (0.2, 1.0)
+
+
+POST_MS = 1500.0
+
+
+PRE_MS = 200.0
+
+
+def bin_time_axis(epochs_ct: np.ndarray, times: np.ndarray, bin_ms: float, srate: float) -> tuple[np.ndarray, np.ndarray]:
+    """Block-average the trailing time axis into non-overlapping bins.
+
+    Unlike a smoothing kernel, non-overlapping block averaging does not
+    introduce cross-bin autocorrelation, so it stays compatible with
+    drift_dynamics.py's unsmoothed-observation requirement.
+    """
+    bin_samples = max(int(round(bin_ms * srate / 1000.0)), 1)
+    n_bins = epochs_ct.shape[-1] // bin_samples
+    trimmed = epochs_ct[..., : n_bins * bin_samples]
+    binned = trimmed.reshape(*trimmed.shape[:-1], n_bins, bin_samples).mean(axis=-1)
+    time_trimmed = times[: n_bins * bin_samples]
+    bin_times = time_trimmed.reshape(n_bins, bin_samples).mean(axis=-1)
+    return binned, bin_times
+
+
+def iid_log_likelihood(test: np.ndarray, train: np.ndarray) -> float:
+    variance = max(float(np.nanvar(train)), 1e-10)
+    values = test[np.isfinite(test)]
+    return float(np.sum(-0.5 * (np.log(2 * np.pi * variance) + values * values / variance)))
+
+
+TARGET_HZ = 100.0
+
+
+def prepare_epoch(epoch, measure: str) -> tuple[np.ndarray, np.ndarray, float]:
+    data = np.asarray(epoch.trial, dtype=float)
+    time = np.asarray(epoch.time, dtype=float)
+    native_hz = float(1.0 / np.median(np.diff(time)))
+    data = data - data.mean(axis=1, keepdims=True)
+    if measure == "alpha_power":
+        sos = butter(4, [8.0, 12.0], btype="bandpass", fs=native_hz, output="sos")
+        data = np.log(np.abs(hilbert(sosfiltfilt(sos, data, axis=2), axis=2)) ** 2 + 1e-12)
+        data = data - data.mean(axis=1, keepdims=True)
+    elif measure != "voltage":
+        raise ValueError(f"unknown measure: {measure}")
+    stride = max(1, int(round(native_hz / TARGET_HZ)))
+    return data[:, :, ::stride], time[::stride], native_hz / stride
+
+
+def valid_mask(epoch, n_trials: int) -> np.ndarray:
+    mask = np.ones(n_trials, dtype=bool)
+    bad = np.atleast_1d(epoch.bad_trials)
+    if bad.size and np.all(np.isfinite(bad)):
+        mask[bad.astype(int) - 1] = False
+    return mask

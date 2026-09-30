@@ -14,17 +14,16 @@ DATA-AVAILABILITY CONSTRAINT (why macrosignal_pac is scored differently from
 the other 8, and why that is not an error): macaque PFC microstimulation is macaque intracortical
 SPIKE-RATE data -- it has no LFP, so no theta-phase / gamma-amplitude PAC
 signal exists there to compute. E1 explicitly requires PAC on the LFP
-datasets (Boran iEEG, DANDI 000673, Miller ECoG); of those, only Boran iEEG
-has BOTH a fitted plant (A) AND a TES1-derived B-donor bank (DATASET_ANALYSIS_
-MATRIX.md exclusion #2: TES1 covers DLPFC only, and among the LFP cohorts only
-Miller+Boran have TES1 coverage; Miller has no usable outcome label -- see
-run_behavior_ctg.py). So macrosignal_pac is constructed and scored on Boran
+datasets (DANDI 000574 iEEG, DANDI 000673, ECoG n-back corpus); of those, only DANDI 000574 iEEG
+has BOTH a fitted plant (A) AND a TES1-derived B-donor bank (TES1 covers DLPFC only, and among the LFP cohorts only
+ECoG n-back corpus+DANDI 000574 have TES1 coverage; ECoG n-back corpus has no usable outcome label -- see
+run_behavior_ctg.py). So macrosignal_pac is constructed and scored on DANDI 000574
 iEEG's OWN closed-loop targeting-benchmark (below), NOT by fabricating a PAC
 signal for the macaque PFC microstimulation rows. Its slope/CI/p in the final leaderboard trace to
-this Boran construction; agent_report.md documents this plainly.
+this DANDI 000574 construction.
 
-BORAN TARGETING BENCHMARK (all 9 arms, drift-reduction AND flip-rate):
-For each Boran subject with a fitted (A, TES1 B-bank) -- the SAME bundle
+DANDI 000574 TARGETING BENCHMARK (all 9 arms, drift-reduction AND flip-rate):
+For each DANDI 000574 subject with a fitted (A, TES1 B-bank) -- the SAME bundle
 run_closed_loop_analysis.py and run_closed_loop_behavior_flip.py already use
 -- construct all NINE candidate latent steering directions as a REAL TES1
 donor (or, where no better anatomical target exists, a directly-computed
@@ -37,13 +36,13 @@ run_macaque_pfc_microstimulation_pipeline.py builds v_star / v_stable / random_d
   input_norm                : TES1 donor maximizing ||B_i|| (norm-matched, weakest prior)
   min_energy_dir_alignment : TES1 donor maximizing |cos(B_i, Gramian's top eigenvector)|
   anat_avg_ctrl/anat_modal_ctrl : DEGENERATE here (same principled reason the existing macaque PFC microstimulation
-      arms are already degenerate -- see module docstring below); Boran electrodes are MTL/
-      temporal, and no macaque-Markov-connectome mapping applies to human MTL, so there is no
+      arms are already degenerate -- see module docstring below); DANDI 000574 electrodes are MTL/
+      temporal, and no macaque tracer-connectome mapping applies to human MTL, so there is no
       non-fabricated way to assign a differentiated anatomical-controllability value per TES1
       donor for this cohort. Reported honestly as a constant (zero-variance) arm, not omitted.
   macrosignal_pac          : TES1 donor maximizing |cos(B_i, B_pac)|, where B_pac = V.T @ mi is
-      the theta(4-8Hz)-phase/HGP(70-150Hz)-amplitude PAC modulation index (Tort et al. 2010;
-      src/preprocessing.phase_amplitude_coupling, REUSED not reimplemented) per good channel,
+      the theta(4-8Hz)-phase/HGP(70-150Hz)-amplitude PAC modulation index
+      (src/preprocessing.phase_amplitude_coupling, REUSED not reimplemented) per good channel,
       projected into the session's own latent space -- weighting the "stimulation" direction
       toward the highest-PAC channels, as E1 specifies.
 
@@ -87,14 +86,13 @@ from causal import dml_partial_linear
 from preprocessing import (phase_amplitude_coupling, bandpass_filter,
                            line_noise_notch, bipolar_reference_by_shank)
 from statistics import bootstrap_ci, stable_seed
-from run_closed_loop_behavior_flip import _fit_outcome_decoder_and_margin, _flip_one_trial
+from closed_loop import _fit_outcome_decoder_and_margin, _flip_one_trial
 from io_utils import locked_json_update
 from provenance import _json_safe
+from causal import _pool_arm  # noqa: E402
+from stimulation_events import BORAN_SUBJECTS, B_HAT_MISMATCH_DEG, NEAR_TIE_REL_TOL, _near_tie_candidates, _pac_channel_weights, _stability_horizon  # noqa: E402
 
 RESULTS = ROOT / "results"
-DATA_ROOT = data_root()
-BORAN_SUBJECTS = [f"sub-{i:02d}" for i in range(1, 10)]
-B_HAT_MISMATCH_DEG = 20.0
 N_RANDOM_DIRS = 20
 GRAMIAN_HORIZON = 20
 ARM_NAMES = ["vstar_alignment", "gramian_trace", "stable_alignment", "random_alignment",
@@ -107,86 +105,10 @@ ARM_NAMES = ["vstar_alignment", "gramian_trace", "stable_alignment", "random_ali
 # EVERY criterion-based arm below, not just PAC: when the top-scoring donor
 # destabilizes the plant, the next-best donor within this fraction of the top
 # score is tried instead, in descending-score order.
-NEAR_TIE_REL_TOL = 0.90
 
 
-def _near_tie_candidates(scores: np.ndarray, tol: float = NEAR_TIE_REL_TOL) -> list[int]:
-    max_score = np.max(scores)
-    idxs = [i for i in range(len(scores)) if scores[i] >= tol * max_score]
-    idxs.sort(key=lambda i: -scores[i])
-    return idxs
 
 
-def _pac_channel_weights(subj: str, good_ch_indices: np.ndarray) -> np.ndarray | None:
-    """Theta-phase/HGP-amplitude PAC modulation index per GOOD channel (indices
-    matching boran_geometry_*.npz's V rows exactly -- good_ch_indices selects
-    into the raw full-channel data the same way run_boran_pipeline.py's
-    channel_rejection mask does), on the RAW maintenance-window LFP
-    (pre-HGP-transform -- PAC needs phase, band power alone destroys it),
-    averaged over trials. Reuses preprocessing.phase_amplitude_coupling
-    directly (Tort et al. 2010 MI)."""
-    subj_dir = DATA_ROOT / "000574" / subj
-    srate = 1398.0
-    t_pre_maint, t_post_maint, t_epoch_pre = 3.0, 3.0, 1.0
-    epoch_total = t_pre_maint + t_post_maint + t_epoch_pre
-    all_epochs = []
-    electrode_labels = None
-    for nwb_path in sorted(subj_dir.glob("*.nwb")):
-        with h5py.File(str(nwb_path), "r") as f:
-            raw = f["acquisition/ecephys.ieeg/data"][:]
-            times = f["acquisition/ecephys.ieeg/timestamps"][:]
-            t_start_arr = f["intervals/trials/start_time"][:]
-            artifact = f["intervals/trials/artifact"][:].astype(bool)
-            if electrode_labels is None:
-                try:
-                    ieeg_idx = f["acquisition/ecephys.ieeg/electrodes"][:]
-                    labels_full = [l.decode() for l in
-                                    f["general/extracellular_ephys/electrodes/label"][:]]
-                    electrode_labels = [labels_full[i] for i in ieeg_idx]
-                except KeyError:
-                    electrode_labels = [f"ch{i}" for i in range(raw.shape[1])]
-        n_samp = int(epoch_total * srate)
-        n_pre = int(t_epoch_pre * srate)
-        for trial_idx, t0 in enumerate(t_start_arr):
-            if artifact[trial_idx]:
-                continue
-            i0 = np.searchsorted(times, t0) - n_pre
-            i1 = i0 + n_samp
-            if i0 < 0 or i1 > raw.shape[0]:
-                continue
-            all_epochs.append(raw[i0:i1].astype(np.float32))   # (T, C_full)
-    if len(all_epochs) < 10:
-        return None
-
-    # Notch (50/100/150 Hz) + bipolar-by-shank reref.
-    # Must exactly match run_boran_pipeline.py's channel reduction, since
-    # good_ch_indices (below) indexes into that same bipolar channel set,
-    # not the raw monopolar channels.
-    epochs_arr = np.stack(all_epochs, axis=0)           # (N, T, C_full)
-    N0, T0, C_raw = epochs_arr.shape
-    for n in range(N0):
-        epochs_arr[n] = line_noise_notch(epochs_arr[n], srate, fundamental=50.0, n_harmonics=3)
-    X_flat = epochs_arr.reshape(-1, C_raw)
-    X_bp, _ = bipolar_reference_by_shank(X_flat, electrode_labels)
-    epochs_arr = X_bp.reshape(N0, T0, -1).astype(np.float32)  # (N, T, C_bp)
-    all_epochs = list(epochs_arr)
-
-    maint_start_s = int((t_epoch_pre + t_pre_maint) * srate)
-    maint_end_s = int((t_epoch_pre + t_pre_maint + t_post_maint) * srate)
-    mi_per_trial = []
-    # Subsample trials for tractability (PAC's Hilbert-transform cost scales
-    # with samples x channels x trials; 30 trials is ample to average a
-    # per-channel MI estimate that is a session-level scalar, not a per-trial
-    # decode).
-    rng = np.random.default_rng(stable_seed(f"pac_{subj}"))
-    idx = rng.choice(len(all_epochs), size=min(30, len(all_epochs)), replace=False)
-    for i in idx:
-        maint = all_epochs[i][maint_start_s:maint_end_s][:, good_ch_indices]   # (T_maint, C_good)
-        mi = phase_amplitude_coupling(maint, phase_band=(4.0, 8.0), amplitude_band=(70.0, 150.0),
-                                      srate=srate, n_phase_bins=18)
-        mi_per_trial.append(mi)
-    mi_mean = np.nanmean(np.stack(mi_per_trial), axis=0)
-    return mi_mean
 
 
 def _build_arm_directions(A: np.ndarray, B_bank: np.ndarray, gramian_traces: np.ndarray,
@@ -196,7 +118,7 @@ def _build_arm_directions(A: np.ndarray, B_bank: np.ndarray, gramian_traces: np.
     single donor -- rescue-aware selection among near-tie candidates happens
     in run_boran_targeting_benchmark, which simulates candidates in
     descending-score order and prefers a non-destabilizing one; see
-    NEAR_TIE_REL_TOL / Part 8B). align_vstar (per-donor alignment to the TRUE
+    NEAR_TIE_REL_TOL). align_vstar (per-donor alignment to the TRUE
     v*, independent of which criterion picked a donor) is returned separately
     and used to report "align_to_vstar" for whichever donor each arm ends up
     with."""
@@ -248,7 +170,7 @@ def _build_arm_directions(A: np.ndarray, B_bank: np.ndarray, gramian_traces: np.
         scores["macrosignal_pac"] = pac_align_to_donors
 
     # anat_avg_ctrl/anat_modal_ctrl: DEGENERATE (see module docstring) -- no
-    # per-donor anatomical-controllability differentiation exists for Boran's
+    # per-donor anatomical-controllability differentiation exists for DANDI 000574's
     # MTL electrodes, so they always take the SAME donor as vstar_alignment's
     # final (possibly rescued) pick, resolved in the caller. random_alignment:
     # not a single-donor criterion -- macaque PFC microstimulation's own arm is "mean |cos| to 20
@@ -264,17 +186,6 @@ def _build_arm_directions(A: np.ndarray, B_bank: np.ndarray, gramian_traces: np.
     }
 
 
-def _stability_horizon(A: np.ndarray, n_time_constants: float = 3.0) -> float:
-    """SAME construction as run_closed_loop_analysis.py's _stability_horizon:
-    caps the rollout at n_time_constants e-folding times of A's least-stable
-    eigenvalue, so a near-unit-circle-to-unstable plant (every Boran A here
-    has max|eig|>1, per that module's docstring) does not saturate
-    simulate_closed_loop's numerical state-norm cap before the horizon ends
-    -- which manufactures an arbitrarily huge (not genuine) drift number."""
-    log_lam_max = np.log(np.max(np.abs(np.linalg.eigvals(A))))
-    if abs(log_lam_max) < 1e-12:
-        return np.inf
-    return n_time_constants / abs(log_lam_max)
 
 
 def run_boran_targeting_benchmark() -> dict:
@@ -372,7 +283,7 @@ def run_boran_targeting_benchmark() -> dict:
             }
 
         def _resolve_with_rescue(criterion_scores: np.ndarray) -> dict:
-            """Part 8B: try near-tie candidates in descending criterion order;
+            """Near-tie rescue: try near-tie candidates in descending criterion order;
             return the first non-destabilizing donor's full result, else the raw
             argmax's result (unchanged behavior when no rescue is available or
             needed)."""
@@ -421,34 +332,14 @@ def run_boran_targeting_benchmark() -> dict:
     return per_subject
 
 
-def _pool_arm(per_subject: dict, arm: str, field: str) -> dict | None:
-    """dml_partial_linear: field ~ align_to_vstar (continuous exposure),
-    confounders = subject dummies -- the DR/DML machinery spec E2 names.
-    Excludes destabilized (subject, arm) rows (see run_boran_targeting_
-    benchmark's inline comment) -- a destabilizing controller's drift number
-    is a numerical artifact, not a genuine "worse control" effect."""
-    rows = [(v["arms"][arm]["align_to_vstar"], v["arms"][arm][field], subj)
-           for subj, v in per_subject.items()
-           if v["arms"].get(arm) is not None and np.isfinite(v["arms"][arm][field])
-           and not v["arms"][arm].get("destabilized", False)]
-    if len(rows) < 4:
-        return None
-    aligns = np.array([r[0] for r in rows])
-    ys = np.array([r[1] for r in rows])
-    subjs = sorted(set(r[2] for r in rows))
-    X = np.eye(len(subjs))[[subjs.index(r[2]) for r in rows]]
-    res = dml_partial_linear(ys, aligns, X, n_folds=min(5, len(rows)),
-                             rng=np.random.default_rng(stable_seed(f"dml_{arm}_{field}")))
-    return {"theta": res["theta"], "se": res["se"], "ci_lo": res["ci_lo"], "ci_hi": res["ci_hi"],
-           "p_value": res["p_value"], "n": res["n"]}
 
 
 def main():
-    print("Boran iEEG targeting benchmark (9 arms: drift-reduction + flip-rate)...")
+    print("DANDI 000574 iEEG targeting benchmark (9 arms: drift-reduction + flip-rate)...")
     per_subject = run_boran_targeting_benchmark()
 
     if not per_subject:
-        print("No usable Boran subject -- STOP, cannot build the targeting benchmark.")
+        print("No usable DANDI 000574 subject -- STOP, cannot build the targeting benchmark.")
         return
 
     leaderboard_boran = {}
@@ -481,7 +372,7 @@ def main():
     # construction -- WP-CAUSAL's Y is trial correct/error directly, not a
     # simulated closed-loop rollout; adding a fabricated flip_rate for those
     # 8 would violate the anti-fabrication contract). macrosignal_pac's own
-    # flip_rate comes from the real Boran flip construction above.
+    # flip_rate comes from the real DANDI 000574 flip construction above.
     with locked_json_update(RESULTS / "causal_benchmark.json") as bench:
         for arm in bench.get("leaderboard", {}):
             bench["leaderboard"][arm].setdefault("flip_rate", None)

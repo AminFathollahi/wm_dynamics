@@ -1,0 +1,11 @@
+{
+  "paths": {
+    "data_root": "/path/to/data"
+  },
+  "executables": {
+    "lfads_python": "/path/to/lfads-torch-env/bin/python",
+    "ssm_python": "/path/to/ssm-env/bin/python",
+    "ndt_python": "/path/to/ndt-env/bin/python",
+    "ndt_repo": "/path/to/neural-data-transformers"
+  }
+}

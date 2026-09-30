@@ -1,4 +1,4 @@
-"""Regression check for the silent-default registry-key defect: a missing or
+"""Regression check for the silent-default registry-key error: a missing or
 mistyped dataset-registry key must raise, never silently be treated as "0
 sessions" (a completed-looking empty analysis) or a fabricated null sitting
 next to a status field that doesn't actually say why.
@@ -52,7 +52,7 @@ def test_helpers_raise_on_missing_registry_key() -> None:
                 raise AssertionError(
                     f"{name}._panichello_directory silently tolerated a missing "
                     "'panichello_2024' registry key instead of raising -- the "
-                    "silent-default defect is back."
+                    "silent-default error is back."
                 )
     print("PASS: all 4 loader helpers raise KeyError on a missing registry key.")
 

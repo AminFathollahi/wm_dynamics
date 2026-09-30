@@ -10,7 +10,7 @@ at the wide bin width, the LFP grain (dandi_000574, depth_contact_lfp) is
 admitted at margin while the unit grain (dandi_000574, single_unit, pooled)
 is excluded, and every one of the other six shared observables ties. This
 script asks two questions about that one asymmetric observable, on the same
-patients and the same trials Boran's co-located spike-and-LFP recordings
+patients and the same trials DANDI 000574's co-located spike-and-LFP recordings
 provide at overlapping session keys but different grain-specific trial counts:
 
 1. Within each grain, across sessions, does the number of cross-validation
@@ -440,7 +440,7 @@ def build_artifact() -> dict:
         "The census's only asymmetric shared observable between the unit and LFP grains, cross_validated_"
         "nugget_fraction, is asymmetric in admission status at bin_ms==200 only (unit grain excluded, LFP "
         "grain admitted; both admitted at bin_ms==100 -- see asymmetric_observable_selection). On the same "
-        f"{matched_tests['bin200']['n_sessions_with_both_grains']} paired Boran sessions at bin_ms==200, "
+        f"{matched_tests['bin200']['n_sessions_with_both_grains']} paired DANDI 000574 sessions at bin_ms==200, "
         f"the observable fits at LFP resolution and not at unit resolution in "
         f"{c200['present_at_lfp_absent_at_unit']} sessions, fits at unit resolution and not at LFP "
         f"resolution in {c200['present_at_unit_absent_at_lfp']} sessions, fits at both in "
@@ -461,7 +461,7 @@ def build_artifact() -> dict:
         "the observability-and-power census ranks the LFP grain above the unit grain on one shared "
         "observable, cross_validated_nugget_fraction, with the entire summed rank difference coming from "
         "that one observable; this restates what that ranking measures using the same patients and the "
-        "same session keys in Boran's co-located spike-and-LFP recordings, asking whether it reflects "
+        "same session keys in DANDI 000574's co-located spike-and-LFP recordings, asking whether it reflects "
         "instrument quality, latent timescale, dimensionality, or population size"
     )
 
@@ -470,7 +470,7 @@ def build_artifact() -> dict:
         "identified_dimensions": {
             "participant": "same patient identifier required",
             "session": "same session identifier required",
-            "task": "Boran dandi_000574 delay epoch for both grains",
+            "task": "DANDI 000574 delay epoch for both grains",
             "label": "no item label is used; the tested estimator is label-free",
         },
         "nonidentified_dimensions": {
@@ -509,72 +509,6 @@ def build_artifact() -> dict:
     }
 
 
-CENSUS_EXTENSION_FIELD = "margin_aware_modality_result_basis"
-
-
-def extend_census_with_result_basis(payload: dict) -> dict:
-    """Adds exactly one new top-level field to results/observability_and_
-    power_census.json recording what margin_aware_modality_result's verdict
-    rests on. Every pre-existing key, including margin_aware_modality_result
-    itself, is verified byte-identical before and after -- this is an
-    addition, never a rewrite."""
-    mamr_source = json.loads(CENSUS_PATH.read_text())["margin_aware_modality_result"]
-    per_bin = {}
-    for bin_key, entry in mamr_source.items():
-        contributing = [o for o, v in entry["per_observable"].items() if v.get("lfp_minus_unit", 0) != 0]
-        per_bin[bin_key] = {
-            "summed_rank_difference_lfp_minus_unit": entry["summed_rank_difference_lfp_minus_unit"],
-            "observables_contributing_a_nonzero_rank_difference": contributing,
-            "entire_summed_rank_difference_from_one_observable": len(contributing) == 1 and entry["summed_rank_difference_lfp_minus_unit"] != 0,
-        }
-
-    bin200 = payload["matched_modality_test_by_bin_width"]["bin200"]
-    n_paired = bin200["n_sessions_with_both_grains"]
-    n_disagree = bin200["counts"]["present_at_lfp_absent_at_unit"] + bin200["counts"]["present_at_unit_absent_at_lfp"]
-    basis = {
-        "per_bin_width": per_bin,
-        "reading": (
-            "margin_aware_modality_result's verdict (unit_grain_worse_instrumented_at_margin) rests "
-            "entirely on cross_validated_nugget_fraction: at every bin width, that is the only shared "
-            "observable with a nonzero lfp_minus_unit rank difference (per_bin_width above), and the "
-            "difference is a MARGIN BAND -- an integer rank derived from how many cross-validation splits "
-            "fit, crossing a floor -- rather than a difference in the observable's reported value. "
-            "results/observability_matched_modality_test.json measured what governs that margin at the "
-            "per-session level, on the same patient and session keys: within each grain, the number "
-            "of fitted splits correlates with the leading latent's lag-one autocorrelation and with "
-            "unit/channel count, significantly for several grain-and-bin-width combinations (see that "
-            "artifact's fittability_correlations_by_grain_and_bin_width field for every coefficient and "
-            "p-value, and its fittability_correlation_caveats field for why the sign of the smoothness "
-            "correlation cannot be read as a mechanism). At the bin width where the two grains' admission "
-            f"status actually differs, the per-session picture is noisier than the population-level rank "
-            f"difference suggests: of {n_paired} sessions with both grains recorded, {n_disagree} disagree "
-            "about whether the observable fits at all (in either direction), not only the net few that "
-            "produce the aggregate margin. A reader who wants the fittability evidence behind this "
-            "verdict, rather than the verdict alone, should consult "
-            "results/observability_matched_modality_test.json in full, not this field's summary."
-        ),
-        "restated_by": "results/observability_matched_modality_test.json",
-        "verdict_field_this_basis_explains": "margin_aware_modality_result",
-        "verdict_changed_by_this_field": False,
-    }
-
-    existing_census = json.loads(CENSUS_PATH.read_text())
-    if CENSUS_EXTENSION_FIELD in existing_census:
-        if canonical_json(existing_census[CENSUS_EXTENSION_FIELD]) != canonical_json(basis):
-            raise RuntimeError(f"{CENSUS_EXTENSION_FIELD} already present in the census with different content; refusing to overwrite an extend-only artifact's field")
-        return basis  # already applied with identical content on a prior run -- no file write needed
-
-    with locked_json_update(CENSUS_PATH) as census:
-        before_without_new_field = canonical_json({k: v for k, v in census.items() if k != CENSUS_EXTENSION_FIELD})
-        if CENSUS_EXTENSION_FIELD in census:
-            raise RuntimeError(f"{CENSUS_EXTENSION_FIELD} already present in the census; refusing to overwrite an extend-only artifact's field")
-        census[CENSUS_EXTENSION_FIELD] = basis
-        after_without_new_field = canonical_json({k: v for k, v in census.items() if k != CENSUS_EXTENSION_FIELD})
-        if before_without_new_field != after_without_new_field:
-            raise RuntimeError("extend-only violation: an existing observability_and_power_census.json key would have changed")
-    return basis
-
-
 CENSUS_PAIRED_TEST_FIELD = "margin_aware_modality_result_paired_test"
 CENSUS_PARTICIPANT_TEST_FIELD = "margin_aware_modality_result_participant_test"
 
@@ -601,57 +535,6 @@ def extend_census_with_participant_test(payload: dict) -> dict:
         return result
     with locked_json_update(CENSUS_PATH) as census:
         census[CENSUS_PARTICIPANT_TEST_FIELD] = result
-    return result
-
-
-def extend_census_with_paired_test_null_result(payload: dict) -> dict:
-    """Adds exactly one new top-level field to results/observability_and_
-    power_census.json recording the historical repeated-session diagnostic of
-    margin_aware_modality_result's sole contributing observable
-    (cross_validated_nugget_fraction) is null at both bin widths. Every
-    pre-existing key is verified byte-identical before and after -- this is
-    an addition, never a rewrite, and never touches margin_aware_modality_
-    result or margin_aware_modality_result_basis themselves."""
-    discordance = payload["grain_discordance_paired_test"]
-    p100 = discordance["by_bin_width"]["bin100"]["two_sided_exact_binomial_p_value"]
-    p200 = discordance["by_bin_width"]["bin200"]["two_sided_exact_binomial_p_value"]
-    result = {
-        "observable_tested": "cross_validated_nugget_fraction",
-        "test": (
-            "an exact two-sided binomial test (scipy.stats.binomtest, null p=0.5) of the discordant "
-            "sessions in results/observability_matched_modality_test.json's matched-grain test -- "
-            "sessions where cross_validated_nugget_fraction fits at one grain and not the other, on "
-            "the same patients and sessions -- comparing present_at_lfp_absent_at_unit against "
-            "present_at_unit_absent_at_lfp at each bin width"
-        ),
-        "bin100_two_sided_exact_binomial_p_value": p100,
-        "bin200_two_sided_exact_binomial_p_value": p200,
-        "restated_by": "results/observability_matched_modality_test.json's grain_discordance_paired_test field",
-        "reading": (
-            "margin_aware_modality_result ranks the LFP grain above the unit grain using a summed "
-            "rank difference that margin_aware_modality_result_basis attributes entirely to cross_"
-            "validated_nugget_fraction. The repeated-session diagnostic of that same observable is "
-            f"null at both bin widths (bin_ms==100: p={p100:.4f}; bin_ms==200: p={p200:.4f}), so the "
-            "grain ordering is not supported by that diagnostic count of its sole contributing "
-            "observable: on the observable responsible for the entire ranking, the two grains are "
-            "statistically indistinguishable from each other at the session level."
-        ),
-    }
-
-    existing_census = json.loads(CENSUS_PATH.read_text())
-    if CENSUS_PAIRED_TEST_FIELD in existing_census:
-        if canonical_json(existing_census[CENSUS_PAIRED_TEST_FIELD]) != canonical_json(result):
-            raise RuntimeError(f"{CENSUS_PAIRED_TEST_FIELD} already present in the census with different content; refusing to overwrite an extend-only artifact's field")
-        return result  # already applied with identical content on a prior run -- no file write needed
-
-    with locked_json_update(CENSUS_PATH) as census:
-        before_without_new_field = canonical_json({k: v for k, v in census.items() if k != CENSUS_PAIRED_TEST_FIELD})
-        if CENSUS_PAIRED_TEST_FIELD in census:
-            raise RuntimeError(f"{CENSUS_PAIRED_TEST_FIELD} already present in the census; refusing to overwrite an extend-only artifact's field")
-        census[CENSUS_PAIRED_TEST_FIELD] = result
-        after_without_new_field = canonical_json({k: v for k, v in census.items() if k != CENSUS_PAIRED_TEST_FIELD})
-        if before_without_new_field != after_without_new_field:
-            raise RuntimeError("extend-only violation: an existing observability_and_power_census.json key would have changed")
     return result
 
 

@@ -14,81 +14,21 @@ for _sub in ("src", "scripts"):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from project_config import data_root  # noqa: E402
+from project_config import data_root
 from provenance import _json_safe, git_commit  # noqa: E402
 from io_utils import locked_json_update  # noqa: E402
 from statistics import (  # noqa: E402
     Z_80_POWER, minimum_detectable_paired_difference, paired_sign_flip_test, stable_seed,
 )
+from stimulation_events import _censored_first_recall, _first_recall, contrast_summary, load_corpus  # noqa: E402
 
 RESULTS = ROOT / "results"
-STIM_PARAM_FIELDS = ("amplitude", "pulse_freq", "pulse_width", "n_pulses", "stim_duration")
 
 
-def _num(value: str) -> float:
-    try:
-        return float(value)
-    except ValueError:
-        return float("nan")
 
 
-def frozen_mdd(values: np.ndarray) -> dict:
-    result = minimum_detectable_paired_difference(values)
-    if result.get("status") == "computed":
-        result = {**result, "z_factor": Z_80_POWER,
-                  "mdd": Z_80_POWER * result["sd"] / np.sqrt(result["n"])}
-    return result
 
 
-def load_corpus(local_path: str, root: Path) -> dict:
-    directory = root / local_path
-    by_subject_lists: dict[str, dict] = {}
-    param_counts = {field: Counter() for field in STIM_PARAM_FIELDS}
-    n_sessions = 0
-    n_events = 0
-    for events_path in sorted(directory.glob("sub-*/ses-*/ieeg/*_events.tsv")):
-        with open(events_path) as handle:
-            rows = list(csv.DictReader(handle, delimiter="\t"))
-        if not rows:
-            continue
-        n_sessions += 1
-        n_events += len(rows)
-        subject = rows[0]["subject"]
-        lists = by_subject_lists.setdefault(subject, {})
-        for row in rows:
-            list_id = row.get("list", "")
-            trial_type = row["trial_type"]
-            if trial_type not in ("REC_WORD", "REC_WORD_VV", "WORD", "REC_START", "REC_END") or list_id in ("-999", "-1", ""):
-                continue
-            key = (str(events_path), list_id)
-            entry = lists.setdefault(key, {"stim_list": row.get("stim_list") == "1",
-                                            "rec_word_rt": [], "rec_all_rt": [], "n_recalled": 0,
-                                            "rec_start_onset": None, "rec_end_onset": None})
-            if trial_type == "REC_START":
-                entry["rec_start_onset"] = _num(row["onset"])
-            elif trial_type == "REC_END":
-                entry["rec_end_onset"] = _num(row["onset"])
-            elif trial_type == "REC_WORD" and row["response_time"] not in ("n/a", ""):
-                rt = _num(row["response_time"])
-                if np.isfinite(rt) and rt > 0:
-                    entry["rec_word_rt"].append(rt)
-                    entry["rec_all_rt"].append(rt)
-            elif trial_type == "REC_WORD_VV" and row["response_time"] not in ("n/a", ""):
-                rt = _num(row["response_time"])
-                if np.isfinite(rt) and rt > 0:
-                    entry["rec_all_rt"].append(rt)
-            elif trial_type == "WORD" and row.get("recalled") not in ("n/a", ""):
-                entry["n_recalled"] += int(_num(row["recalled"]))
-            if row.get("stimulation") == "1":
-                for field in STIM_PARAM_FIELDS:
-                    param_counts[field][row.get(field, "n/a")] += 1
-    for lists in by_subject_lists.values():
-        for entry in lists.values():
-            start, end = entry.pop("rec_start_onset"), entry.pop("rec_end_onset")
-            period = end - start if start is not None and end is not None and np.isfinite(end - start) else None
-            entry["recall_period_s"] = period if period is not None and period > 0 else None
-    return {"by_subject_lists": by_subject_lists, "param_counts": param_counts,
-            "n_sessions": n_sessions, "n_events": n_events}
 
 
 def _subject_condition_values(lists: dict, extractor) -> tuple[list[float], list[float]]:
@@ -101,9 +41,6 @@ def _subject_condition_values(lists: dict, extractor) -> tuple[list[float], list
     return stim, unstim
 
 
-def _first_recall(entry: dict, field: str) -> float | None:
-    values = entry[field]
-    return min(values) if values else None
 
 
 def _words_recalled(entry: dict) -> float:
@@ -118,14 +55,6 @@ def _is_zero_recall_list(entry: dict) -> float:
     return 0.0 if entry["rec_word_rt"] else 1.0
 
 
-def _censored_first_recall(entry: dict) -> tuple[float, int] | None:
-    period = entry.get("recall_period_s")
-    if period is None:
-        return None
-    rt = _first_recall(entry, "rec_word_rt")
-    if rt is not None:
-        return (min(float(rt), period), 1)
-    return (period, 0)
 
 
 def censored_first_recall_contrast(by_subject_lists: dict, min_lists: int = 3) -> dict[str, dict]:
@@ -177,21 +106,6 @@ def pooled_events_contrast(by_subject_lists: dict, field: str) -> dict[str, dict
     return contrasts
 
 
-def contrast_summary(contrasts: dict[str, dict], seed_name: str) -> dict:
-    if not contrasts:
-        return {"status": "not_computable", "n": 0}
-    stim = np.array([c["stim"] for c in contrasts.values()])
-    unstim = np.array([c["unstim"] for c in contrasts.values()])
-    rng = np.random.default_rng(stable_seed(seed_name))
-    test = paired_sign_flip_test(stim, unstim, alternative="two-sided", rng=rng)
-    mdd = frozen_mdd(stim - unstim)
-    return {
-        "status": "computed", "n": int(len(stim)), "mean_stim": float(np.mean(stim)), "mean_unstim": float(np.mean(unstim)),
-        "mean_diff": test["mean_diff"], "sd_diff": float(np.std(stim - unstim, ddof=1)),
-        "n_positive_diff": int(np.sum((stim - unstim) > 0)),
-        "ci_lower": test["ci_lower"], "ci_upper": test["ci_upper"],
-        "p_value": test["p_value"], "minimum_detectable_difference": mdd,
-    }
 
 
 def main() -> None:

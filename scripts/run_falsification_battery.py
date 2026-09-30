@@ -61,8 +61,9 @@ from geometry import ctg_content_permutation_null  # noqa: E402
 from statistics import stable_seed  # noqa: E402
 
 import run_vstar_eigen_audit as vea  # noqa: E402  (ALL_ITERS, _iter_macaque_pfc_microstimulation)
-from run_multiitem_ctg_000469 import DATA_DIR as D469_DATA_DIR  # noqa: E402
-from run_multiitem_ctg_000469 import ITEM_FIELDS, _class_counts_ok  # noqa: E402
+from corpus_sessions import DATA_DIR as D469_DATA_DIR
+from run_multiitem_ctg_000469 import _class_counts_ok
+from corpus_sessions import ITEM_FIELDS
 
 RESULTS = ROOT / "results"
 N_NULL_DMD = 20

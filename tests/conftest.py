@@ -28,7 +28,7 @@ def synthetic_ieeg(rng):
 
     data = rng.standard_normal((T, n_channels)) * 50.0  # µV scale
 
-    # Build stim, task, target vectors mimicking Miller N-back
+    # Build stim, task, target vectors mimicking ECoG n-back corpus N-back
     stim = np.zeros(T, dtype=np.uint8)
     task = np.zeros(T, dtype=np.int8)
     target = np.zeros(T, dtype=np.uint8)

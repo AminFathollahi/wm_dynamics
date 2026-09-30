@@ -20,12 +20,10 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from run_recording_tier_component_transfer import (  # noqa: E402
-    MEANINGFUL_EFFECT_THRESHOLD_R_UNITS, MIN_PATIENTS_FOR_TEST, _bias_only_values, _classify_cross_tier_transfer,
-    _patient_clustered_test, existence_tier, behaviour_link_tier, cross_tier_transfer_pair_patient_level, cross_tier_transfer_pair_trial_wise,
-    classify_depth_channels, highest_available_band, needs_mains_notch, rate_free_state_deviation,
-    rotation_null_variance_test, trial_tables_agree,
-)
+from run_recording_tier_component_transfer import _classify_cross_tier_transfer, behaviour_link_tier, cross_tier_transfer_pair_patient_level, cross_tier_transfer_pair_trial_wise, classify_depth_channels, highest_available_band, needs_mains_notch, trial_tables_agree
+from state_persistence import MIN_PATIENTS_FOR_TEST, _patient_clustered_test, existence_tier
+from statistics import rate_free_state_deviation, rotation_null_variance_test
+from statistics import MEANINGFUL_EFFECT_THRESHOLD_R_UNITS, _bias_only_values
 
 
 # ---------------------------------------------------------------------------------------------------

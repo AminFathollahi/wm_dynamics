@@ -76,6 +76,10 @@ from statistics import (  # noqa: E402
     permutation_test_twosample,
     stable_seed,
 )
+from statistics import CONTENT_N_PERM_FULL, PANICHELLO_DELAY_WINDOW_MS, _one_sample_sign_flip, _stable_seed
+from corpus_sessions import _panichello_directory
+from spike_pipeline import BIN_MS
+from info_decoding import session_subtractive_test
 
 # The ablation ranking asks the decoder for zero label permutations, so the
 # shared decoding helper reduces an empty null array and warns once per fit.
@@ -192,9 +196,9 @@ def load_macaque_session(path: Path) -> dict:
     cue_angle = np.asarray(raw["cueAng"], dtype=float).reshape(-1)
     cue_index = np.asarray(raw["cueAngIdx"]).reshape(-1).astype(int)
     spikes, cue_angle, cue_index = spikes[correct], cue_angle[correct], cue_index[correct]
-    starts = np.arange(content_link.PANICHELLO_DELAY_WINDOW_MS[0],
-                       content_link.PANICHELLO_DELAY_WINDOW_MS[1], content_link.BIN_MS)
-    binned = [spikes[:, (time_ms >= s) & (time_ms < s + content_link.BIN_MS), :].sum(axis=1)
+    starts = np.arange(PANICHELLO_DELAY_WINDOW_MS[0],
+                       PANICHELLO_DELAY_WINDOW_MS[1], BIN_MS)
+    binned = [spikes[:, (time_ms >= s) & (time_ms < s + BIN_MS), :].sum(axis=1)
               for s in starts]
     return {
         "session": path.stem, "date_block": date_block(path.stem),
@@ -206,7 +210,7 @@ def load_macaque_session(path: Path) -> dict:
 
 
 def macaque_session_paths(root: Path) -> list[Path]:
-    directory = content_link._panichello_directory(root)
+    directory = _panichello_directory(root)
     return sorted(directory.glob("*.mat")) if directory is not None else []
 
 
@@ -232,7 +236,7 @@ def ablation_rank_row(counts: np.ndarray, labels: np.ndarray, seed: int,
     counts, labels = counts[mask], np.asarray(labels)[mask]
     if counts.shape[0] < 8:
         return {"status": "too_few_trials_after_label_filter", "n_trials": int(counts.shape[0])}
-    result = content_link.session_subtractive_test(
+    result = session_subtractive_test(
         window_mean_features(counts), labels, seed,
         with_permutation_nulls=with_permutation_nulls)
     _, class_counts = np.unique(labels, return_counts=True)
@@ -254,7 +258,7 @@ def compact(result: dict) -> dict:
 def session_seed(dataset: str, session: str) -> int:
     """The per-session analysis seed of the deposited content-link analysis,
     held fixed across every rung so that only the labelling varies."""
-    return content_link._stable_seed(dataset, session, "pooled")
+    return _stable_seed(dataset, session, "pooled")
 
 
 def gate_task(path_str: str) -> dict:
@@ -324,7 +328,7 @@ def pooled_rung_summary(values: list[float], rng: np.random.Generator) -> dict:
     analysis used."""
     array = np.asarray(values, dtype=float)
     mean, lower, upper = bootstrap_ci(array, np.mean, n_boot=BOOTSTRAP_RESAMPLES, rng=rng)
-    against_null = content_link._one_sample_sign_flip(list(array), 0.5, alternative="two-sided")
+    against_null = _one_sample_sign_flip(list(array), 0.5, alternative="two-sided")
     return {
         "n_sessions": int(array.size), "mean_fractional_rank": mean,
         "ci95_lower": lower, "ci95_upper": upper,
@@ -675,10 +679,10 @@ def main() -> None:
 
     # ---- matched unit count across date blocks --------------------------
     matched_units = int(min(unit_counts.values()))
-    matched_rows = [row for batch in run_parallel(
+    matched_rows = [row for chunk in run_parallel(
         matched_unit_task,
         [(str(p), matched_units, MATCHED_UNIT_DRAWS) for p in paths],
-        "matched-unit draws") for row in batch]
+        "matched-unit draws") for row in chunk]
     output["matched_unit_session_rows"] = matched_rows
     flush()
 
@@ -750,7 +754,7 @@ def main() -> None:
             k = int(min(8, features.shape[1] - 2, max(2, features.shape[0] // 8)))
             timing = content_decoding_dropping_latent(
                 features, delay_id[mask], np.array([0]), k, None, n_splits=3,
-                n_perm=content_link.CONTENT_N_PERM_FULL,
+                n_perm=CONTENT_N_PERM_FULL,
                 rng=np.random.default_rng(seed + 8))
             row["delay_length_only_decoding"] = {
                 "n_classes": int(timing["n_classes"]), "k_latents": k,

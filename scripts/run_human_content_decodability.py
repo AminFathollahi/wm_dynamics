@@ -99,17 +99,13 @@ from corpus_sessions import (  # noqa: E402
     iter_dandi_000469,
     region_filtered_units,
 )
-from run_human_drift_spine_001187_000673 import _trial_group, canonical_sessions  # noqa: E402
-from run_state_content_link import (  # noqa: E402
-    CONTENT_N_PERM_FULL,
-    MIN_CLASSES,
-    MIN_TRIALS_PER_CLASS,
-    _one_sample_sign_flip,
-    _stable_seed,
-    delay_counts,
-    session_subtractive_test,
-    usable_label,
-)
+from run_human_drift_spine_001187_000673 import canonical_sessions
+from corpus_sessions import _trial_group
+from run_state_content_link import MIN_TRIALS_PER_CLASS, usable_label
+from info_decoding import session_subtractive_test
+from statistics import CONTENT_N_PERM_FULL, _one_sample_sign_flip, _stable_seed
+from info_decoding import MIN_CLASSES
+from spike_pipeline import delay_counts
 from spike_pipeline import FrozenPSTHTransform, load_spike_times, resolve_unit_regions  # noqa: E402
 from state_persistence import _ols_slope  # noqa: E402
 from statistics import (  # noqa: E402
@@ -118,6 +114,7 @@ from statistics import (  # noqa: E402
     minimum_detectable_paired_difference,
     power_to_detect_effect,
 )
+from corpus_sessions import MIN_SESSIONS_FOR_PRIMARY_BRANCH  # noqa: E402
 
 CONTENT_LINK_PATH = REPO_ROOT / "results" / "state_content_link.json"
 OUTPUT_PATH = REPO_ROOT / "results" / "human_content_decodability.json"
@@ -138,7 +135,6 @@ EXPECTED_PICTURE_CATEGORIES = 5
 
 # Pre-declared decision rules. Each threshold below was fixed before any output of this
 # module was inspected, and none of them may be moved to make a result come out.
-MIN_SESSIONS_FOR_PRIMARY_BRANCH = 8
 MIN_SESSIONS_FOR_CONDITIONED_RANK = 4
 REPRODUCTION_EXACT_TOLERANCE = 0.0
 REPRODUCTION_NUMERIC_TOLERANCE = 1e-6

@@ -7,19 +7,18 @@ per-session behavior-CTG diagonal AUC
 (results/behavior_ctg_per_session.json), NOT the v*-alignment targeting-
 benchmark CATE. Reasons:
   1. The targeting-benchmark CATE (results/targeting_benchmark_boran.json)
-     only exists for the 9 Boran iEEG subjects (TES1/DLPFC coverage is a
-     principled exclusion for every other cohort -- DATASET_ANALYSIS_MATRIX.md
-     #2), which alone is below this analysis's own n>=8 floor once any
+     only exists for the 9 DANDI 000574 iEEG subjects (TES1/DLPFC coverage is a
+     principled exclusion for every other cohort), which alone is below this analysis's own n>=8 floor once any
      covariate has missing data, and gives no cross-cohort heterogeneity to
      explain.
   2. Behavior-CTG diagonal AUC is computed uniformly, per session, across
-     FOUR cohorts (Boran iEEG, Boran units, DANDI 000469/001187/000673) --
+     FOUR cohorts (DANDI 000574 iEEG, DANDI 000574 units, DANDI 000469/001187/000673) --
      n=1+9+25+30+34-ish sessions, clearing the floor with real power, and it
-     is the SAME quantity Part 1A already reports as significant in only
-     1/5 cohorts (Boran iEEG). This heterogeneity analysis therefore directly
-     explains the pattern Part 1A reports as a bound, rather than opening a
+     is the SAME quantity the targeting benchmark already reports as significant in only
+     1/5 cohorts (DANDI 000574 iEEG). This heterogeneity analysis therefore directly
+     explains the pattern that benchmark reports as a bound, rather than opening a
      new, disconnected question.
-  Miller ECoG is excluded from all of behavior-CTG (no behavioral-accuracy
+  ECoG n-back corpus is excluded from all of behavior-CTG (no behavioral-accuracy
   field in the public release -- see run_context_confidence_timecourse.py's
   identical exclusion), so it cannot be pooled here either way.
 
@@ -31,7 +30,7 @@ listed-but-dropped items are stated up front, not cut after seeing p-values):
     four single-unit cohorts -- "signal type" (categorical, dummy-coded).
   - n_trials           : trial count feeding the CTG fit.
   - accuracy           : session behavioral accuracy (n_correct/n_trials) --
-    ceiling proxy (directly explains why Part 1A's bound exists).
+    ceiling proxy (directly explains why that bound exists).
   - var_ratio          : fraction of variance in the top-8 PCA latent --
     "latent PR/dimensionality" proxy.
   - max_abs_lambda     : plant stability, max|eigenvalue(A)| at the shared
@@ -234,7 +233,7 @@ def main():
     else:
         n_survive = 0
 
-    # Illustrative extreme session (Boran iEEG -- the only cohort clearing the
+    # Illustrative extreme session (DANDI 000574 iEEG -- the only cohort clearing the
     # behavior-CTG bound) -- ILLUSTRATION ONLY, not a basis for the conclusion.
     boran_rows = [r for r in rows if r["cohort"] == "boran_ieeg"]
     extreme = max(boran_rows, key=lambda r: r["effect"]) if boran_rows else None

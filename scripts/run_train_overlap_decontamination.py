@@ -34,7 +34,7 @@ Outputs:
   results/train_overlap_decontamination.json
 
 Run:
-    /home/amin/miniconda3/envs/wm_dynamics/bin/python \
+    python \
         scripts/run_train_overlap_decontamination.py
 """
 from __future__ import annotations
@@ -52,16 +52,16 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from provenance import canonical_json, git_commit  # noqa: E402
 
-from run_human_stimulation_component_response import (  # noqa: E402
-    OPENLOOP_DATA, channel_condition_masks, load_corpus as load_human_corpus,
-)
+from run_human_stimulation_component_response import load_corpus as load_human_corpus
+from stimulation_events import channel_condition_masks
+from corpus_sessions import DATA as OPENLOOP_DATA
 from run_ram_openloop_pipeline import BIN_S as HUMAN_BIN_S, PRE_S as HUMAN_PRE_S  # noqa: E402
-from run_stimulation_response_gate_and_panel import (  # noqa: E402
-    _human_session_windows, _pool_arm, _read_census_row, _specificity_check,
-)
-from run_stimulation_timing_and_parameter_structure import (  # noqa: E402
-    build_trains_openloop, overlaps, read_events,
-)
+from run_stimulation_response_gate_and_panel import _read_census_row
+from stimulation_events import _human_session_windows, _specificity_check
+from stimulation_response_estimator import _pool_arm
+from run_stimulation_timing_and_parameter_structure import build_trains_openloop, read_events
+from stimulation_events import overlaps
+from statistics import _annotate_effect_vs_mdd  # noqa: E402
 
 RESULTS = ROOT / "results"
 OUTPUT_PATH = RESULTS / "train_overlap_decontamination.json"
@@ -75,7 +75,7 @@ CORPUS_ID = "ram_ds005489_openloop"
 DELIVERED_PANEL_PATH = RESULTS / "stimulation_response_gate_and_panel.json"
 
 # This project's own internal comparison reference (control-trial SD units), not a
-# biological or clinical threshold -- see docs/mandates/STANDING_CONSTRAINTS.md.
+# biological or clinical threshold.
 INTERNAL_REFERENCE_SD = 1.0
 
 COUNTERFACTUAL_LABEL = (
@@ -148,7 +148,8 @@ def _build_decision_rule(reference_pre_window_displacement: float | None) -> dic
             "(e.g. serial-position structure, session-level drift, or a stimulation-block-vs-"
             "control-block difference that is not stimulation itself) separates stimulated from "
             "control words. This is reported as a more serious result than confirmation, not a "
-            "disappointing one, per this project's standing rule."
+            "disappointing one: identifying a genuine confound is more scientifically valuable than "
+            "a clean replication."
         ),
         "inconclusive_if": (
             "the pre-window p-value is > 0.05 in the uncontaminated subset but its minimum detectable "
@@ -326,18 +327,6 @@ def build_arm_rows(pre_bins: int, pre_window_s: float) -> dict:
 # Pooling, effect-vs-mdd flagging, and the pre-declared verdict
 # ══════════════════════════════════════════════════════════════════════════
 
-def _annotate_effect_vs_mdd(pool_arm_result: dict) -> None:
-    """Flags, in place, any pooled cell whose observed effect magnitude
-    sits below its own minimum detectable difference -- such an estimate is
-    upward-biased conditional on having reached significance at all."""
-    for window in pool_arm_result.get("windows", {}).values():
-        if window.get("status") != "computed":
-            continue
-        for biomarker_key in ("rate_free_deviation_biomarker", "nuisance_total_activity_biomarker"):
-            pooled = window.get(biomarker_key, {}).get("pooled", {})
-            mdd_obj = pooled.get("mdd", {})
-            if pooled.get("status") == "computed" and mdd_obj.get("status") == "computed":
-                pooled["effect_below_own_mdd"] = bool(abs(pooled["mean_value"]) < mdd_obj["mdd"])
 
 
 def apply_decision_rule(uncontam_result: dict, reference_effect: float | None) -> dict:

@@ -34,15 +34,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from io_utils import locked_json_update  # noqa: E402
 from provenance import canonical_json  # noqa: E402
-from run_band_versus_sensor_decomposition import (  # noqa: E402
-    _extract_noise_fraction, load_existing_high_gamma_sessions,
-)
-from run_band_versus_sensor_decomposition_extensions import (  # noqa: E402
-    load_checkpoint_sessions, sessions_for_cell,
-)
-from run_persistence_patient_clustered_replication import (  # noqa: E402
-    _paired_patient_stats, _patient_median,
-)
+from run_band_versus_sensor_decomposition import load_existing_high_gamma_sessions
+from spike_pipeline import _extract_noise_fraction
+from run_band_versus_sensor_decomposition_extensions import load_checkpoint_sessions
+from spike_pipeline import sessions_for_cell
+from info_decoding import _paired_patient_stats, _patient_median
 
 BAND_SENSOR_ARTIFACT = ROOT / "results" / "band_versus_sensor_decomposition.json"
 

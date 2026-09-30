@@ -3,7 +3,7 @@
 power analysis.
 
 (1) Positive control: injects a known load-dependent dimensionality increase
-    into real Miller channel data and evaluates whether
+    into real ECoG n-back corpus channel data and evaluates whether
     spatiotemporal_participation_ratio recovers it, via the same
     linear-mixed-effects permutation pipeline used throughout this project
     (src/statistics.linear_mixed_effects_test).
@@ -37,7 +37,7 @@ MILLER_SUBJECTS = ["al", "ca", "cc", "ug"]
 MAINT_WINDOW = (0.3, 1.4)
 
 
-# ── (1) Positive control: inject a known PR-vs-load slope into real Miller data ──
+# ── (1) Positive control: inject a known PR-vs-load slope into real ECoG n-back corpus data ──
 
 def inject_isotropic_noise_by_load(
     X: np.ndarray, load_centered: np.ndarray, gain: float, rng: np.random.Generator,
@@ -189,7 +189,7 @@ def main():
     rng = np.random.default_rng(0)
 
     print("(1) Positive control: dose-response sweep, injecting isotropic")
-    print("    load-scaled noise into real Miller channel data")
+    print("    load-scaled noise into real ECoG n-back corpus channel data")
     gains = [0.0, 0.5, 1.0, 2.0, 4.0, 8.0]
     pc = positive_control_miller(gains, rng)
     monotonic = all(pc["sweep"][i]["beta_recovered"] <= pc["sweep"][i + 1]["beta_recovered"] + 1e-6

@@ -192,7 +192,9 @@ def _measure_macaque_pfc_microstimulation() -> dict:
     exact multiples of 20), so summing it over its cropped 30-bin window and channels and
     multiplying by the 0.05 s bin width recovers the total spike count for that trial. This
     is a sum over already-loaded arrays, not a fit."""
-    from run_macaque_pfc_microstimulation_pipeline import BIN_S, DATA, crop_trial, load_macaque_pfc_microstimulation_session
+    from run_macaque_pfc_microstimulation_pipeline import DATA, load_macaque_pfc_microstimulation_session
+    from spike_pipeline import crop_trial
+    from spike_pipeline import BIN_S
 
     if not DATA.exists():
         return {"status": "not_reachable", "reason": f"{DATA} does not exist"}

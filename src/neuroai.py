@@ -2,29 +2,15 @@
 neuroai.py — NeuroAI analysis: representational alignment and model-brain comparison.
 
 Implements:
-  - Centered Kernel Alignment (CKA; Kornblith et al. 2019)
+  - Centered Kernel Alignment (CKA)
   - Orthogonal Procrustes alignment between representation spaces
-  - Noise ceiling for RSA (Nili et al. 2014)
+  - Noise ceiling for RSA
   - Cross-subject RSA and model-brain comparison
   - Representational geometry metrics for comparing ANNs to neural data
 
 These tools ask whether an artificial neural network (ANN) trained on
 N-back or sequential prediction tasks learns representations geometrically
-similar to those found in human prefrontal cortex — the NeuroAI hypothesis
-(Yamins & DiCarlo 2016; Schrimpf et al. 2021).
-
-References
-----------
-Kornblith S et al. (2019) Similarity of neural network representations
-  revisited. ICML. arXiv:1905.00414.
-Kriegeskorte N et al. (2008) Representational similarity analysis.
-  Front Syst Neurosci 2:4.
-Nili H et al. (2014) A toolbox for representational similarity analysis.
-  PLoS Comput Biol 10(4):e1003553.
-Yamins DLK & DiCarlo JJ (2016) Using goal-driven deep learning models to
-  understand sensory cortex. Nat Neurosci 19(3):356-65.
-Procrustes: Schönemann PH (1966) A generalised solution of the orthogonal
-  procrustes problem. Psychometrika 31(1):1-10.
+similar to those found in human prefrontal cortex — the NeuroAI hypothesis.
 """
 
 from __future__ import annotations
@@ -122,7 +108,7 @@ def procrustes_align(
     well Y explains X after optimal rotation. Disparity = 0 → perfect
     structural match.
 
-    Algorithm (Schönemann 1966):
+    Algorithm (orthogonal Procrustes):
       SVD(Y^T X) = U Σ V^T  →  R = U V^T
 
     Parameters
@@ -160,7 +146,7 @@ def noise_ceiling_rsa(
     Upper bound: mean Spearman r of each subject with the mean RDM of ALL subjects.
     Lower bound: mean Spearman r of each subject with the mean RDM of OTHER subjects.
 
-    (Nili et al. 2014, PLoS Comput Biol)
+    (the standard leave-one-out RSA noise-ceiling method, PLoS Comput Biol)
 
     Parameters
     ----------

@@ -12,6 +12,7 @@ branch or recompute a fit, only read already-pooled statistics."""
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -22,11 +23,10 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from run_component_and_item_binding import (  # noqa: E402
-    BRANCH_BOTH, BRANCH_GATE_FAILED, BRANCH_IMPRECISION_ONLY, BRANCH_NEITHER, BRANCH_SWAPS_ONLY,
-    BRANCH_TOO_RARE, MIN_SWAPS_POOLED_TO_TEST, _close, _family, _object_geometry, _outcome_arm,
-    _paired_collect_observables, _predicts, build_disclosures, decide_branch,
-)
+from run_component_and_item_binding import BRANCH_BOTH, BRANCH_GATE_FAILED, BRANCH_IMPRECISION_ONLY, BRANCH_NEITHER, BRANCH_SWAPS_ONLY, BRANCH_TOO_RARE, MIN_SWAPS_POOLED_TO_TEST, _close, _family, _outcome_arm, decide_branch
+from corpus_sessions import _object_geometry
+from statistics import _paired_collect_observables, _predicts, build_disclosures
+from provenance import checkpoint_safe, restore_checkpoint
 
 
 # ---------------------------------------------------------------------------------------------------
@@ -146,6 +146,36 @@ def test_within_item_count_level_weighting_matches_hand_computed_average():
     # (mixing them changes the estimate) -- the whole point of reporting both.
     r_pooled_mixed = float(np.corrcoef(deviation, outcome)[0, 1])
     assert arm["deviation"]["pooled_mixed"]["family"]["raw"]["r"] == pytest.approx(r_pooled_mixed, abs=1e-9)
+
+
+def test_outcome_arm_per_level_and_item_count_fields_survive_a_checkpoint_round_trip():
+    """_outcome_arm's per_level (str(level) keys) and analyse_session's n_trials_by_item_count /
+    n_swap_primary_by_item_count / n_swap_strict_by_item_count (also str(k) keys) are all nested
+    inside the row _fit checkpoints whole. main()'s own pooling loop over n_trials_by_item_count
+    (not itself a standalone import -- it runs inline after loading every session) keys a single
+    dict off whatever type the checkpoint handed back; this reproduces that exact two-line loop
+    (results/component_and_item_binding.json's n_trials_by_item_count_pooled) on one fresh,
+    str-keyed row and one round-tripped (simulated-resumed) row, and checks they still land under
+    one shared key per level instead of splitting into a str key and an int key."""
+    rng = np.random.default_rng(1)
+    item_count = np.array([2.0, 2.0, 2.0, 3.0, 3.0])
+    n_trials_by_item_count = {str(k): int(np.sum(item_count == k)) for k in (2, 3)}
+    fresh_row = {"n_trials_by_item_count": n_trials_by_item_count}
+    resumed_row = restore_checkpoint(json.loads(json.dumps(checkpoint_safe(dict(fresh_row)))))
+    assert list(resumed_row["n_trials_by_item_count"]) == list(fresh_row["n_trials_by_item_count"])  # still str keys
+
+    trials_by_item_count: dict = {}
+    for row in (fresh_row, resumed_row):
+        for k, v in row["n_trials_by_item_count"].items():
+            trials_by_item_count[k] = trials_by_item_count.get(k, 0) + v
+    assert trials_by_item_count == {"2": 6, "3": 4}  # one entry per level, not split by key type
+
+    # per_level itself, built by _outcome_arm on synthetic data, round-trips the same way.
+    deviation = rng.normal(size=5)
+    arm = _outcome_arm(deviation.copy(), item_count, deviation, deviation, deviation,
+                        np.arange(5, dtype=float), "unit_test|round_trip")
+    restored_per_level = restore_checkpoint(json.loads(json.dumps(checkpoint_safe(arm["deviation"]["per_level"]))))
+    assert list(restored_per_level) == list(arm["deviation"]["per_level"])
 
 
 # ---------------------------------------------------------------------------------------------------

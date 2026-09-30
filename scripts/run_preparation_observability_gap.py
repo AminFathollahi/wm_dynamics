@@ -74,7 +74,7 @@ from __future__ import annotations
 
 import os
 
-# Capped before numpy is imported: several of these jobs run concurrently on one
+# Capped before numpy is imported: several of these analyses run concurrently on one
 # machine, and an uncapped BLAS thread pool per process turns a fast fit into a
 # scheduling contest.
 for _thread_var in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
@@ -106,12 +106,11 @@ from statistics import (  # noqa: E402
     Z_80_POWER, fdr_bh, minimum_detectable_paired_difference, paired_sign_flip_test,
     permutation_pvalue, power_to_detect_effect, stable_seed,
 )
-from run_state_persistence import (  # noqa: E402
-    LAG_N_NULL_REPLICATES, LAG_N_SPLITS, _counts_from_spikes, _lag_run_row, _seed,
-)
-from run_persistence_patient_clustered_replication import (  # noqa: E402
-    _one_sample_patient_stats, _paired_patient_stats, _patient_median,
-)
+from run_state_persistence import _counts_from_spikes
+from state_persistence import LAG_N_SPLITS, _lag_run_row
+from statistics import _seed
+from state_persistence import LAG_N_NULL_REPLICATES
+from info_decoding import _one_sample_patient_stats, _paired_patient_stats, _patient_median
 
 LAG_PATH = REPO_ROOT / "results" / "state_persistence_lag.json"
 PERSISTENCE_PATH = REPO_ROOT / "results" / "state_persistence.json"

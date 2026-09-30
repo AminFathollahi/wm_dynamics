@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
-"""Alagapan et al. (2019) reanalysis: does each patient's own band-matched
+"""Phase-locked intracranial stimulation corpus (doi:10.1016/j.celrep.2019.10.072) reanalysis: does each patient's own band-matched
 baseline oscillation frequency accompany their reported phase-locked
 stimulation benefit?
 
-Citation: Alagapan S, Riddle J, Huang WA, Hadar E, Shin HW, Froehlich F.
-"Network-Targeted, Multi-site Direct Cortical Stimulation Enhances Working
+Source: "Network-Targeted, Multi-site Direct Cortical Stimulation Enhances Working
 Memory by Modulating Phase Lag of Low-Frequency Oscillations." Cell Reports
-2019;29(9):2590-2598. PMC6901101.
+29(9):2590-2598. PMC6901101.
 
 Evidentiary strength (stated once, applies everywhere a number from this
 script appears): this is a REANALYSIS of public raw data from n=3 PATIENTS.
@@ -41,7 +40,7 @@ trials into one shared linear operator is a materially different, harder
 regime, and this check is what catches it if the pooled fit cannot recover
 genuine structure beyond chance.
 
-Design note on the phase test (33D): Alagapan's protocol used a categorical
+Design note on the phase test (33D): phase-locked intracranial stimulation corpus's protocol used a categorical
 two-site phase manipulation (In Phase / Anti Phase / Sham), not a continuous
 phase-lag sweep (contrast scripts/run_haslacher_phase_omega.py, which does
 have one) -- so there is no continuous "predicted optimal phase" to compare
@@ -79,6 +78,7 @@ import pymatreader  # noqa: E402
 
 from dynamics import fit_band_matched_omega  # noqa: E402
 from statistics import stable_seed  # noqa: E402
+from preprocessing import PATIENTS  # noqa: E402
 
 _DATA_CONFIG = json.loads((ROOT / "config" / "datasets.json").read_text())
 _DATA_ROOT = os.environ.get(_DATA_CONFIG["local_data_root_env"])
@@ -88,11 +88,6 @@ DATA_DIR = (
 )
 RESULTS = ROOT / "results"
 
-PATIENTS = {
-    "P1": {"band": "theta", "band_range": (4.0, 8.0), "stim_freq_hz": 4.0},
-    "P2": {"band": "alpha", "band_range": (8.0, 12.0), "stim_freq_hz": 10.0},
-    "P3": {"band": "alpha", "band_range": (8.0, 12.0), "stim_freq_hz": 10.0},
-}
 
 def _load_mapping(patient: str) -> dict[int, str]:
     baseline_path = DATA_DIR / "Electrode Information" / "Electrode Mapping" / f"{patient}_ElectrodeMapping_Baseline.csv"
@@ -177,7 +172,7 @@ def main():
           f"(reported as sign agreement, not a p-value)")
 
     out["_meta"] = {
-        "citation": "Alagapan et al. 2019, Cell Reports, PMC6901101",
+        "citation": "Cell Reports, PMC6901101",
         "n_patients": len(PATIENTS), "n_sign_agree": n_agree,
         "evidentiary_strength": "(a) reanalysis of public raw data, n=3 patients",
     }

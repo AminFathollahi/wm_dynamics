@@ -19,13 +19,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from drift_dynamics import simulate_confined_diffusion  # noqa: E402
 from preprocessing import butterworth_bandstop  # noqa: E402
-from run_ram_stimulation_drift import (  # noqa: E402
-    ITEM_LEVEL_NONCAUSAL_REASON,
-    closedloop_session_analysis,
-    fit_group_drift,
-    morlet_log_power_bank,
-    openloop_causal_rows,
-)
+from run_ram_stimulation_drift import ITEM_LEVEL_NONCAUSAL_REASON, closedloop_session_analysis, fit_group_drift, openloop_causal_rows
+from stimulation_events import morlet_log_power_bank
 
 
 def test_morlet_log_power_bank_shape_and_buffer_removal():

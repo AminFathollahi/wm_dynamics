@@ -18,11 +18,9 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from run_deviation_subspace_decomposition import (  # noqa: E402
-    _orthonormal_basis, _random_orthonormal_basis, cv_class_mean_subspace,
-    cv_regression_subspace, random_subspace_null_raw_correlations,
-    residual_decomposition_and_identity_check,
-)
+from run_deviation_subspace_decomposition import _random_orthonormal_basis, cv_class_mean_subspace, random_subspace_null_raw_correlations
+from subspace_identity import _orthonormal_basis
+from info_decoding import cv_regression_subspace, residual_decomposition_and_identity_check
 from run_rate_free_state_geometry_behavior_link import rate_free_state_deviation  # noqa: E402
 
 
@@ -59,7 +57,7 @@ def test_residual_is_orthogonal_to_the_leave_one_out_reference():
     # the residual actually is the perpendicular component, not just a plausible-looking vector.
     activity = _synthetic_activity(2, n_trials=15, n_units=7)
     result = residual_decomposition_and_identity_check(activity)
-    from run_deviation_subspace_decomposition import _leave_one_out_unit_directions
+    from info_decoding import _leave_one_out_unit_directions
     directions = _leave_one_out_unit_directions(activity)
     finite = result["finite"]
     dot = np.einsum("ij,ij->i", result["residual"][finite], directions["loo_mean_normalized"][finite])
@@ -81,7 +79,7 @@ def test_cv_class_mean_subspace_never_uses_the_held_out_trial():
     base[5] = [0, 0, 1, 0, 0, 0]
     activity = base + rng.normal(scale=1e-6, size=base.shape) + 5.0
     directions_result = residual_decomposition_and_identity_check(activity)
-    from run_deviation_subspace_decomposition import _leave_one_out_unit_directions
+    from info_decoding import _leave_one_out_unit_directions
     u = _leave_one_out_unit_directions(activity)["unit_vectors"]
     residual = directions_result["residual"]
 
@@ -120,7 +118,7 @@ def test_cv_regression_subspace_never_uses_the_held_out_trial():
     activity = np.abs(5.0 + 2.0 * np.outer(np.cos(theta), rng.normal(size=n_units))
                        + rng.normal(scale=0.5, size=(n_trials, n_units)))
     u = None
-    from run_deviation_subspace_decomposition import _leave_one_out_unit_directions
+    from info_decoding import _leave_one_out_unit_directions
     u = _leave_one_out_unit_directions(activity)["unit_vectors"]
     residual = residual_decomposition_and_identity_check(activity)["residual"]
 

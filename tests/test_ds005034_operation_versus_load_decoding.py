@@ -20,11 +20,10 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from run_ds005034_operation_versus_load_decoding import (  # noqa: E402
-    within_window_ctg, window_stats, aggregate_cell, CELL_FAMILY, fit_cell,
-    save_session_checkpoint, load_session_checkpoint, CHECKPOINT_DIR,
-)
-from run_cross_window_code_generalisation import cell_status  # noqa: E402
+from run_ds005034_operation_versus_load_decoding import aggregate_cell, CELL_FAMILY, save_session_checkpoint, load_session_checkpoint, CHECKPOINT_DIR
+from preprocessing import within_window_ctg, window_stats
+from preprocessing import fit_cell
+from statistics import cell_status
 
 RESULTS = Path(__file__).resolve().parents[1] / "results" / "ds005034_operation_versus_load_decoding.json"
 

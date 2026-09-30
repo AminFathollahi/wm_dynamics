@@ -12,7 +12,7 @@ scripts/run_macaque_pfc_microstimulation_pipeline.py SESSIONS). The gate model a
 MEANS (a session one-hot in X), but trial-level bootstrap resampling still
 treats clustered trials as independent. If the effect is carried by a few
 sessions, the effective n is ~sessions, not ~thousands of trials -- a
-reviewer will (rightly) ask this. In the current data neither concern turns
+fair objection. In the current data neither concern turns
 out to matter in isolation: trial-level bootstrap inference alone already
 puts vstar_alignment at p~0.24 (non-significant), and cluster-robust
 inference gives p~0.08 -- close to trial-level, not a large clustering-driven
@@ -95,7 +95,7 @@ def _build_all_rows() -> tuple[list[dict], list[str]]:
             row["session_idx"] = si
         all_rows.extend(feat["rows"])
 
-    # Part 15A (same fallback/derivation as run_macaque_pfc_microstimulation_pipeline.main): session
+    # Session-mean fallback (same fallback/derivation as run_macaque_pfc_microstimulation_pipeline.main): session
     # mean of the per-condition vstar_alignment scalar, broadcast back to every
     # row in that session -- the static competitor to the condition/trial-
     # resolved "modifier" column.
@@ -159,7 +159,7 @@ def _cluster_robust_result(phi: np.ndarray, modifier: np.ndarray, session_idx: n
 
 
 def _self_check_planted_effect() -> bool:
-    """Spec step 7b: synthetic dataset, n_sessions clusters each with its own
+    """Synthetic dataset, n_sessions clusters each with its own
     random modifier and a KNOWN planted per-session effect of consistent sign;
     the cluster-bootstrap machinery must recover that sign (catches a
     backwards-sign bug in the bootstrap logic itself)."""
@@ -234,7 +234,7 @@ def main():
         "session_idx alignment assumption violated, STOP rather than silently misalign"
     )
 
-    # Self-check (spec step 3): fresh phi's recovered OLS slope should be in
+    # Self-check: fresh phi's recovered OLS slope should be in
     # the same ballpark as run_macaque_pfc_microstimulation_pipeline.py's own leaderboard output
     # (not bit-identical -- different cross-fit RNG). Read from
     # all_statistics.json["causal_benchmark"]["leaderboard"], the raw,
@@ -400,7 +400,7 @@ def main():
     # vstar_scalar)? Apples-to-apples: identical phi, identical rows (both
     # modifiers finite on the same set -- session_mean is finite wherever
     # vstar_alignment is, by construction).
-    print("\nTrial-resolution dissociation (Part 15B) ...")
+    print("\nTrial-resolution dissociation ...")
     trial_vstar_cr = cluster_robust["vstar_alignment"]["cluster_robust"]
     if session_mean_excluded is not None:
         print(f"  session_mean_vstar_scalar EXCLUDED by benchmark_modifiers: "

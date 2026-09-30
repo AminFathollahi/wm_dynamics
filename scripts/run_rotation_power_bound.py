@@ -31,7 +31,7 @@ session's own resolution floor); per cohort: min/median/max of the
 resolvable bound across its sessions.
 
 Run:
-    /home/amin/miniconda3/envs/wm_dynamics/bin/python scripts/run_rotation_power_bound.py
+    python scripts/run_rotation_power_bound.py
 """
 from __future__ import annotations
 

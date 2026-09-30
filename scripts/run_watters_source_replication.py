@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reproduce Watters et al. source model and latent-gain comparisons.
+"""Reproduce the macaque multi-object working-memory corpus (doi:10.64898/2026.01.27.702062) source model and latent-gain comparisons.
 
 The OSF ``data_for_figures`` release contains the held-out per-unit likelihoods
 and per-trial latent attention values from all ten random seeds.  Reusing those
@@ -50,7 +50,7 @@ def data_directories() -> tuple[Path, Path]:
     modeling = figures / "modeling" / "main"
     behavior = figures / "behavior_processing"
     if not modeling.is_dir() or not behavior.is_dir():
-        raise SystemExit(f"Watters processed figure cache is incomplete under {figures}")
+        raise SystemExit(f"macaque multi-object corpus processed figure cache is incomplete under {figures}")
     return modeling, behavior
 
 
@@ -280,7 +280,7 @@ def main() -> None:
     output = {
         "schema_version": "1.0.0",
         "analysis_id": "watters_2026_source_replication",
-        "dataset": "Watters et al. 2026 OSF vyw49 processed cache",
+        "dataset": "macaque multi-object corpus OSF vyw49 processed cache",
         "code_commit": git_commit(ROOT),
         "source_hash": sha256_file(Path(__file__)),
         "metadata_decision": {

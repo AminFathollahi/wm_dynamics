@@ -13,18 +13,17 @@ other CTG result in the paper -- nothing new is implemented here, this
 script only supplies a different label to existing functions.
 
 Datasets with real, non-fabricated response_accuracy in the data available
-to this project: Boran iEEG, Boran units (DANDI 000574), DANDI 000469, 001187,
+to this project: DANDI 000574 iEEG, DANDI 000574 units, DANDI 000469, 001187,
 000673. Two other candidate datasets turned out NOT to have a
 usable label on inspection (STOP-and-report, not fabricated):
-  - Miller N-back: the raw MAT files (stim/task/target) encode task condition
+  - ECoG n-back corpus N-back: the raw MAT files (stim/task/target) encode task condition
     only (whether a response was REQUIRED on that trial), not whether the
     subject's response was correct -- no hit/miss/FA/CR field exists in the
     data mounted for this project. Excluded, not a fabricated proxy.
   - CRCNS pfc-3: no correct/error field wired into this project's existing
     pfc-3 pipeline, and it is a non-simultaneous pseudo-population (the same
-    property that already makes PR/load-CTG not meaningful for it per
-    DATASET_ANALYSIS_MATRIX.md footnote 6) -- spec marks it optional/
-    secondary; skipped rather than force a weak decode on invalid trial-unit
+    property that already makes PR/load-CTG not meaningful for it for it)
+    -- optional/secondary; skipped rather than force a weak decode on invalid trial-unit
     pairing.
 
 Because outcome decoding needs a leakage-free per-fold PCA fit (unlike the
@@ -63,7 +62,6 @@ from statistics import stable_seed
 from io_utils import locked_json_update
 
 RESULTS = ROOT / "results"
-DATA_ROOT = data_root()
 
 MIN_ERROR_TRIALS = 15    # spec B2: dataset-level POOLED (across sessions) error-trial floor
 MIN_ERROR_PER_SESSION = 4   # per-session floor to even attempt a fit: sessions differ in
@@ -116,7 +114,7 @@ def _outcome_ctg(psth_z: np.ndarray, correct: np.ndarray, times: np.ndarray, rng
     }
 
 
-# ── Spike-based cohorts (000469, 001187, 000673, Boran units) ────────────────
+# ── Spike-based cohorts (000469, 001187, 000673, DANDI 000574 units) ────────────────
 
 def _spike_session_outcome_ctg(f, trials_group: str, loads_field: str, maint_win: float,
                                min_units: int, rng) -> dict | None:
@@ -145,8 +143,8 @@ def _spike_session_outcome_ctg(f, trials_group: str, loads_field: str, maint_win
 
 
 def run_rutishauser_lineage(dataset_key: str, glob_pattern: str, trials_group: str,
-                            maint_win: float, min_units: int) -> dict:
-    data_dir = DATA_ROOT / dataset_key.replace("dandi", "")
+                            maint_win: float, min_units: int, data_root_dir: Path) -> dict:
+    data_dir = data_root_dir / dataset_key.replace("dandi", "")
     out = {}
     files = sorted(data_dir.glob(glob_pattern))
     for fp in files:
@@ -165,8 +163,8 @@ def run_rutishauser_lineage(dataset_key: str, glob_pattern: str, trials_group: s
     return out
 
 
-def run_boran_units() -> dict:
-    data_dir = DATA_ROOT / "000574"
+def run_boran_units(data_root_dir: Path) -> dict:
+    data_dir = data_root_dir / "000574"
     out = {}
     for subj_dir in sorted(data_dir.glob("sub-*")):
         for fp in sorted(subj_dir.glob("*.nwb")):
@@ -195,12 +193,12 @@ def run_boran_units() -> dict:
     return out
 
 
-# ── Boran iEEG (HGP; small self-contained copy of run_boran_pipeline's
+# ── DANDI 000574 iEEG (HGP; small self-contained copy of run_boran_pipeline's
 #    loading steps -- that module runs its full 9-subject pipeline at import
 #    time, so importing it here would trigger an expensive unwanted re-run) ──
 
-def run_boran_ieeg() -> dict:
-    data_dir = DATA_ROOT / "000574"
+def run_boran_ieeg(data_root_dir: Path) -> dict:
+    data_dir = data_root_dir / "000574"
     srate = 1398.0
     t_pre_maint, t_post_maint, t_epoch_pre = 3.0, 3.0, 1.0
     epoch_total = t_pre_maint + t_post_maint + t_epoch_pre
@@ -294,7 +292,7 @@ def run_boran_ieeg() -> dict:
 
 
 def _outcome_ctg_native(hgp_ds: np.ndarray, correct: np.ndarray, times_ds: np.ndarray, rng) -> dict:
-    """Like _outcome_ctg but the time axis is ALREADY downsampled (Boran iEEG's
+    """Like _outcome_ctg but the time axis is ALREADY downsampled (DANDI 000574 iEEG's
     native rate is far too fine to stride post-hoc the way spike-PSTH bins are),
     so t_idx here is every column, not a further CTG_STEP subsample."""
     n_correct, n_error = int(correct.sum()), int((~correct).sum())
@@ -383,36 +381,37 @@ def _pool_dataset(per_session: dict, label: str) -> dict:
 
 
 def main():
+    data_root_dir = data_root()
     out_per_session = {}
     out = {}
 
-    print("Boran iEEG...")
-    boran_ieeg = run_boran_ieeg()
+    print("DANDI 000574 iEEG...")
+    boran_ieeg = run_boran_ieeg(data_root_dir)
     out_per_session["boran_ieeg"] = boran_ieeg
-    out["boran_ieeg"] = _pool_dataset(boran_ieeg, "Boran iEEG")
+    out["boran_ieeg"] = _pool_dataset(boran_ieeg, "DANDI 000574 iEEG")
 
-    print("Boran units (DANDI 000574)...")
-    boran_units = run_boran_units()
+    print("DANDI 000574 units...")
+    boran_units = run_boran_units(data_root_dir)
     out_per_session["boran_units"] = boran_units
-    out["boran_units"] = _pool_dataset(boran_units, "Boran units")
+    out["boran_units"] = _pool_dataset(boran_units, "DANDI 000574 units")
 
     print("DANDI 000469...")
     d469 = run_rutishauser_lineage("dandi000469", "sub-*/*_ses-2_ecephys+image.nwb",
-                                   "trials", 2.3, 15)
+                                   "trials", 2.3, 15, data_root_dir)
     out_per_session["dandi000469"] = d469
     out["dandi000469"] = _pool_dataset(d469, "DANDI 000469")
 
     print("DANDI 001187...")
-    d1187 = run_rutishauser_lineage("dandi001187", "sub-*/*_ecephys*.nwb", "WM_trials", 2.3, 15)
+    d1187 = run_rutishauser_lineage("dandi001187", "sub-*/*_ecephys*.nwb", "WM_trials", 2.3, 15, data_root_dir)
     out_per_session["dandi001187"] = d1187
     out["dandi001187"] = _pool_dataset(d1187, "DANDI 001187")
 
     print("DANDI 000673...")
-    d0673 = run_rutishauser_lineage("dandi000673", "sub-*/*_ecephys*.nwb", "trials", 2.3, 15)
+    d0673 = run_rutishauser_lineage("dandi000673", "sub-*/*_ecephys*.nwb", "trials", 2.3, 15, data_root_dir)
     out_per_session["dandi000673"] = d0673
     out["dandi000673"] = _pool_dataset(d0673, "DANDI 000673")
 
-    print("\nMiller N-back: EXCLUDED -- no hit/miss/FA/CR field in the raw MAT "
+    print("\nECoG n-back: EXCLUDED -- no hit/miss/FA/CR field in the raw MAT "
           "files (stim/task/target encode task condition, not response accuracy); "
           "STOP-and-report, not fabricated.")
     print("CRCNS pfc-3: SKIPPED (optional/secondary per spec; non-simultaneous "

@@ -53,9 +53,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from io_utils import locked_json_update  # noqa: E402
 from provenance import canonical_json  # noqa: E402
 from statistics import partial_correlation_permutation_test, pearson_permutation_test, stable_seed  # noqa: E402
-from run_band_versus_sensor_decomposition import (  # noqa: E402
-    load_existing_high_gamma_sessions, resolve_comparison,
-)
+from run_band_versus_sensor_decomposition import load_existing_high_gamma_sessions
+from spike_pipeline import resolve_comparison
+from spike_pipeline import sessions_for_cell  # noqa: E402
+from state_persistence import _extract_persistence_level_factor_analysis  # noqa: E402
 
 ARTIFACT_PATH = ROOT / "results" / "band_versus_sensor_decomposition.json"
 CHECKPOINT_PATH = ROOT / "results" / ".checkpoints" / "band_versus_sensor_decomposition_checkpoint.json"
@@ -71,22 +72,6 @@ def _seed(*parts) -> np.random.Generator:
 def load_checkpoint_sessions() -> dict[str, dict]:
     checkpoint = json.loads(CHECKPOINT_PATH.read_text())
     return {k: v["record"] for k, v in checkpoint.items() if v.get("status") == "complete"}
-
-
-def sessions_for_cell(checkpoint_sessions: dict, cell_key_template: str, bin_ms: int) -> dict[tuple[str, str], dict]:
-    """Keyed by (patient, session), matching resolve_comparison's own
-    pairing key -- one checkpoint session id (e.g. 'sub-01_ses-01') splits
-    into (patient, session) exactly as scripts/run_band_versus_sensor_
-    decomposition.py's own per_cell_sessions construction does."""
-    cell_key = cell_key_template.format(bin_ms=bin_ms)
-    out = {}
-    for session_id, record in checkpoint_sessions.items():
-        cell = record.get("cells", {}).get(cell_key)
-        if cell is None:
-            continue
-        patient = cell.get("patient", session_id.split("_ses-")[0])
-        out[(patient, session_id)] = cell
-    return out
 
 
 # ---------------------------------------------------------------------------
@@ -113,13 +98,6 @@ def _extract_unit_count(session_dict: dict | None) -> float | None:
         return None
     n = session_dict.get("n_units")
     return float(n) if n is not None else None
-
-
-def _extract_persistence_level_factor_analysis(session_dict: dict | None) -> float | None:
-    if session_dict is None:
-        return None
-    pc = session_dict.get("persistence_contrast", {}).get("factor_analysis", {})
-    return pc.get("level") if pc.get("status") == "fitted" else None
 
 
 def confound_evidence(scalp_sessions: dict, depth_sessions: dict, bin_ms: int) -> dict:

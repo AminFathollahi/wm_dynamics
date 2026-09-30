@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
-"""R4/R5: in-silico closed-loop demonstration + robustness sweep.
+"""In-silico closed-loop demonstration + robustness sweep.
 
 For every cohort with BOTH a fitted plant (A, from run_tes1_analysis.py's
-DMD fit) and a TES1 B matrix (Miller + Boran iEEG — the only cohorts with
+DMD fit) and a TES1 B matrix (ECoG n-back corpus + DANDI 000574 iEEG — the only cohorts with
 DLPFC TES1 coverage), this:
   1. Builds a content/context decoder trained on that cohort's own REAL,
-     uncontrolled trial data (02_geometry_*.npz for Miller, boran_geometry_*.npz
-     for Boran) — never on anything this script simulates (anti-circularity
+     uncontrolled trial data (02_geometry_*.npz for ECoG n-back corpus, boran_geometry_*.npz
+     for DANDI 000574) — never on anything this script simulates (anti-circularity
      guardrail 2).
   2. Runs src/closed_loop.simulate_closed_loop from the "low" condition
      centroid (x0) toward the "high" condition centroid (target = xf), over
      a horizon matched to that cohort's real maintenance-window sample count
      (the A matrix was fit at native per-sample dt, so a short arbitrary
-     horizon under-samples the near-unit-circle dynamics R2 identified and
+     horizon under-samples the near-unit-circle dynamics identified by the DMD fits and
      manufactures a spuriously small open-loop drift) — CAPPED at
      N_TIME_CONSTANTS e-folding times of A's least-stable eigenvalue when
      that is shorter than the real sample count. Every fitted A here has
-     max|eig|>1 (near-unit-circle-to-mildly-unstable, per R2), with e-folding
+     max|eig|>1 (near-unit-circle-to-mildly-unstable, from the DMD fits), with e-folding
      time constants ranging ~70-850 steps across cohorts; at the full native
      horizon (1099-4193 steps) the fast-diverging cohorts accumulate tens of
      e-foldings and the open-loop rollout saturates src/closed_loop.py's
@@ -56,7 +56,7 @@ DECODER_VALID_MARGIN = 0.03   # decoder_cv_acc must beat chance (1/n_cls) by thi
 MILLER_SUBJECTS = ["al", "ca", "cc", "ug"]
 BORAN_SUBJECTS = [f"sub-{i:02d}" for i in range(1, 10)]
 
-MAINT_T0, MAINT_T1 = 0.30, 1.40   # Miller maintenance window (s)
+MAINT_T0, MAINT_T1 = 0.30, 1.40   # ECoG n-back corpus maintenance window (s)
 B_HAT_MISMATCH_DEG = 20.0         # realistic B-estimation-error stand-in (guardrail 1)
 N_TIME_CONSTANTS = 3.0            # cap horizon at this many e-folding times of A's
                                    # least-stable eigenvalue (see module docstring) —
@@ -229,7 +229,7 @@ def main():
 
     demo_out, sweep_out = {}, {}
 
-    print("Miller:")
+    print("ECoG n-back corpus:")
     for subj in MILLER_SUBJECTS:
         if f"{subj}_A_dmd" not in tes1:
             print(f"  SKIP {subj} — no TES1 bundle")
@@ -250,7 +250,7 @@ def main():
               f"decodability_lift={demo_row['decodability_lift']} "
               f"destabilized={demo_row['destabilized']} decoder_valid={demo_row['decoder_valid']}")
 
-    print("Boran iEEG:")
+    print("DANDI 000574 iEEG:")
     for subj in BORAN_SUBJECTS:
         if f"{subj}_A_dmd" not in tes1_boran:
             print(f"  SKIP {subj} — no TES1 bundle")

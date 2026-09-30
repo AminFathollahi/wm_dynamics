@@ -29,7 +29,7 @@ stimulation but only during episodic encoding — see Discussion). They are
 reported as a hypothesis-generating
 localization signal, cross-validated by (i) agreement between the two
 independent scores and (ii) consistency of the anatomical gradient across
-subjects within a dataset (Miller PFC ECoG, Boran MTL iEEG).
+subjects within a dataset (ECoG n-back corpus PFC ECoG, DANDI 000574 MTL iEEG).
 
 Saves: results/stim_location_analysis.npz, updates all_statistics.json
 
@@ -51,9 +51,6 @@ from statistics import pearson_permutation_test, spearman_permutation_test
 from provenance import _json_safe
 
 RESULTS  = ROOT / "results"
-EXT_DATA = data_root()
-TES1_ZIP = EXT_DATA / "Tes1" / "HuangLiu2016dataset.zip"
-
 MILLER_SUBJECTS = ["al", "ca", "cc", "ug"]
 BORAN_SUBJECTS  = [f"sub-{i:02d}" for i in range(1, 10)]
 SIGMA_MM = 20.0
@@ -159,7 +156,8 @@ def main():
     TES1_M = np.load(RESULTS / "tes1_comprehensive.npz", allow_pickle=True)
 
     print("Loading 17 TES1 CCEP donor subjects...")
-    all_tes1 = load_tes1_stimulation(str(TES1_ZIP))
+    tes1_zip = data_root() / "Tes1" / "HuangLiu2016dataset.zip"
+    all_tes1 = load_tes1_stimulation(str(tes1_zip))
     print(f"  {len(all_tes1)} loaded")
 
     out = {}

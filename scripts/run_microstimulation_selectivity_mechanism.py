@@ -23,7 +23,9 @@ from statistics import bootstrap_ci, minimum_detectable_paired_difference, paire
 from selectivity_test import two_stage_selectivity_test  # noqa: E402
 from io_utils import locked_json_update  # noqa: E402
 from run_macaque_pfc_microstimulation_pipeline import DATA, SESSIONS, load_macaque_pfc_microstimulation_session  # noqa: E402
-from run_macaque_pfc_microstimulation_design_corrected import BIN_MS, N_BINS, ONSET_BIN, bin_spiketrain  # noqa: E402
+from run_macaque_pfc_microstimulation_design_corrected import BIN_MS, bin_spiketrain
+from spike_pipeline import N_BINS
+from corpus_sessions import ONSET_BIN
 
 RESULTS = ROOT / "results"
 CHECKPOINT_DIR = RESULTS / ".checkpoints"

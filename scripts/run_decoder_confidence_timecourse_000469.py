@@ -42,7 +42,6 @@ from io_utils import locked_json_update
 import run_full_trial_content_decoding_000469 as single_item
 import run_multiitem_recall_decoding_000469 as multi_item
 
-DATA_DIR = dataset_path("dandi_000469")
 RESULTS = ROOT / "results"
 N_PC = 8
 
@@ -57,7 +56,7 @@ def _confidence_timecourse(psth_fix, psth_resp, labels, n_units):
 
 
 def process_load1(subj: str, rng) -> dict | None:
-    nwb_path = DATA_DIR / subj / f"{subj}_ses-2_ecephys+image.nwb"
+    nwb_path = dataset_path("dandi_000469") / subj / f"{subj}_ses-2_ecephys+image.nwb"
     if not nwb_path.exists():
         return None
     with h5py.File(str(nwb_path), "r") as f:
@@ -73,7 +72,7 @@ def process_load1(subj: str, rng) -> dict | None:
         t_resp = trials["timestamps_Response"][:]
         t_maint = trials["timestamps_Maintenance"][:]
 
-    # Same firing-rate QC floor as run_000469_pipeline.py (Daume et al. 2024).
+    # Same firing-rate QC floor as run_000469_pipeline.py (published).
     rate_mask = low_rate_unit_mask(spike_lists, t_maint, single_item.MAINT_WIN)
     if rate_mask.sum() < 15:
         return None
@@ -113,7 +112,7 @@ def process_load1(subj: str, rng) -> dict | None:
 
 
 def process_load3(subj: str, rng) -> dict | None:
-    nwb_path = DATA_DIR / subj / f"{subj}_ses-2_ecephys+image.nwb"
+    nwb_path = dataset_path("dandi_000469") / subj / f"{subj}_ses-2_ecephys+image.nwb"
     if not nwb_path.exists():
         return None
     with h5py.File(str(nwb_path), "r") as f:
@@ -131,7 +130,7 @@ def process_load3(subj: str, rng) -> dict | None:
         item_labels = {name: trials[field][:].astype(int)
                        for name, (field, _) in multi_item.ITEM_FIELDS.items()}
 
-    # Same firing-rate QC floor as run_000469_pipeline.py (Daume et al. 2024).
+    # Same firing-rate QC floor as run_000469_pipeline.py (published).
     rate_mask = low_rate_unit_mask(spike_lists, t_maint, multi_item.MAINT_WIN)
     if rate_mask.sum() < 15:
         return None

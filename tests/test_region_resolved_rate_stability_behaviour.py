@@ -23,18 +23,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from run_region_resolved_rate_stability_behaviour import (  # noqa: E402
-    CORPUS_SPECS,
-    _correlation_cell,
-    _fit_ctg_offdiag,
-    _matched_pair_session,
-    _paired_contrast,
-    _partial_r_stat,
-    _patient_rows,
-    _region_cell,
-    _region_estimate_summary,
-    _trial_population_spike_count,
-)
+from run_region_resolved_rate_stability_behaviour import CORPUS_SPECS, _correlation_cell, _fit_ctg_offdiag, _matched_pair_session, _paired_contrast, _partial_r_stat, _patient_rows, _region_cell, _region_estimate_summary
+from statistics import _trial_population_spike_count
 import run_region_resolved_rate_stability_behaviour as target_module  # noqa: E402
 from spike_pipeline import MIN_UNITS_PER_REGION, MIN_UNIT_FIRING_RATE_HZ  # noqa: E402
 

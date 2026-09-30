@@ -6,7 +6,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from run_targeting_benchmark import _near_tie_candidates, NEAR_TIE_REL_TOL
+from stimulation_events import _near_tie_candidates, NEAR_TIE_REL_TOL
 
 
 class TestNearTieCandidates:

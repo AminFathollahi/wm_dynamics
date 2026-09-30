@@ -1,6 +1,6 @@
 """Regression tests for scripts/build_anatomical_census.py.
 
-Builds a synthetic NWB file (Rutishauser-suffix + Boran-hybrid label
+Builds a synthetic NWB file (human single-unit DANDI corpora-suffix + DANDI 000574-hybrid label
 conventions) and a synthetic BIDS electrodes.tsv (RAM ind.region convention)
 and checks the per-site census rows and roll-up matrix they produce, without
 touching any staged dataset.

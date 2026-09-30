@@ -1,7 +1,7 @@
 """corpus_sessions.py -- shared (dataset, structure, session) iteration over the
 three human single-unit Sternberg-family corpora with a delay/maintenance
 period: DANDI 000469, the canonical 001187/000673 dedup, and DANDI 000574
-(Boran). Each iterator yields region-filtered, firing-rate-QC'd spike lists
+(DANDI 000574). Each iterator yields region-filtered, firing-rate-QC'd spike lists
 plus four epoch onset arrays (baseline, encoding, delay, probe), so that any
 downstream analysis needing the same population point cloud -- dimensionality,
 displacement scaling, connectivity graphs -- shares one loading path instead
@@ -20,7 +20,7 @@ Epoch anchoring:
     canonical_sessions): timestamps_FixationCross, timestamps_Encoding1,
     timestamps_Maintenance, timestamps_Probe are present in both releases'
     trial tables (verified directly against the NWB files).
-  - DANDI 000574 (Boran): no named per-epoch timestamp fields exist in its
+  - DANDI 000574: no named per-epoch timestamp fields exist in its
     trial table. run_human_drift_spine_000574.py's docstring documents the
     task's fixed relative structure (fixation [-6,-5] s, encoding [-5,-3] s,
     maintenance [-3,0] s relative to the probe, i.e. maintenance onset =
@@ -38,6 +38,7 @@ Epoch anchoring:
 
 from __future__ import annotations
 
+import glob
 import json
 import os
 import pickle
@@ -69,9 +70,31 @@ from spike_pipeline import (  # noqa: E402
     resolve_unit_regions,
 )
 from preprocessing import high_gamma_power  # noqa: E402
-from run_human_drift_spine_001187_000673 import canonical_sessions, _trial_group  # noqa: E402
 from run_watters_source_replication import add_behavior_columns  # noqa: E402
 from project_config import data_root as configured_data_root, load_dataset_registry  # noqa: E402
+from statistics import CONTENT_LABEL_K_CLASSES
+from preprocessing import load_events
+from stimulation_events import _bin_averaged, channel_condition_masks, compute_stimulation_displacement
+from spike_pipeline import build_psth, BIN_MS
+from statistics import unit_direction_vectors, MIN_TRIALS_WITH_DEFINED_DIRECTION
+from info_decoding import _axis_stability, _linear_detrend_activity, _residual_rows, _unit_residual_matrix
+from subspace_identity import leading_eigenvector
+from project_config import dataset_path
+from statistics import MIN_ERROR_TRIALS_FOR_REACHABILITY
+from stimulation_response_estimator import rate_free_state_deviation
+from info_decoding import MAX_SESSIONS_ENV_VAR, _previous_label, _session_core
+from spike_pipeline import _counts_from_spikes
+from spike_pipeline import delay_counts
+from spike_pipeline import FrozenPSTHTransform
+from info_decoding import WATTERS_RECOVERABILITY_K_CLASSES
+from info_decoding import session_subtractive_test
+from info_decoding import HUMAN_BIN_MS
+from preprocessing import bandpass_filter, load_boran_nwb
+from info_decoding import FIELD_BAND_HI_HZ, FIELD_BAND_LO_HZ, FIELD_MAINTENANCE_WINDOW_S
+from state_persistence import trial_amplitude_covariates
+from run_watters_source_replication import CORRECT_REPORT_DISTANCE_THRESHOLD
+import warnings
+from statistics import stable_seed
 
 MIN_TRIALS = 20
 MIN_UNITS_POOLED = 15
@@ -136,6 +159,9 @@ def iter_dandi_000469(root: Path):
 
 
 def iter_dandi_001187(root: Path):
+    from run_human_drift_spine_001187_000673 import canonical_sessions  # deferred: avoids a
+    # module-load cycle with run_human_drift_spine_001187_000673's own back-import of _trial_group
+
     for meta in canonical_sessions():
         if meta["primary_release"] != "001187":
             continue  # only the release with the full named timestamp fields
@@ -253,7 +279,7 @@ def iter_dandi_000004(root: Path):
 
 
 def alm_data_directory(root: Path) -> Path:
-    """Directory of Inagaki ALM5 perturbation sessions (mouse ALM, single structure by design)."""
+    """Directory of mouse ALM perturbation sessions (mouse ALM, single structure by design)."""
     config = load_dataset_registry()
     local_path = config["datasets"]["inagaki_alm5"]["local_path"]
     return root / local_path / "RandomDelayTask" / "withPerturbation"
@@ -708,8 +734,8 @@ PFC4_MIN_UNIT_RATE_HZ = 0.1
 
 
 def pfc4_data_directory(root: Path) -> Path:
-    """Directory of the CRCNS pfc-4 (Romo somatosensory delay task) release,
-    one animal per top-level subfolder, matching the ALM/Watters resolution
+    """Directory of the CRCNS pfc-4 (somatosensory delay task) release,
+    one animal per top-level subfolder, matching the ALM/macaque multi-object working-memory corpus (doi:10.64898/2026.01.27.702062) resolution
     pattern for a non-NWB release."""
     config = load_dataset_registry()
     local_path = config["datasets"]["pfc4"]["local_path"]
@@ -796,3 +822,873 @@ def independent_unit(corpus: str, session: str) -> str:
     if corpus.startswith("dandi_"):
         return session.split("__", 1)[0]
     return session.split("_", 1)[0]
+
+
+def _watters_bundle_with_label(entry: dict, content_label_k_classes: int) -> dict:
+    session, arrays, usable = entry["session"], entry["arrays"], entry["usable"]
+    counts = session["counts"]
+    activity_by_unit = counts.sum(axis=2)[usable]
+    theta = np.mod(np.asarray(session["cued_theta"], dtype=float)[usable], 2.0 * np.pi)
+    label = (np.floor(theta / (2.0 * np.pi / content_label_k_classes)).astype(int)) % content_label_k_classes
+    return {
+        "session": session["session"], "activity_by_unit": activity_by_unit, "deviation": arrays["deviation"],
+        "outcome_raw": arrays["report_error"], "spike_count": arrays["spike_count"],
+        "trial_index": arrays["trial_index"], "memorandum_label": label.astype(float),
+        "item_count": arrays["item_count"],
+    }
+
+
+def pool_draws_within_session(draw_values: list) -> float | None:
+    """Mean of a session's own repeated-draw correlation coefficients -- the within-session pooling step
+    that runs BEFORE any cross-session significance test, so a session is represented by one value per
+    rung regardless of how many independent unit subsamples were drawn for it. None/NaN draws (a
+    not-computable fit) are dropped rather than propagated; a session with no usable draw at all pools to
+    None, which the caller must treat as an exclusion, not a zero."""
+    finite = [float(v) for v in draw_values if v is not None and np.isfinite(v)]
+    return float(np.mean(finite)) if finite else None
+
+
+def recognition_correct(labels: np.ndarray, responses: np.ndarray) -> np.ndarray:
+    true_old = np.asarray(labels).astype(str) == "0"
+    response_old = np.asarray(responses, dtype=float) >= 34
+    return true_old == response_old
+
+
+def _watters_bundles(watters_arrays_by_session: dict) -> list[dict]:
+    bundles = []
+    for session_id, entry in watters_arrays_by_session.items():
+        bundle = _watters_bundle_with_label(entry, CONTENT_LABEL_K_CLASSES)
+        # cued_theta is not part of _watters_bundle_with_label's own return (it only needs the
+        # discretised label from it); the axis-alignment analysis's continuous memorandum regression subspace needs the raw
+        # angle, restricted to the identical `usable` trial mask that function already applied.
+        bundle["cued_theta"] = np.asarray(entry["session"]["cued_theta"], dtype=float)[entry["usable"]]
+        bundles.append(bundle)
+    return bundles
+
+
+def _watters_session_bundle(session: dict, arrays: dict, usable: np.ndarray) -> dict:
+    counts = session["counts"]
+    activity_by_unit = counts.sum(axis=2)[usable]
+    theta = np.mod(np.asarray(session["cued_theta"], dtype=float)[usable], 2.0 * np.pi)
+    label = (np.floor(theta / (2.0 * np.pi / CONTENT_LABEL_K_CLASSES)).astype(int)) % CONTENT_LABEL_K_CLASSES
+    return {
+        "session": session["session"], "corpus": "watters_2026_macaque_multi_object",
+        "activity_by_unit": activity_by_unit, "deviation": arrays["deviation"],
+        "outcome_raw": arrays["report_error"], "spike_count": arrays["spike_count"],
+        "trial_index": arrays["trial_index"], "memorandum_label": label.astype(float), "counts": counts[usable],
+        "n_trials_total": int(counts.shape[0]), "n_trials_with_defined_direction": int(usable.sum()),
+    }
+
+
+def _load_alm_for_counting_noise_census(root: Path) -> list[dict]:
+    directory = alm_data_directory(root)
+    out = []
+    if not directory.is_dir():
+        return out
+    for path in sorted(directory.glob("*.mat")):
+        raw = load_alm_raw_session(path, bin_ms=100.0, window_s=1.2, require_both_arms=False)
+        if raw is None:
+            continue
+        out.append({"session": path.stem, "activity_by_unit": raw["control_counts"].sum(axis=2)})
+    return out
+
+
+SESSIONS = ("sham", "verum")
+
+
+def paired_inventory(dataset_root: Path) -> dict:
+    participants = sorted(p.name for p in dataset_root.glob("sub-*") if p.is_dir())
+    paths = {}
+    for participant in participants:
+        paths[participant] = {
+            session: dataset_root / participant / f"ses-{session}" / "eeg"
+            / f"{participant}_ses-{session}_task-memory_eeg.set"
+            for session in SESSIONS
+        }
+    complete = [p for p in participants if all(paths[p][s].is_file() for s in SESSIONS)]
+    unpaired = [p for p in participants if sum(paths[p][s].is_file() for s in SESSIONS) == 1]
+    absent = [p for p in participants if not any(paths[p][s].is_file() for s in SESSIONS)]
+    return {
+        "registered_participants": participants,
+        "complete_pairs": complete,
+        "unpaired_raw": unpaired,
+        "no_raw_memory_recording": absent,
+        "paths": paths,
+    }
+
+
+def _load_ds005034_session(directory, subject_dir, session):
+    """Loads one (subject, stimulation-arm) recording directly, duplicating the minimal
+    admission/window logic iter_ds005034 (src/corpus_sessions.py) applies -- needed so an
+    already-checkpointed session can be skipped without paying that corpus iterator's own
+    per-session EEG-load cost (a plain generator cannot be fast-forwarded past expensive
+    items, and the iterator itself may not be edited in place). Field-for-field identical
+    to what iter_ds005034 yields for the fields this script actually reads."""
+    eeg_dir = subject_dir / f"ses-{session}" / "eeg"
+    set_path = eeg_dir / f"{subject_dir.name}_ses-{session}_task-memory_eeg.set"
+    if not set_path.is_file():
+        return None
+    events_path = eeg_dir / f"{subject_dir.name}_ses-{session}_task-memory_events.tsv"
+    events = load_events(events_path)
+    if len(events) < MIN_TRIALS:
+        return None
+    payload = loadmat(set_path, variable_names=("data", "srate"), squeeze_me=True)
+    data_tc = np.asarray(payload["data"], dtype=np.float64).T
+    srate = float(payload["srate"])
+    onset_samples = np.array([int(round((event["onset"] + 0.5) * srate)) for event in events])
+    counts = _scalp_delay_bin_power(data_tc, srate, onset_samples, window_s=6.0, n_bins=SCALP_EEG_DELAY_BINS)
+    keep = np.isfinite(counts).all(axis=(1, 2))
+    if keep.sum() < MIN_TRIALS:
+        return None
+    return {
+        "patient": subject_dir.name, "session": f"{subject_dir.name}_ses-{session}",
+        "stimulation_session": session, "counts": counts[keep],
+        "task_condition": np.array([event["task"] for event in events])[keep],
+        "load": np.array([event["load"] for event in events], dtype=float)[keep],
+    }
+
+
+MIN_SESSIONS_FOR_PRIMARY_BRANCH = 8
+
+
+AXIS_WINDOW = (0.3, 1.0)
+
+
+MIN_UNITS = 15
+
+
+N_COMPONENTS = 8
+
+
+N_SPLITS = 5
+
+
+WINDOW_S = 2.3
+
+
+MAINT_ONSET_S = 3.0
+
+
+MAINT_WIN = 3.0
+
+
+RULE_HASH = "c9505c80aed6b6c82494e472991a519c46a60a00bd8bfab7e6375f0706dc0ecd"
+
+
+def patient_level_means(sessions: dict, metric_names: tuple[str, ...]) -> dict[str, dict[str, float]]:
+    """Average each metric within patient before any cross-patient inference."""
+    by_patient: dict[str, list[dict]] = {}
+    for key, row in sessions.items():
+        if row["status"] != "complete":
+            continue
+        patient = key.split("_ses-")[0]
+        by_patient.setdefault(patient, []).append(row)
+    patient_metrics: dict[str, dict[str, float]] = {}
+    for patient, rows in by_patient.items():
+        patient_metrics[patient] = {}
+        for name in metric_names:
+            values = [row["summary"][name] for row in rows if row["summary"][name] is not None]
+            patient_metrics[patient][name] = float(np.mean(values)) if values else None
+    return patient_metrics
+
+
+def _trial_group(handle: h5py.File, release: str):
+    return handle["intervals/WM_trials"] if release == "001187" else handle["intervals/trials"]
+
+
+def _stimulation_displacement_session(rec: dict) -> dict:
+    arrays = rec["arrays"]
+    ch_names = arrays["ch_names"].tolist()
+    anode, cathode, stim_ch = str(arrays["anode"]), str(arrays["cathode"]), str(arrays["stim_channel"])
+    masks = channel_condition_masks(ch_names, anode, cathode, stim_ch)
+    stim_flag = arrays["stim_flag"]
+    n_stim, n_ctrl = int(stim_flag.sum()), int((stim_flag == 0).sum())
+    conditions = {}
+    for name, mask in masks.items():
+        activity = _bin_averaged(arrays, mask)
+        out = compute_stimulation_displacement(activity, stim_flag)
+        ctrl_dev, stim_dev = out["control_deviation"], out["stim_deviation"]
+        finite_ctrl, finite_stim = np.isfinite(ctrl_dev), np.isfinite(stim_dev)
+        if finite_ctrl.sum() < 8 or finite_stim.sum() < 4:
+            conditions[name] = {"status": "too_few_trials", "n_channels": int(mask.sum())}
+            continue
+        displacement = float(np.nanmean(stim_dev[finite_stim]) - np.nanmean(ctrl_dev[finite_ctrl]))
+        spontaneous_sd = float(np.nanstd(ctrl_dev[finite_ctrl], ddof=1)) if finite_ctrl.sum() >= 2 else float("nan")
+        total_power = activity.sum(axis=1)
+        power_change = float(np.nanmean(total_power[stim_flag == 1][finite_stim])
+                             - np.nanmean(total_power[stim_flag == 0][finite_ctrl]))
+        conditions[name] = {
+            "status": "computed", "n_channels": int(mask.sum()),
+            "n_stim_trials": int(finite_stim.sum()), "n_control_trials": int(finite_ctrl.sum()),
+            "displacement": displacement,
+            "spontaneous_control_sd": spontaneous_sd,
+            "normalised_displacement": (displacement / spontaneous_sd) if spontaneous_sd and spontaneous_sd > 0 else None,
+            "total_power_change": power_change,
+        }
+    return {"status": "computed", "n_stim_trials_total": n_stim, "n_control_trials_total": n_ctrl,
+            "conditions": conditions, "stim_channel": stim_ch, "anode": anode, "cathode": cathode}
+
+
+EPOCH_WINDOWS_BY_DATASET = {
+    "dandi_000469": EPOCH_WINDOWS_S,
+    "dandi_001187": EPOCH_WINDOWS_S,
+    "dandi_000574": BORAN_EPOCH_WINDOWS_S,
+}
+
+
+def raw_counts_from_entry(entry: dict, bin_ms: float) -> np.ndarray:
+    """Integer spike counts (trials, units, bins), delay epoch, un-smoothed."""
+    window = EPOCH_WINDOWS_BY_DATASET[entry["dataset"]]["delay"]
+    rate = build_psth(entry["spike_lists"], entry["epoch_onsets"]["delay"], bin_ms=bin_ms, smooth_ms=0, window_s=window)
+    return np.rint(rate * (bin_ms / 1000.0)).astype(int)
+
+
+ONSET_BIN = 16
+
+
+BEHAVIOURAL_REFERENCE_R_UNITS = 0.14
+
+
+CONTINUITY_ALIGNMENT_FLOOR_ABS_COSINE = 0.05
+
+
+def _alignment_summary(observed: float, draws: np.ndarray) -> dict:
+    finite = draws[np.isfinite(draws)]
+    return {
+        "observed_abs_cosine": observed,
+        "observed_squared_fraction": observed ** 2,
+        "null_mean_abs_cosine": float(np.mean(finite)) if finite.size else None,
+        "null_sd_abs_cosine": float(np.std(finite)) if finite.size else None,
+        "n_null_draws": int(finite.size),
+    }
+
+
+def _bias_only_axis(control_activity: np.ndarray) -> np.ndarray | None:
+    """The plain normalised mean unit-direction over control trials -- the one direction the residual
+    axis is, by construction, orthogonal to. Standing in here for "every trial's value replaced by its
+    session's own mean", this project's established bias-only pattern, applied to the axis itself rather
+    than to a per-trial scalar since the primary statistic here is a single per-session direction, not a
+    per-trial correlation."""
+    u = unit_direction_vectors(control_activity)
+    valid = ~np.isnan(u).any(axis=1)
+    if int(valid.sum()) < 2:
+        return None
+    mean_dir = u[valid].mean(axis=0)
+    mean_norm = float(np.linalg.norm(mean_dir))
+    return (mean_dir / mean_norm).astype(float) if mean_norm > 1e-12 else None
+
+
+def _bias_only_voids(real_pooled: dict, bias_pooled: dict) -> bool:
+    """Sign-and-significance-only voiding, never a magnitude comparison: the bias-only control reproduces
+    the real result exactly when both are non-significant, or both are significant with the same
+    above-/below-null direction."""
+    if real_pooled.get("real_pooled", {}).get("status") != "tested" or bias_pooled.get("real_pooled", {}).get("status") != "tested":
+        return False
+    if bool(real_pooled.get("significant")) != bool(bias_pooled.get("significant")):
+        return False
+    if real_pooled.get("significant") and (real_pooled.get("below_null") != bias_pooled.get("below_null")):
+        return False
+    return True
+
+
+def _classify_arm(pooled: dict, bias_pooled: dict) -> dict:
+    mdd_block = pooled.get("minimum_detectable_difference_80pct_power", {})
+    mdd = mdd_block.get("mdd") if isinstance(mdd_block, dict) and mdd_block.get("status") == "computed" else None
+    effect = pooled.get("real_pooled", {}).get("mean_value")
+    if pooled.get("real_pooled", {}).get("status") != "tested" or mdd is None or effect is None:
+        return {"branch": "not_computable", "mdd": mdd, "effect": effect}
+    voids = _bias_only_voids(pooled, bias_pooled)
+    if voids:
+        return {"branch": "displacement_direction_not_separable_from_a_unit_level_offset",
+                "mdd": mdd, "effect": effect}
+    if mdd >= BEHAVIOURAL_REFERENCE_R_UNITS:
+        return {"branch": "inconclusive_below_detection_floor", "mdd": mdd, "effect": effect}
+    if pooled.get("significant") and pooled.get("below_null") is False:
+        return {"branch": "stimulation_pushes_along_the_deviation_axis", "mdd": mdd, "effect": effect}
+    return {"branch": "stimulation_pushes_off_the_deviation_axis", "mdd": mdd, "effect": effect}
+
+
+def displacement_vector(control_activity: np.ndarray, stim_activity: np.ndarray) -> dict | None:
+    """Mean unit-normalised direction over admitted stimulated trials minus the same over the matched
+    (same-session) control trials -- rate-free on both sides, in the identical feature space the axis is
+    estimated in."""
+    u_ctrl = unit_direction_vectors(control_activity)
+    u_stim = unit_direction_vectors(stim_activity)
+    valid_ctrl = ~np.isnan(u_ctrl).any(axis=1)
+    valid_stim = ~np.isnan(u_stim).any(axis=1)
+    if int(valid_ctrl.sum()) < MIN_TRIALS_WITH_DEFINED_DIRECTION or int(valid_stim.sum()) < MIN_TRIALS_WITH_DEFINED_DIRECTION:
+        return None
+    mean_ctrl = u_ctrl[valid_ctrl].mean(axis=0)
+    mean_stim = u_stim[valid_stim].mean(axis=0)
+    direction = mean_stim - mean_ctrl
+    norm = float(np.linalg.norm(direction))
+    unit = (direction / norm).astype(float) if norm > 1e-12 else None
+    return {
+        "direction_unit": unit, "norm": norm,
+        "n_control_trials_used": int(valid_ctrl.sum()), "n_stim_trials_used": int(valid_stim.sum()),
+    }
+
+
+def estimate_axis(activity: np.ndarray, trial_index: np.ndarray, source: str, detrend: bool,
+                   seed_tag: str) -> dict:
+    """The residual-eigenvector axis, fit on `activity` alone. `source` must be the literal string
+    "control_only" -- anything else raises immediately, because no stimulated trial may ever reach this
+    fit, and a caller passing e.g. "includes_stimulated_trials" is exactly the mistake this guard exists
+    to catch before it can silently contaminate an axis estimate."""
+    if source != "control_only":
+        raise ValueError(
+            "estimate_axis refuses any source other than 'control_only' -- a stimulated trial must never "
+            f"enter the axis fit; got source={source!r}")
+    used_activity = _linear_detrend_activity(activity, trial_index) if detrend else activity
+    rows = _residual_rows(used_activity)
+    if rows["n_kept"] < MIN_TRIALS_WITH_DEFINED_DIRECTION:
+        return {"status": "too_few_trials_with_defined_direction", "n_kept": rows["n_kept"]}
+    R, idx = _unit_residual_matrix(rows)
+    axis = leading_eigenvector(R)
+    stability = _axis_stability(R, seed_tag)
+    return {"status": "computed", "axis": axis, "n_trials_kept": int(R.shape[0]), "axis_stability": stability}
+
+
+DATA_DIR = dataset_path("dandi_000469")
+
+
+ITEM_FIELDS = {"item1": "loadsEnc1_PicIDs", "item2": "loadsEnc2_PicIDs", "item3": "loadsEnc3_PicIDs"}
+
+
+def monkey_for_session(stem: str) -> str:
+    year = int(stem[:2])
+    return {21: "A", 22: "H", 24: "J"}.get(year, "unknown")
+
+
+N_NEURONS_TARGET = 80
+
+
+DATA = dataset_path("ram_ds005489_openloop")
+
+
+def discover_000574_sessions(root: Path) -> list[tuple[str, str, Path]]:
+    """Returns (patient, session_key, nwb_path) triples, sorted."""
+    out = []
+    for subject_dir in sorted((root / "000574").glob("sub-*")):
+        for path in sorted(subject_dir.glob("*.nwb")):
+            out.append((subject_dir.name, path.stem, path))
+    return out
+
+
+def _panichello_directory(root: Path) -> Path | None:
+    config = json.loads((Path(__file__).resolve().parents[1] / "config" / "datasets.json").read_text())
+    entry = config["datasets"]["panichello_2024"]  # raise if the registry key is missing/mistyped, not a silent skip
+    path = root / entry["local_path"]
+    return path if path.is_dir() else None
+
+
+def _macaque_session_bundle(path: Path) -> dict | None:
+    raw = loadmat(str(path), simplify_cells=True)
+    spikes = np.asarray(raw["spks"], dtype=float)
+    time_ms = np.asarray(raw["tc"], dtype=float).reshape(-1)
+    is_corr = np.asarray(raw["isCorr"]).astype(bool).reshape(-1)
+    cue_idx = np.asarray(raw["cueAngIdx"]).reshape(-1).astype(float)
+    counts_all = _counts_from_spikes(spikes, time_ms)
+    if counts_all.shape[0] < 16:
+        return None
+    activity_by_unit = counts_all.sum(axis=2)
+    deviation = rate_free_state_deviation(activity_by_unit)
+    finite = np.isfinite(deviation)
+    if int(finite.sum()) < MIN_TRIALS_WITH_DEFINED_DIRECTION:
+        return None
+    return {
+        "session": path.stem, "corpus": "panichello_2024_macaque_lPFC_single_item",
+        "activity_by_unit": activity_by_unit[finite], "deviation": deviation[finite],
+        "outcome_raw": is_corr[finite].astype(float), "spike_count": activity_by_unit.sum(axis=1)[finite],
+        "trial_index": np.arange(counts_all.shape[0], dtype=float)[finite],
+        "memorandum_label": cue_idx[finite], "counts": counts_all[finite],
+        "n_trials_total": int(counts_all.shape[0]), "n_trials_with_defined_direction": int(finite.sum()),
+    }
+
+
+DATE_BLOCK_TO_ANIMAL = {"21": "monkey_A", "22": "monkey_H", "24": "monkey_J"}
+
+
+def _load_session(path: Path) -> dict:
+    """Every per-session array the three result blocks need, read once.
+
+    The raster is left in its deposited integer dtype and binned directly:
+    the largest session's raster is 810 x 1950 x 716, which a float cast
+    would expand to nine gigabytes for no gain, while the binned counts it
+    reduces to are a few tens of megabytes.
+    """
+    raw = loadmat(str(path), squeeze_me=True)
+    spikes = raw["spks"]
+    time_ms = np.asarray(raw["tc"], dtype=float).reshape(-1)
+    is_corr_raw = np.asarray(raw["isCorr"]).reshape(-1)
+    cue_idx = np.asarray(raw["cueAngIdx"]).reshape(-1)
+    cue_ang = np.asarray(raw["cueAng"], dtype=float).reshape(-1)
+    counts = np.asarray(_counts_from_spikes(spikes, time_ms), dtype=float)
+    is_corr = is_corr_raw.astype(bool)
+    finite = np.isfinite(np.asarray(is_corr_raw, dtype=float))
+    return {
+        "session": path.stem,
+        "date_block": path.stem[:2],
+        "animal": DATE_BLOCK_TO_ANIMAL.get(path.stem[:2], "unassigned"),
+        "counts": counts,
+        "is_corr": is_corr,
+        "cue_idx": cue_idx.astype(int),
+        "cue_ang": cue_ang,
+        "n_trials": int(counts.shape[0]),
+        "n_units": int(counts.shape[1]),
+        "n_bins": int(counts.shape[2]),
+        "n_correct": int(is_corr.sum()),
+        "n_error": int((~is_corr).sum()),
+        "outcome_field_dtype": str(is_corr_raw.dtype),
+        "outcome_field_distinct_values": sorted(float(v) for v in np.unique(is_corr_raw)),
+        "outcome_field_n_non_finite": int((~finite).sum()),
+        "outcome_field_length_matches_trials": bool(len(is_corr_raw) == counts.shape[0]),
+        "cue_label_distinct_values": sorted(int(v) for v in np.unique(cue_idx)),
+    }
+
+
+def _session_paths(root: Path) -> list[Path]:
+    directory = _panichello_directory(root)
+    if directory is None:
+        return []
+    return [Path(p) for p in sorted(glob.glob(str(directory / "*.mat")))]
+
+
+def _session_arrays(path: Path) -> dict | None:
+    raw = loadmat(str(path), simplify_cells=True)
+    spikes = np.asarray(raw["spks"], dtype=float)
+    time_ms = np.asarray(raw["tc"], dtype=float).reshape(-1)
+    is_corr = np.asarray(raw["isCorr"]).astype(bool).reshape(-1)
+    counts_all = _counts_from_spikes(spikes, time_ms)  # (trials, units, bins), whole delay epoch
+    if counts_all.shape[0] < 16:
+        return None
+    activity_by_unit = counts_all.sum(axis=2)  # (trials, units) -- per-unit total spike count, delay epoch
+    deviation = rate_free_state_deviation(activity_by_unit)
+    total_spike_count = activity_by_unit.sum(axis=1)
+    trial_index = np.arange(counts_all.shape[0], dtype=float)
+    finite = np.isfinite(deviation)
+    if finite.sum() < 16:
+        return None
+    return {
+        "is_corr": is_corr[finite].astype(float),
+        "deviation": deviation[finite],
+        "spike_count": total_spike_count[finite],
+        "trial_index": trial_index[finite],
+        "n_trials_total": int(counts_all.shape[0]),
+        "n_trials_with_defined_direction": int(finite.sum()),
+    }
+
+
+def _reachable_sessions(root: Path, limit: int | None = None) -> list[Path]:
+    directory = _panichello_directory(root)
+    if directory is None:
+        return []
+    paths = []
+    for path in sorted(glob.glob(str(directory / "*.mat"))):
+        raw = loadmat(path, simplify_cells=True)
+        is_corr = np.asarray(raw["isCorr"]).astype(bool).reshape(-1)
+        n_error = int((~is_corr).sum())
+        if n_error >= MIN_ERROR_TRIALS_FOR_REACHABILITY:
+            paths.append(Path(path))
+            if limit is not None and len(paths) >= limit:
+                break
+    return paths
+
+
+def _session_limit() -> int | None:
+    raw = os.environ.get(MAX_SESSIONS_ENV_VAR)
+    if not raw:
+        return None
+    try:
+        n = int(raw)
+    except ValueError:
+        return None
+    return n if n > 0 else None
+
+
+def _panichello_session_inputs(root: Path):
+    """Yields (session_id, reason_or_None, core_or_None, categorical_spec, continuous_spec,
+    counts_all_or_None) for every macaque prefrontal spatial working-memory corpus (Dryad doi:10.5061/dryad.kkwh70sct) session this corpus's own data admits -- factored out
+    of run_panichello so the rule-3 mutual-orthogonalisation recomputation (only triggered if two or
+    more of this corpus's own candidates align, see _orthogonalized_alignment_for_corpus) can rebuild
+    the identical per-session inputs without duplicating this loading logic."""
+    directory = _panichello_directory(root)
+    paths = sorted(glob.glob(str(directory / "*.mat"))) if directory else []
+    limit = _session_limit()
+    if limit:
+        paths = paths[:limit]
+    for path in paths:
+        session_id = Path(path).stem
+        raw = loadmat(path, simplify_cells=True)
+        spikes = np.asarray(raw["spks"], dtype=float)
+        time_ms = np.asarray(raw["tc"], dtype=float).reshape(-1)
+        cue_idx = np.asarray(raw["cueAngIdx"], dtype=float).reshape(-1)
+        counts_all = _counts_from_spikes(spikes, time_ms)
+        activity_by_unit = counts_all.sum(axis=2)
+        core = _session_core(activity_by_unit)
+        if core is None:
+            yield (session_id, "fewer than the trial floor have a defined leave-one-out direction",
+                   None, {}, {}, None)
+            continue
+        categorical = {"memorandum_content": cue_idx, "previous_trial_content": _previous_label(cue_idx)}
+        continuous = {"gain_total_spike_count": core["spike_count"]}
+        yield session_id, None, core, categorical, continuous, counts_all
+
+
+def _load_panichello_for_counting_noise_census(root: Path) -> list[dict]:
+    directory = _panichello_directory(root)
+    if directory is None:
+        return []
+    out = []
+    for path in sorted(glob.glob(str(directory / "*.mat"))):
+        raw = loadmat(path, simplify_cells=True)
+        spikes = np.asarray(raw["spks"], dtype=float)
+        time_ms = np.asarray(raw["tc"], dtype=float).reshape(-1)
+        counts_all = _counts_from_spikes(spikes, time_ms)
+        out.append({"session": Path(path).stem, "activity_by_unit": counts_all.sum(axis=2)})
+    return out
+
+
+def _load_human_for_counting_noise_census(root: Path, dataset: str) -> list[dict]:
+    out = []
+    for entry in iter_all_corpora(root):
+        if entry["dataset"] != dataset or entry.get("structure") != "pooled":
+            continue
+        counts = delay_counts(entry["spike_lists"], entry["epoch_onsets"]["delay"], entry["epoch_windows"]["delay"])
+        out.append({"session": f"{entry['patient']}|{entry['session']}", "activity_by_unit": counts.sum(axis=2)})
+    return out
+
+
+def _session_trial_arrays(entry: dict) -> dict:
+    counts = delay_counts(entry["spike_lists"], entry["delay_onset"], entry["delay_window_s"], bin_ms=BIN_MS)
+    activity_by_unit = counts.sum(axis=2)
+    deviation = rate_free_state_deviation(activity_by_unit)
+    spike_count = activity_by_unit.sum(axis=1)
+    trial_index = np.arange(activity_by_unit.shape[0], dtype=float)
+    finite = np.isfinite(deviation)
+    n_finite = int(finite.sum())
+    if n_finite < MIN_TRIALS_WITH_DEFINED_DIRECTION:
+        return {"status": "too_few_trials_with_defined_direction", "n_trials_total": int(activity_by_unit.shape[0]),
+                "n_trials_with_defined_direction": n_finite}
+    dev = deviation[finite]
+    n = dev.shape[0]
+    total_dev = float(dev.sum())
+    # Session training-trial mean: the leave-one-out mean of the DEVIATION VALUES themselves (not the
+    # unit-vectors rate_free_state_deviation's own reference averages) -- a per-trial constant carrying
+    # only this session's between-session offset, with no trial-to-trial information at all. The mandatory
+    # placebo control below asks whether this constant alone reproduces any significant result.
+    control_dev = (total_dev - dev) / (n - 1) if n > 1 else np.full(n, np.nan)
+    return {
+        "status": "computed", "patient": entry["patient"], "session": entry["session"], "dataset": entry["dataset"],
+        "is_correct": entry["is_correct"][finite].astype(float), "deviation": dev, "control_deviation": control_dev,
+        "spike_count": spike_count[finite], "trial_index": trial_index[finite], "load_level": entry["load_level"][finite],
+        "n_trials_total": int(activity_by_unit.shape[0]), "n_trials_with_defined_direction": n_finite,
+    }
+
+
+WATTERS_MIN_TRIALS_FOR_CORRELATION = 16
+
+
+def _watters_reachability(counts: np.ndarray, discretized_label: np.ndarray, seed: int) -> dict:
+    """Reachability gate for the continuous multi-object memorandum, using the project's own
+    classification-based decodability test (session_subtractive_test) -- the same machinery the macaque
+    arm's gate uses -- rather than a continuous regression R-squared. A direct linear regression of unit
+    direction on the raw [cos, sin] cued-position target was tried first and was far too weak an estimator
+    to answer "does this decode at all" (observed R-squared indistinguishable from its own permutation
+    null on every session probed), while the classification test clears cleanly on several sessions of the
+    same data. The cued position is discretised into classes with the identical binning rule
+    results/watters_state_geometry.json's own cardinality ladder uses for this corpus so the gate result is
+    directly comparable to that delivered result. The DECOMPOSITION itself still uses the continuous
+    2-dimensional regression subspace; only this gate is discrete."""
+    if counts.shape[0] < WATTERS_MIN_TRIALS_FOR_CORRELATION:
+        return {"status": "too_few_trials", "n_trials": int(counts.shape[0])}
+    window_mean = FrozenPSTHTransform().fit(counts).transform(counts).mean(axis=2)[:, :, None]
+    result = session_subtractive_test(window_mean, discretized_label, seed)
+    if result.get("status") != "tested":
+        return {"status": "content_reachability_not_computable", "subtractive_status": result.get("status")}
+    cleared = bool(result.get("a_full_clears_own_null", False))
+    return {
+        "status": "tested", "n_trials": int(counts.shape[0]),
+        "n_classes_discretised": WATTERS_RECOVERABILITY_K_CLASSES,
+        "a_full": result["a_full"], "a_full_p_value": result["a_full_p_value"],
+        "cleared": cleared, "k_latents": result["k_latents"],
+    }
+
+
+def alm_sessions(root: Path):
+    for meta in iter_alm(root, bin_ms=BIN_MS, window_s=ALM_WINDOW_S):
+        yield {
+            "corpus": "alm", "session": meta["session"], "counts": meta["counts"],
+            "label": meta.get("condition"), "label_field": meta.get("item_id_field"),
+            "n_splits": 12, "n_null_replicates": 20,
+        }
+
+
+def _human_counts_from_spikes(spike_lists, onset, window_s: float, bin_ms: float = BIN_MS) -> np.ndarray:
+    rate = build_psth(spike_lists, onset, bin_ms=bin_ms, smooth_ms=0.0, window_s=window_s)
+    return rate * (bin_ms / 1000.0)
+
+
+def human_sessions(root: Path):
+    for meta in iter_all_corpora(root):
+        if meta["structure"] != "pooled":
+            continue
+        onset = meta["epoch_onsets"]["delay"]
+        window_s = meta["epoch_windows"]["delay"]
+        counts = _human_counts_from_spikes(meta["spike_lists"], onset, window_s)
+        yield {
+            "corpus": "human_delay", "dataset": meta["dataset"], "session": meta["session"], "counts": counts,
+            "label": meta.get("item_ids"), "label_field": meta.get("item_id_field"),
+            "n_splits": 12, "n_null_replicates": 20,
+        }
+
+
+PANICHELLO_DELAY_WINDOW_MS = (300.0, 1450.0)
+
+
+def macaque_sessions(root: Path):
+    directory = _panichello_directory(root)
+    if directory is None:
+        return
+    for path in sorted(glob.glob(str(directory / "*.mat"))):
+        raw = loadmat(path, squeeze_me=True)
+        spikes = np.asarray(raw["spks"], dtype=float)
+        time_ms = np.asarray(raw["tc"], dtype=float).reshape(-1)
+        correct = np.asarray(raw["isCorr"], dtype=bool).reshape(-1)
+        cue_idx = np.asarray(raw["cueAngIdx"]).reshape(-1)
+        spikes, cue_idx = spikes[correct], cue_idx[correct]
+        starts = np.arange(PANICHELLO_DELAY_WINDOW_MS[0], PANICHELLO_DELAY_WINDOW_MS[1], BIN_MS)
+        binned = [spikes[:, (time_ms >= s) & (time_ms < s + BIN_MS), :].sum(axis=1) for s in starts]
+        counts = np.stack(binned, axis=2)
+        yield {
+            "corpus": "panichello_lpfc", "session": Path(path).stem, "counts": counts,
+            "label": cue_idx.astype(int), "label_field": "cueAngIdx (8-way cued colour/location bin)",
+            "n_splits": 10, "n_null_replicates": 10,
+        }
+
+
+HUMAN_DELAY_WINDOW_S = 2.3
+
+
+def load_human_session_arrays(entry: dict) -> dict | None:
+    """From one corpus_sessions.iter_dandi_000469 entry, build the delay-epoch trial-by-feature
+    array (trial-mean firing rate per unit, for the deviation score and the two subspace claims) and
+    the full delay-epoch PSTH tensor (for cross-temporal generalisation)."""
+    spike_lists = entry["spike_lists"]
+    onsets = entry["epoch_onsets"]["delay"]
+    n_trials = len(onsets)
+    if n_trials < 20 or len(spike_lists) < 8:
+        return None
+    psth = build_psth(spike_lists, onsets, bin_ms=HUMAN_BIN_MS, smooth_ms=0.0,
+                       window_s=HUMAN_DELAY_WINDOW_S)  # (n_trials, n_units, n_bins)
+    X_flat = psth.mean(axis=2)  # (n_trials, n_units) -- native trial-by-feature array
+    item_ids = entry["item_ids"]
+    times = np.arange(psth.shape[2]) * (HUMAN_BIN_MS / 1000.0)
+    return {"psth": psth, "X_flat": X_flat, "item_ids": item_ids, "times": times}
+
+
+def _boran_field_potential_session(nwb_path: Path, signal: str) -> dict | None:
+    """One dandi_000574 session's maintenance-window band power for one field-potential signal
+    ('ieeg' = depth macro-contacts, 'eeg' = scalp montage), trial-admitted the same way
+    src/corpus_sessions.py's own dandi_000574 spike iterator admits trials (artifact-flag exclusion
+    plus correct-only), applied here independently since this reads a different signal group from the
+    same file and is not a modification of that iterator.
+    """
+    with h5py.File(str(nwb_path), "r") as handle:
+        if "intervals/trials" not in handle:
+            return None
+        trials = handle["intervals/trials"]
+        artifact = trials["artifact"][:].astype(bool)
+        correct = trials["correct"][:].astype(bool)
+    keep = (~artifact) & correct
+    if keep.sum() < MIN_TRIALS:
+        return None
+    loaded = load_boran_nwb(str(nwb_path), signal=signal, epoch_win=(-3.2, 0.3))
+    epochs = loaded["epochs"][keep]  # (N, C, T)
+    times = loaded["times"]
+    srate = loaded["srate"]
+    win_mask = (times >= FIELD_MAINTENANCE_WINDOW_S[0]) & (times < FIELD_MAINTENANCE_WINDOW_S[1])
+    win_times = times[win_mask]
+    n_bins = int(round((FIELD_MAINTENANCE_WINDOW_S[1] - FIELD_MAINTENANCE_WINDOW_S[0]) * 1000.0 / BIN_MS))
+    bin_edges = np.linspace(win_times[0], FIELD_MAINTENANCE_WINDOW_S[1], n_bins + 1)
+    n_trials, n_ch, _ = epochs.shape
+    power = np.zeros((n_trials, n_ch, n_bins), dtype=float)
+    for i in range(n_trials):
+        try:
+            filtered = bandpass_filter(epochs[i].T, FIELD_BAND_LO_HZ, FIELD_BAND_HI_HZ, srate)  # (T, C)
+        except Exception:
+            return None
+        sq = (filtered ** 2)[win_mask]
+        for b in range(n_bins):
+            bin_mask = (win_times >= bin_edges[b]) & (win_times < bin_edges[b + 1])
+            power[i, :, b] = sq[bin_mask].mean(axis=0) if bin_mask.any() else np.nan
+    if not np.isfinite(power).all():
+        return None
+    patient = nwb_path.parent.name
+    return {"dataset": f"dandi_000574_{signal}", "patient": patient, "session": nwb_path.stem,
+            "X": power, "bin_ms": BIN_MS}
+
+
+MATCHED_UNIT_COUNT = WATTERS_MIN_UNITS
+
+
+MIN_TRIALS_FOR_BEHAVIOURAL_CORRELATION = 16
+
+
+PRIMARY_QUALITY_TIER = "single_and_multi_unit"
+
+
+def _behaviour_observables(counts: np.ndarray, session: dict) -> tuple[dict, dict, np.ndarray]:
+    """The per-trial quantities every behavioural correlation in this script
+    is built from, restricted to the trials on which the state direction,
+    the saccadic report and the reaction time are all defined, together with
+    the exclusion count by reason and the mask itself."""
+    activity = counts.sum(axis=2)
+    deviation = rate_free_state_deviation(activity)
+    report_error = np.asarray(session["report_deviation"], dtype=float)
+    reaction_time = np.asarray(session["reaction_time_ms"], dtype=float)
+    usable = np.isfinite(deviation) & np.isfinite(report_error) & np.isfinite(reaction_time)
+    excluded = {
+        "state_direction_undefined_zero_total_activity": int(np.sum(~np.isfinite(deviation))),
+        "no_saccadic_report_recorded": int(np.sum(~np.isfinite(report_error))),
+        "no_reaction_time_recorded": int(np.sum(~np.isfinite(reaction_time) & np.isfinite(report_error))),
+    }
+    observables = {
+        "state_deviation": deviation[usable],
+        "spike_count": activity.sum(axis=1).astype(float)[usable],
+        "trial_index": np.arange(counts.shape[0], dtype=float)[usable],
+        "report_error": report_error[usable],
+        "reaction_time": reaction_time[usable],
+        "item_count": np.asarray(session["num_objects"], dtype=float)[usable],
+        "is_correct": np.asarray(session["correct"], dtype=bool)[usable],
+    }
+    return observables, excluded, usable
+
+
+def _subsets(rows_in: list[dict]) -> dict[str, list[dict]]:
+    subsets = {"pooled": rows_in}
+    for animal in sorted({r["animal"] for r in rows_in}):
+        subsets[f"animal_{animal}"] = [r for r in rows_in if r["animal"] == animal]
+    for variant in sorted({r["task_variant"] for r in rows_in}):
+        subsets[f"task_variant_{variant}"] = [r for r in rows_in if r["task_variant"] == variant]
+    return subsets
+
+
+QUALITY_TIERS = (PRIMARY_QUALITY_TIER, "good_single_units_only", "matched_unit_count_arm")
+
+
+def _object_geometry(behaviour, session: dict) -> dict:
+    """Per-trial swap (primary and strict) and imprecision, aligned to session['counts']'s own trial
+    order, computed from the corpus's raw per-object and per-response Cartesian coordinates (no
+    re-derivation from the polar columns, and no dependence on the corpus loader's own
+    report_deviation beyond a sanity check against it)."""
+    rows = behaviour.loc[(session["animal"], session["session_date"])]
+    trial_rows = rows.loc[session["trial_num"].tolist()]
+
+    object_x = trial_rows[[f"object_{i}_x" for i in range(3)]].to_numpy(dtype=float)
+    object_y = trial_rows[[f"object_{i}_y" for i in range(3)]].to_numpy(dtype=float)
+    response_x = trial_rows["response_x"].to_numpy(dtype=float)
+    response_y = trial_rows["response_y"].to_numpy(dtype=float)
+    target = trial_rows["target_object_index"].to_numpy(dtype=int)
+    n = len(target)
+
+    distances = np.hypot(object_x - response_x[:, None], object_y - response_y[:, None])
+    all_undefined = np.all(np.isnan(distances), axis=1)
+
+    # Identity check: the distance to the CUED object, computed here from raw Cartesian columns,
+    # must equal the corpus loader's own report_deviation (computed independently from polar columns).
+    target_col = np.clip(target, 0, 2)
+    target_distance = distances[np.arange(n), target_col]
+    reported_deviation = np.asarray(session["report_deviation"], dtype=float)
+    finite_both = np.isfinite(target_distance) & np.isfinite(reported_deviation)
+    identity_diff = np.abs(target_distance[finite_both] - reported_deviation[finite_both])
+
+    landed = np.full(n, -1, dtype=int)
+    ok = ~all_undefined
+    landed[ok] = np.nanargmin(distances[ok], axis=1)
+    landed_distance = np.full(n, np.nan)
+    landed_distance[ok] = distances[ok, landed[ok]]
+
+    swap_primary = np.zeros(n, dtype=bool)
+    swap_primary[ok] = landed[ok] != target[ok]
+
+    is_target_column = np.arange(3)[None, :] == target_col[:, None]
+    uncued_distances = np.where(is_target_column, np.nan, distances)
+    with np.errstate(invalid="ignore"), warnings.catch_warnings():
+        # An item-count-1 trial has no uncued object at all, so its row is all-NaN by construction --
+        # numpy's own expected warning for that case, not a sign of a missing value elsewhere.
+        warnings.filterwarnings("ignore", message="All-NaN slice encountered")
+        uncued_min_distance = np.nanmin(uncued_distances, axis=1)
+    swap_strict = uncued_min_distance < CORRECT_REPORT_DISTANCE_THRESHOLD  # NaN comparisons are False
+
+    return {
+        "swap_primary": swap_primary, "swap_strict": swap_strict, "imprecision": landed_distance,
+        "n_trials_all_object_positions_undefined": int(all_undefined.sum()),
+        "identity_check_max_abs_diff_target_distance_vs_report_deviation":
+            float(identity_diff.max()) if identity_diff.size else None,
+        "identity_check_n_compared": int(finite_both.sum()),
+    }
+
+
+def _swap_imprecision_session_arrays(session: dict, behaviour) -> dict | None:
+    observables, _excluded, usable = _behaviour_observables(session["counts"], session)
+    if int(usable.sum()) < MIN_TRIALS_FOR_BEHAVIOURAL_CORRELATION:
+        return None
+    covariates = trial_amplitude_covariates(session["counts"])
+    if covariates["status"] != "computed":
+        return None
+    amplitude_full = np.asarray(covariates["leading_component_score_gain"], dtype=float)
+    geometry = _object_geometry(behaviour, session)
+    return {
+        "item_count": observables["item_count"],
+        "deviation": observables["state_deviation"],
+        "amplitude": amplitude_full[usable],
+        "spike_count": observables["spike_count"],
+        "trial_index": observables["trial_index"],
+        "swap_primary": geometry["swap_primary"][usable].astype(float),
+        "imprecision": geometry["imprecision"][usable],
+    }
+
+
+def _observable_arrays(counts: np.ndarray, session: dict) -> tuple[dict | None, dict, np.ndarray]:
+    """Every array the correlation family needs, restricted to trials with a
+    defined state direction, report and reaction time (_behaviour_
+    observables' own usable mask), with the amplitude covariate computed on
+    the FULL session (trial_amplitude_covariates fits its transform on every
+    trial passed in) and then subset by the identical mask -- the same
+    convention every other corpus's amplitude arm in this project uses."""
+    observables, excluded, usable = _behaviour_observables(counts, session)
+    if int(usable.sum()) < MIN_TRIALS_FOR_BEHAVIOURAL_CORRELATION:
+        return None, excluded, usable
+    covariates = trial_amplitude_covariates(counts)
+    if covariates["status"] != "computed":
+        return None, excluded, usable
+    amplitude_full = np.asarray(covariates["leading_component_score_gain"], dtype=float)
+    arrays = {
+        "amplitude": amplitude_full[usable], "deviation": observables["state_deviation"],
+        "report_error": observables["report_error"], "spike_count": observables["spike_count"],
+        "trial_index": observables["trial_index"], "reaction_time": observables["reaction_time"],
+        "item_count": observables["item_count"],
+    }
+    return arrays, excluded, usable
+
+
+def _matched_unit_subset(counts: np.ndarray, seed_tag: str) -> np.ndarray:
+    rng = np.random.default_rng(stable_seed(f"{seed_tag}|matched_units"))
+    drawn = np.sort(rng.choice(counts.shape[1], size=MATCHED_UNIT_COUNT, replace=False))
+    return counts[:, drawn]
+
+
+def _synthetic_time_independent_counts(rng: np.random.Generator, n_trials: int, n_units: int, n_bins: int) -> np.ndarray:
+    trial_rate = rng.gamma(shape=2.0, scale=1.5, size=(n_trials, n_units))
+    return rng.poisson(trial_rate[:, :, None] * np.ones((1, 1, n_bins))).astype(float)
+
+
+def data_directory() -> Path:
+    root = os.environ.get("WM_DYNAMICS_DATA_ROOT")
+    if not root:
+        raise SystemExit("Set WM_DYNAMICS_DATA_ROOT to the external data root.")
+    path = Path(root) / "Wolff" / "data"
+    if not path.is_dir():
+        raise SystemExit(f"impulse-perturbation scalp-EEG data not staged at {path}")
+    return path

@@ -14,7 +14,7 @@ of edges with 50 Maslov-Sneppen rewirings claimed in one artifact's own
 metadata string versus the 15%-density, 20-null-draw Maslov-Sneppen battery
 the code that produced both artifacts actually ran) -- see
 scripts/run_observability_and_power_census.py's
-small_worldness_sigma_definition_change for the full account of that defect
+small_worldness_sigma_definition_change for the full account of that error
 and what it turned out to be. Both call sites now import this module.
 """
 

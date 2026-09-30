@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""DANDI 000469 (Kyzar/Rutishauser lab) single-unit Sternberg WM pipeline.
+"""DANDI 000469 single-unit Sternberg WM pipeline.
 
-One of three Rutishauser-lab Sternberg single-unit datasets used in this
+One of three human single-unit DANDI Sternberg single-unit datasets used in this
 project (000469, 001187, 000673 — see run_001187_pipeline.py and
 run_000673_pipeline.py); kept as separate stats keys / result files per
 dataset since they are the same lab/task lineage, not independent
@@ -39,7 +39,6 @@ from geometry import temporal_stability_tau
 from statistics import linear_mixed_effects_test, fdr_bh, stable_seed, paired_sign_flip_test
 from provenance import _json_safe
 
-DATA_DIR = dataset_path("dandi_000469")
 RESULTS = ROOT / "results"
 N_PC = 8
 BIN_MS = 100
@@ -59,13 +58,14 @@ PR_MIN_TRIALS_PER_GROUP = 8
 
 
 def main():
+    data_dir = dataset_path("dandi_000469")
     summary = {}
     times = np.arange(BIN_MS / 2, MAINT_WIN * 1000, BIN_MS) / 1000.0
     pooled_drift, pooled_correct, pooled_subj, pooled_n_units, pooled_load = [], [], [], [], []
 
     for sub_n in range(1, 22):
         subj = f"sub-{sub_n}"
-        nwb_wm = DATA_DIR / subj / f"{subj}_ses-2_ecephys+image.nwb"
+        nwb_wm = data_dir / subj / f"{subj}_ses-2_ecephys+image.nwb"
         if not nwb_wm.exists():
             print(f"  SKIP {subj} — no ses-2 file")
             continue
@@ -97,10 +97,10 @@ def main():
 
         if response_acc.mean() < MIN_SESSION_ACCURACY:
             print(f"  SKIP — accuracy {100*response_acc.mean():.1f}% < "
-                  f"{100*MIN_SESSION_ACCURACY:.0f}% (Daume et al. 2024 QC floor)")
+                  f"{100*MIN_SESSION_ACCURACY:.0f}% (published QC floor)")
             continue
 
-        # Firing-rate QC floor (Daume et al. 2024): drop units whose mean rate
+        # Firing-rate QC floor (published): drop units whose mean rate
         # across the maintenance window falls below MIN_UNIT_FIRING_RATE_HZ,
         # then re-check the session still has enough units to analyze.
         rate_mask = low_rate_unit_mask(spike_lists, t_maint, MAINT_WIN)

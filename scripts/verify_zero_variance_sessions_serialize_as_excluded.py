@@ -31,7 +31,7 @@ and never rewritten. The only output is
 results/zero_variance_session_exclusion_guard.json.
 
 Run:
-    /home/amin/miniconda3/envs/wm_dynamics/bin/python scripts/verify_zero_variance_sessions_serialize_as_excluded.py
+    python scripts/verify_zero_variance_sessions_serialize_as_excluded.py
 """
 from __future__ import annotations
 
@@ -143,7 +143,7 @@ def main() -> None:
                 if _carries_degenerate_signature(entry):
                     failures.append(
                         f"{s}/{arm}: status='fitted' but carries the exact guard-fallback signature "
-                        f"(slope 0.0, zero-width CI, p=1.0) -- the defect this guard exists to catch "
+                        f"(slope 0.0, zero-width CI, p=1.0) -- the error this guard exists to catch "
                         "has returned"
                     )
                 for field in ESTIMATE_FIELDS:

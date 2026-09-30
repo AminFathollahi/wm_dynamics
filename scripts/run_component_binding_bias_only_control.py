@@ -124,26 +124,19 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from corpus_sessions import data_root, iter_watters, watters_behaviour  # noqa: E402
 from provenance import _json_safe, checkpoint_safe, git_commit, restore_checkpoint  # noqa: E402
-from run_component_and_item_binding import (  # noqa: E402
-    MIN_TRIALS_FOR_BEHAVIOURAL_CORRELATION,
-    _close,
-    _corr,
-    _pool_values,
-    analyse_session,
-    build_pooled_table,
-    reproduction_gate,
-)
-from run_swap_versus_imprecision_by_item_count import (  # noqa: E402
-    _bias_only_between_session,
-    _session_arrays,
-)
+from run_component_and_item_binding import _close, analyse_session, build_pooled_table, reproduction_gate
+from run_watters_state_geometry import _corr
+from state_persistence import _pool_values
+from corpus_sessions import MIN_TRIALS_FOR_BEHAVIOURAL_CORRELATION
+from run_swap_versus_imprecision_by_item_count import _bias_only_between_session
+from corpus_sessions import _swap_imprecision_session_arrays as _session_arrays
 from scipy.stats import norm  # noqa: E402
 from statistics import Z_80_POWER, minimum_detectable_paired_difference, stable_seed  # noqa: E402
 
 Z_95 = float(norm.ppf(0.975))
 
 OUTPUT_PATH = ROOT / "results" / "component_binding_bias_only_control.json"
-CHECKPOINT_DIR = ROOT / "results" / ".checkpoints" / "component_binding_bias_only_control"
+CHECKPOINT_DIR = ROOT / "results" / ".checkpoints" / "component_binding_bias_only_control_v2"
 CHECKPOINT_PATH = CHECKPOINT_DIR / "checkpoint.json"
 DELIVERED_PATH = ROOT / "results" / "component_and_item_binding.json"
 SIBLING_PATH = ROOT / "results" / "swap_versus_imprecision_by_item_count.json"

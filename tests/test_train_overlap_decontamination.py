@@ -13,7 +13,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from run_train_overlap_decontamination import apply_decision_rule, _session_word_contamination  # noqa: E402
-from run_stimulation_timing_and_parameter_structure import build_trains_openloop, overlaps  # noqa: E402
+from run_stimulation_timing_and_parameter_structure import build_trains_openloop
+from stimulation_events import overlaps
 
 
 # ── train/word overlap geometry (event tables only) ────────────────────────

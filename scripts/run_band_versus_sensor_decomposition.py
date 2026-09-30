@@ -76,12 +76,12 @@ from corpus_sessions import data_root  # noqa: E402
 from io_utils import locked_json_update  # noqa: E402
 from preprocessing import load_boran_nwb  # noqa: E402
 from provenance import canonical_json, git_commit  # noqa: E402
-from run_boran_modality_consistency import (  # noqa: E402
-    BAD_CHANNEL_MAD_THRESHOLD, BORAN_MAINS_HZ, MAINT_WIN, MIN_BIPOLAR_CHANNELS,
-    MIN_TRIALS, lfp_maintenance_tensor, registry_sessions, scalp_low_band_maintenance_tensor,
-)
+from run_boran_modality_consistency import registry_sessions
+from preprocessing import MIN_BIPOLAR_CHANNELS, MIN_TRIALS, lfp_maintenance_tensor, scalp_low_band_maintenance_tensor
+from preprocessing import BAD_CHANNEL_MAD_THRESHOLD, BORAN_MAINS_HZ, MAINT_WIN
 from run_latent_model_observation_noise_comparison import analyze_session  # noqa: E402
 from statistics import minimum_detectable_paired_difference, paired_sign_flip_test, stable_seed  # noqa: E402
+from spike_pipeline import resolve_comparison  # noqa: E402
 
 SEED = 20260812
 LOW_BAND_LO_HZ = 8.0
@@ -421,70 +421,6 @@ def predeclare_comparison_branches() -> dict:
     }
 
 
-def _extract_noise_fraction(session_dict: dict | None) -> float | None:
-    if session_dict is None:
-        return None
-    fa = session_dict.get("dimensionality", {}).get("factor_analysis", {})
-    if fa.get("status") != "fitted":
-        return None
-    return fa.get("observation_noise_variance_fraction")
-
-
-def _paired_quantity(
-    sessions_a: dict[tuple[str, str], dict], sessions_b: dict[tuple[str, str], dict],
-    extractor=_extract_noise_fraction,
-) -> tuple[list[float], list[float], list[str]]:
-    interest, reference, keys = [], [], []
-    for key in sorted(set(sessions_a) & set(sessions_b)):
-        va = extractor(sessions_a[key])
-        vb = extractor(sessions_b[key])
-        if va is None or vb is None:
-            continue
-        interest.append(va)
-        reference.append(vb)
-        keys.append(f"{key[0]}/{key[1]}")
-    return interest, reference, keys
-
-
-def resolve_comparison(
-    sessions_a: dict, sessions_b: dict, rng: np.random.Generator,
-    costs_little_name: str, expensive_name: str, no_resolvable_name: str,
-    extractor=_extract_noise_fraction, extractor_description: str = "a fitted factor-analysis noise fraction",
-) -> dict:
-    interest, reference, keys = _paired_quantity(sessions_a, sessions_b, extractor)
-    n_pairs = len(interest)
-    if n_pairs < 4:
-        return {
-            "status": "not_computable", "n_pairs": n_pairs,
-            "reason": f"fewer than 4 paired sessions ({n_pairs}) with {extractor_description} in both cells",
-        }
-    interest_arr, reference_arr = np.array(interest), np.array(reference)
-    diffs = interest_arr - reference_arr
-    test = paired_sign_flip_test(interest_arr, reference_arr, alternative="two-sided", rng=rng)
-    median_diff = float(np.median(diffs))
-    mdd = minimum_detectable_paired_difference(diffs)
-    if median_diff <= 0:
-        branch = costs_little_name
-    elif test["p_value"] < 0.05:
-        branch = expensive_name
-    else:
-        branch = no_resolvable_name
-    return {
-        "status": "fitted",
-        "n_pairs": n_pairs,
-        "paired_session_keys": keys,
-        "r_obs_median_value_of_interest": float(np.median(interest_arr)),
-        "r_obs_median_reference_value": float(np.median(reference_arr)),
-        "median_difference_interest_minus_reference": median_diff,
-        "mean_difference_interest_minus_reference": test["mean_diff"],
-        "p_value": test["p_value"],
-        "ci_lower_mean_difference": test["ci_lower"],
-        "ci_upper_mean_difference": test["ci_upper"],
-        "minimum_detectable_paired_difference_80pct_power": mdd,
-        "branch": branch,
-    }
-
-
 # ---------------------------------------------------------------------------
 # Descriptive per-cell summaries (participation ratio in both bases,
 # persistence level in both bases) -- reported beside the deciding quantity,
@@ -569,7 +505,7 @@ def single_unit_reference_section(factor_model_artifact: dict, admission_matrix:
         ),
         "pooled_arm_flag": (
             "the 'pooled' structure mixes every recorded anatomical structure in a session into one "
-            "population, which this project's own standing rule treats as a superseded baseline, never a "
+            "population, which is a superseded baseline, never a "
             "substitute for a region-stratified fit -- reported here alongside the per-structure cells, not "
             "in place of them"
         ),

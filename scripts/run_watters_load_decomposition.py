@@ -6,7 +6,7 @@ The delivered artifact `results/watters_state_geometry.json` fired
 test: the RAW pooled coefficient between a trial's rate-free state deviation
 and its graded report error, pooled over all trials of every item count
 together (raw graded -0.011663, p=0.0723, interval [-0.02418, -0.0000494]).
-That branch is correct under its own rule and does not move; the 14,320 s job
+That branch is correct under its own rule and does not move; the 14,320 s run
 that produced it is not repeated here.
 
 That same delivered artifact separately found, without a pre-declared branch
@@ -91,17 +91,13 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from corpus_sessions import data_root, iter_watters, watters_behaviour  # noqa: E402
 from provenance import _json_safe, git_commit  # noqa: E402
-from run_watters_state_geometry import (  # noqa: E402
-    MATCHED_UNIT_COUNT,
-    MIN_TRIALS_FOR_BEHAVIOURAL_CORRELATION,
-    PRIMARY_QUALITY_TIER,
-    WATTERS_MIN_UNITS,
-    _behaviour_observables,
-    _corr,
-    _matched_unit_subset,
-    _pool_values,
-)
+from run_watters_state_geometry import _corr
+from corpus_sessions import _matched_unit_subset
+from state_persistence import _pool_values
+from corpus_sessions import MATCHED_UNIT_COUNT, MIN_TRIALS_FOR_BEHAVIOURAL_CORRELATION, PRIMARY_QUALITY_TIER, _behaviour_observables
+from corpus_sessions import WATTERS_MIN_UNITS
 from state_persistence import _ols_slope  # noqa: E402
+from corpus_sessions import _subsets, QUALITY_TIERS  # noqa: E402
 
 OUTPUT_PATH = ROOT / "results" / "watters_load_decomposition.json"
 CHECKPOINT_PATH = ROOT / "results" / ".checkpoints" / "watters_load_decomposition_checkpoint.json"
@@ -112,7 +108,6 @@ MATCHED_UNIT_SEED_TAG_PREFIX = "watters_state_geometry"  # must equal the delive
 
 MIN_TRIALS_PER_ITEM_COUNT_LEVEL = MIN_TRIALS_FOR_BEHAVIOURAL_CORRELATION
 
-QUALITY_TIERS = (PRIMARY_QUALITY_TIER, "good_single_units_only", "matched_unit_count_arm")
 
 
 def _read_json(path: Path) -> dict:
@@ -142,7 +137,7 @@ def _delivered_raw_pooled_coefficient() -> dict:
     """The delivered artifact's fired primary coefficient, read (not
     recomputed) purely so this artifact can state, next to its own numbers,
     which sign the raw pooled coefficient carries -- the comparison this
-    mandate exists to make, never a re-decision of the fired branch."""
+    module exists to make, never a re-decision of the fired branch."""
     delivered = _read_json(DELIVERED_WATTERS_PATH)
     node = delivered["results"]["single_and_multi_unit"]["pooled"]["behaviour"][
         "continuous_graded_report"]["raw_report_error_vs_state_deviation"]
@@ -353,13 +348,6 @@ def _flush(output: dict) -> None:
     os.replace(tmp, OUTPUT_PATH)
 
 
-def _subsets(rows_in: list[dict]) -> dict[str, list[dict]]:
-    subsets = {"pooled": rows_in}
-    for animal in sorted({r["animal"] for r in rows_in}):
-        subsets[f"animal_{animal}"] = [r for r in rows_in if r["animal"] == animal]
-    for variant in sorted({r["task_variant"] for r in rows_in}):
-        subsets[f"task_variant_{variant}"] = [r for r in rows_in if r["task_variant"] == variant]
-    return subsets
 
 
 def _within_load_branch(pooled: dict, reference_magnitude: float) -> str:
@@ -508,8 +496,7 @@ def main() -> None:
         "corpus": (
             "Multi-object spatial working memory in macaque frontal cortex, two animals, fixed 1.0 s "
             "maintenance delay with the objects absent, continuous saccadic report. Source: 'Working "
-            "Memory of Multi-Object Scenes in Primate Frontal Cortex', Watters, Gabel, Tenenbaum and "
-            "Jazayeri, bioRxiv PREPRINT posted 2026-01-27, DOI 10.64898/2026.01.27.702062, data DANDI "
+            "Memory of Multi-Object Scenes in Primate Frontal Cortex', bioRxiv PREPRINT posted 2026-01-27, DOI 10.64898/2026.01.27.702062, data DANDI "
             "000620. This is an unreviewed preprint: no peer-reviewed journal version was found, and it "
             "is cited on that basis."
         ),
@@ -518,7 +505,7 @@ def main() -> None:
             f"'{delivered_raw['branch_fired']}' on its own pre-declared primary test -- the raw pooled "
             f"graded coefficient over all trials of every item count together, {delivered_raw['mean_value']:+.6f} "
             f"(p={delivered_raw['p_value']:.4f}), n={delivered_raw['n_sessions']} sessions. That branch is "
-            "correct under its own pre-declared rule, is NOT re-decided here, and the 14,320 s job that "
+            "correct under its own pre-declared rule, is NOT re-decided here, and the 14,320 s run that "
             "produced it is NOT re-run. Everything in this artifact is a separate, independently "
             "pre-declared decomposition of the same corpus's per-session data into a within-item-count-"
             "level component and a between-item-count-level component, asking a different, narrower "

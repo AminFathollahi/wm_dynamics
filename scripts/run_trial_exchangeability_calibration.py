@@ -30,6 +30,7 @@ for _sub in ("src", "scripts"):
 from provenance import _json_safe, git_commit  # noqa: E402
 from statistics import permutation_pvalue, stable_seed  # noqa: E402
 import run_within_session_permutation_control as current_engine  # noqa: E402
+from info_decoding import _circular_outcome_shift, _circular_residual_shift
 
 
 OUTPUT_PATH = ROOT / "results" / "trial_exchangeability_calibration.json"
@@ -236,17 +237,17 @@ def run_audit(n_replications: int = N_REPLICATIONS, n_permutations: int = N_PERM
         },
         "candidate_nulls": {
             "circular_outcome_shift_on_stationary_ar1": _calibrate("circular_outcome_shift_on_stationary_ar1",
-                                                                      _simulate_ar1_null, current_engine._circular_outcome_shift,
+                                                                      _simulate_ar1_null, _circular_outcome_shift,
                                                                       n_replications, n_permutations),
             "circular_outcome_shift_on_binary_stationary_ar1": _calibrate(
                 "circular_outcome_shift_on_binary_stationary_ar1", _simulate_binary_ar1_null,
-                current_engine._circular_outcome_shift, n_replications, n_permutations),
+                _circular_outcome_shift, n_replications, n_permutations),
             "residual_outcome_shuffle_on_nuisance_only_partial_null": _calibrate(
                 "residual_outcome_shuffle_on_nuisance_only_partial_null", _simulate_nuisance_only,
                 _residual_outcome_shuffle, n_replications, n_permutations),
             "circular_residual_shift_on_serial_nuisance_partial_null": _calibrate(
                 "circular_residual_shift_on_serial_nuisance_partial_null", _simulate_serial_nuisance_null,
-                current_engine._circular_residual_shift, n_replications, n_permutations),
+                _circular_residual_shift, n_replications, n_permutations),
         },
     }
     return {

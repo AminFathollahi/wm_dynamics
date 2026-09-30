@@ -14,10 +14,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from run_deviation_axis_structure import (  # noqa: E402
-    _occupied_space_decomposition, classify_occupied_space_branch,
-    pooled_off_fraction_against_matched_null,
-)
+from info_decoding import _occupied_space_decomposition, classify_occupied_space_branch, pooled_off_fraction_against_matched_null
 
 WITHIN_BRANCH = "the_axis_lies_within_the_occupied_state_space_but_outside_the_coding_subspace"
 OUTSIDE_BRANCH = "the_axis_lies_outside_the_occupied_state_space"

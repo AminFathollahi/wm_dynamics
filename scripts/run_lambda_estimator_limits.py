@@ -172,8 +172,7 @@ def main() -> None:
         "thresholds_provenance": (
             "None declared in source: both are unlabelled default arguments with no citation, "
             "derivation, or calibration reference in the function's docstring or callers. This is "
-            "a defect; see the crack register entry "
-            "'confinement_identifiability_threshold_no_provenance'."
+            "a gap in the estimator's documentation."
         ),
         "consequence_for_this_round": (
             f"at DT_S={DT_S}, N_TIME_BINS={N_TIME_BINS} (duration={DT_S * (N_TIME_BINS - 1)}s), "
@@ -239,8 +238,8 @@ def main() -> None:
                 if fingerprints_separable else
                 "fingerprints do NOT separate (or cannot be tested): the identifiability "
                 "dissociation is not separable into a mechanism by this route with the current "
-                "estimator and window; it is reported without a mechanism, and a crack is filed "
-                "naming what would separate them (e.g. a non-Gaussian/switching-aware estimator, "
+                "estimator and window; it is reported without a mechanism, and the analysis "
+                "names what would separate them (e.g. a non-Gaussian/switching-aware estimator, "
                 "or a longer delay window)."
                 if fingerprints_separable is False else
                 "insufficient finite lambda_hat draws in one or both regimes to test separability."
@@ -278,7 +277,7 @@ def main() -> None:
         rate_grid = [1.0, 2.0, 5.0, 10.0, 20.0]
         n_trials_grid = [20, 40, 80, 160]
         # Delay lengths actually present across the corpora this project fits (000469 /
-        # 001187+000673 = 2.3s; 000574 Boran = 3.0s), both at the shared 0.1s bin width.
+        # 001187+000673 = 2.3s; DANDI 000574 = 3.0s), both at the shared 0.1s bin width.
         delay_length_grid_s = [2.3, 3.0]
 
         def _sweep(factor_name: str, grid: list, seed_base: int) -> dict:

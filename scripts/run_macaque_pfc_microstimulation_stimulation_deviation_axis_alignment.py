@@ -96,7 +96,7 @@ field, never quoted alone.
 
 Run:
     OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 \\
-    /home/amin/miniconda3/envs/wm_dynamics/bin/python \\
+    python \\
     scripts/run_macaque_pfc_microstimulation_stimulation_deviation_axis_alignment.py
 """
 from __future__ import annotations
@@ -122,16 +122,19 @@ for _sub in ("src", "scripts"):
 
 from provenance import _json_safe, checkpoint_safe, git_commit, restore_checkpoint  # noqa: E402
 from statistics import minimum_detectable_paired_difference, stable_seed  # noqa: E402
-from run_macaque_pfc_microstimulation_pipeline import BIN_S, DATA, crop_trial, load_macaque_pfc_microstimulation_session  # noqa: E402
-from run_deviation_serial_dependence_and_temporal_locus import unit_direction_vectors  # noqa: E402
-from run_deviation_axis_structure import (  # noqa: E402
-    N_ROTATION_DRAWS, _axis_stability, _pool_rotation_statistic, _residual_rows, _unit_residual_matrix,
-    leading_eigenvector,
-)
-from run_deviation_axis_identity_controls import (  # noqa: E402
-    _linear_detrend_activity, _vector_reference_alignment_with_draws,
-)
-from run_dissociation_cross_preparation_test import MIN_TRIALS_WITH_DEFINED_DIRECTION  # noqa: E402
+from run_macaque_pfc_microstimulation_pipeline import DATA, load_macaque_pfc_microstimulation_session
+from spike_pipeline import crop_trial
+from spike_pipeline import BIN_S
+from statistics import unit_direction_vectors
+from info_decoding import _residual_rows
+from info_decoding import _axis_stability, _unit_residual_matrix
+from state_persistence import _pool_rotation_statistic
+from subspace_identity import leading_eigenvector
+from info_decoding import N_ROTATION_DRAWS
+from info_decoding import _linear_detrend_activity, _vector_reference_alignment_with_draws
+from statistics import MIN_TRIALS_WITH_DEFINED_DIRECTION
+from corpus_sessions import BEHAVIOURAL_REFERENCE_R_UNITS, CONTINUITY_ALIGNMENT_FLOOR_ABS_COSINE, _alignment_summary, _bias_only_axis, _bias_only_voids, _classify_arm, displacement_vector, estimate_axis  # noqa: E402
+from state_persistence import _pool_group  # noqa: E402
 
 RESULTS = ROOT / "results"
 OUTPUT_PATH = RESULTS / "macaque_pfc_microstimulation_stimulation_deviation_axis_alignment.json"
@@ -143,8 +146,6 @@ CHECKPOINT_DIR = RESULTS / ".checkpoints" / "run_macaque_pfc_microstimulation_st
 SCHEMA_TAG = "v1_control_only_axis_rawchannel_unitdirection_displacement_2026_08_27"
 
 CORPUS_KEY = "macaque_pfc_microstimulation"
-BEHAVIOURAL_REFERENCE_R_UNITS = 0.14  # this project's standing minimum-detectable-difference reference
-CONTINUITY_ALIGNMENT_FLOOR_ABS_COSINE = 0.05  # the pre-declared absolute-cosine floor this project's
                                                # earlier axis-alignment tests used; reported for
                                                # continuity with that prior work, not the deciding
                                                # reference for the branches fired here
@@ -268,7 +269,7 @@ def _session_stimulation_amplitude(prefix: str) -> dict:
     project's own loader already uses for cond_uStimChan when the file is the HDF5 (v7.3) generation."""
     import h5py
 
-    from run_macaque_pfc_microstimulation_pipeline import _ascii_to_str
+    from dynamics import _ascii_to_str
 
     mat_path = DATA / "correct" / f"{prefix}.mat"
     if not mat_path.exists():
@@ -324,71 +325,12 @@ def reproduce_channel_filter_classification(prefix: str) -> dict:
 # Axis estimation -- control trials only, raw and detrended arms, with the circularity guard.
 # =======================================================================================================
 
-def estimate_axis(activity: np.ndarray, trial_index: np.ndarray, source: str, detrend: bool,
-                   seed_tag: str) -> dict:
-    """The residual-eigenvector axis, fit on `activity` alone. `source` must be the literal string
-    "control_only" -- anything else raises immediately, because no stimulated trial may ever reach this
-    fit, and a caller passing e.g. "includes_stimulated_trials" is exactly the mistake this guard exists
-    to catch before it can silently contaminate an axis estimate."""
-    if source != "control_only":
-        raise ValueError(
-            "estimate_axis refuses any source other than 'control_only' -- a stimulated trial must never "
-            f"enter the axis fit; got source={source!r}")
-    used_activity = _linear_detrend_activity(activity, trial_index) if detrend else activity
-    rows = _residual_rows(used_activity)
-    if rows["n_kept"] < MIN_TRIALS_WITH_DEFINED_DIRECTION:
-        return {"status": "too_few_trials_with_defined_direction", "n_kept": rows["n_kept"]}
-    R, idx = _unit_residual_matrix(rows)
-    axis = leading_eigenvector(R)
-    stability = _axis_stability(R, seed_tag)
-    return {"status": "computed", "axis": axis, "n_trials_kept": int(R.shape[0]), "axis_stability": stability}
 
 
-def displacement_vector(control_activity: np.ndarray, stim_activity: np.ndarray) -> dict | None:
-    """Mean unit-normalised direction over admitted stimulated trials minus the same over the matched
-    (same-session) control trials -- rate-free on both sides, in the identical feature space the axis is
-    estimated in."""
-    u_ctrl = unit_direction_vectors(control_activity)
-    u_stim = unit_direction_vectors(stim_activity)
-    valid_ctrl = ~np.isnan(u_ctrl).any(axis=1)
-    valid_stim = ~np.isnan(u_stim).any(axis=1)
-    if int(valid_ctrl.sum()) < MIN_TRIALS_WITH_DEFINED_DIRECTION or int(valid_stim.sum()) < MIN_TRIALS_WITH_DEFINED_DIRECTION:
-        return None
-    mean_ctrl = u_ctrl[valid_ctrl].mean(axis=0)
-    mean_stim = u_stim[valid_stim].mean(axis=0)
-    direction = mean_stim - mean_ctrl
-    norm = float(np.linalg.norm(direction))
-    unit = (direction / norm).astype(float) if norm > 1e-12 else None
-    return {
-        "direction_unit": unit, "norm": norm,
-        "n_control_trials_used": int(valid_ctrl.sum()), "n_stim_trials_used": int(valid_stim.sum()),
-    }
 
 
-def _bias_only_axis(control_activity: np.ndarray) -> np.ndarray | None:
-    """The plain normalised mean unit-direction over control trials -- the one direction the residual
-    axis is, by construction, orthogonal to. Standing in here for "every trial's value replaced by its
-    session's own mean", this project's established bias-only pattern, applied to the axis itself rather
-    than to a per-trial scalar since the primary statistic here is a single per-session direction, not a
-    per-trial correlation."""
-    u = unit_direction_vectors(control_activity)
-    valid = ~np.isnan(u).any(axis=1)
-    if int(valid.sum()) < 2:
-        return None
-    mean_dir = u[valid].mean(axis=0)
-    mean_norm = float(np.linalg.norm(mean_dir))
-    return (mean_dir / mean_norm).astype(float) if mean_norm > 1e-12 else None
 
 
-def _alignment_summary(observed: float, draws: np.ndarray) -> dict:
-    finite = draws[np.isfinite(draws)]
-    return {
-        "observed_abs_cosine": observed,
-        "observed_squared_fraction": observed ** 2,
-        "null_mean_abs_cosine": float(np.mean(finite)) if finite.size else None,
-        "null_sd_abs_cosine": float(np.std(finite)) if finite.size else None,
-        "n_null_draws": int(finite.size),
-    }
 
 
 def _fit_session(prefix: str) -> dict:
@@ -456,47 +398,10 @@ def _fit_session(prefix: str) -> dict:
 # Pooling and branch classification
 # =======================================================================================================
 
-def _pool_group(per_session: dict, sessions: list[str], arm: str, field: str) -> dict:
-    records = []
-    for s in sessions:
-        cell = per_session.get(s, {})
-        arm_cell = cell.get("by_arm", {}).get(arm, {}) if cell.get("status") == "computed" else {}
-        target = arm_cell.get(field)
-        if target is None or target.get("draws") is None:
-            continue
-        records.append({"observed": target["observed_abs_cosine"], "null_draws": target["draws"]})
-    pooled = _pool_rotation_statistic(records)
-    return {"n_sessions_pooled": len(records), **pooled}
 
 
-def _bias_only_voids(real_pooled: dict, bias_pooled: dict) -> bool:
-    """Sign-and-significance-only voiding, never a magnitude comparison: the bias-only control reproduces
-    the real result exactly when both are non-significant, or both are significant with the same
-    above-/below-null direction."""
-    if real_pooled.get("real_pooled", {}).get("status") != "tested" or bias_pooled.get("real_pooled", {}).get("status") != "tested":
-        return False
-    if bool(real_pooled.get("significant")) != bool(bias_pooled.get("significant")):
-        return False
-    if real_pooled.get("significant") and (real_pooled.get("below_null") != bias_pooled.get("below_null")):
-        return False
-    return True
 
 
-def _classify_arm(pooled: dict, bias_pooled: dict) -> dict:
-    mdd_block = pooled.get("minimum_detectable_difference_80pct_power", {})
-    mdd = mdd_block.get("mdd") if isinstance(mdd_block, dict) and mdd_block.get("status") == "computed" else None
-    effect = pooled.get("real_pooled", {}).get("mean_value")
-    if pooled.get("real_pooled", {}).get("status") != "tested" or mdd is None or effect is None:
-        return {"branch": "not_computable", "mdd": mdd, "effect": effect}
-    voids = _bias_only_voids(pooled, bias_pooled)
-    if voids:
-        return {"branch": "displacement_direction_not_separable_from_a_unit_level_offset",
-                "mdd": mdd, "effect": effect}
-    if mdd >= BEHAVIOURAL_REFERENCE_R_UNITS:
-        return {"branch": "inconclusive_below_detection_floor", "mdd": mdd, "effect": effect}
-    if pooled.get("significant") and pooled.get("below_null") is False:
-        return {"branch": "stimulation_pushes_along_the_deviation_axis", "mdd": mdd, "effect": effect}
-    return {"branch": "stimulation_pushes_off_the_deviation_axis", "mdd": mdd, "effect": effect}
 
 
 # =======================================================================================================

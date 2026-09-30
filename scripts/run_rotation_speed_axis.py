@@ -63,8 +63,9 @@ from statistics import (  # noqa: E402
 
 import run_axis_rotation_analysis as raa  # noqa: E402  (STEP_* constants)
 import run_divergence_analysis as rda  # noqa: E402  (subject lists)
-from run_multiitem_ctg_000469 import DATA_DIR as D469_DATA_DIR  # noqa: E402
-from run_multiitem_ctg_000469 import ITEM_FIELDS, _class_counts_ok  # noqa: E402
+from corpus_sessions import DATA_DIR as D469_DATA_DIR
+from run_multiitem_ctg_000469 import _class_counts_ok
+from corpus_sessions import ITEM_FIELDS
 
 RESULTS = ROOT / "results"
 N_BOOTSTRAP = 200

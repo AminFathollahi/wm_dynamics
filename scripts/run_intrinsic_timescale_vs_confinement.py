@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Tests whether task-driven confinement (lambda, from the Gaussian
-state-space drift fit) measures the same quantity as Murray, Bernacchia,
-Freedman et al. 2014's (Nat Neurosci 17:1661, PMC4241138) intrinsic
+state-space drift fit) measures the same quantity as the published
+(Nat Neurosci 17:1661, PMC4241138) intrinsic
 autocorrelation timescale (tau).
 
 PREDECLARED INTERPRETATION, written before this script's first run: "If tau
@@ -17,7 +17,7 @@ estimator must first be shown to resolve a planted tau at the observed
 rates, trial count and window length, or the comparison is withdrawn as
 `estimator_non_identified` rather than adjudicated by this rule.
 
-Method, following Murray et al. 2014's own description: spike-count
+Method, following the source paper's own description: spike-count
 autocorrelation in 50-ms bins during a task-free baseline, fit with an
 exponential decay PLUS OFFSET (R(k*bin) = A*exp(-k*bin/tau) + C -- their own
 functional form; the offset absorbs the non-decaying noise floor, unlike a
@@ -38,7 +38,7 @@ the lambda ordering; not framed as validating that ordering if it does not.
 
 Scope: DANDI 000469 only (the deciding dataset for the lambda ordering);
 000574/001187/000673 intrinsic-timescale extension is deferred and reported
-as such -- see the crack register.
+as such.
 """
 
 from __future__ import annotations
@@ -97,13 +97,13 @@ PREDECLARED_DECISION = {
     "refuted": (
         "corrected tau is resolvable and the orderings of tau and 1/lambda agree for the "
         "pre-SMA-vs-hippocampus pair; task-driven confinement is then not dissociable from "
-        "intrinsic autocorrelation in this corpus, and the Murray comparison collapses to a "
+        "intrinsic autocorrelation in this corpus, and the comparison to published timescales collapses to a "
         "replication."
     ),
     "estimator_non_identified": (
         "tau_estimator_calibration.json shows the corrected estimator is NOT resolvable at the "
-        "observed rates and window length. Then tau is NOT MEASURABLE in this corpus, the Murray "
-        "comparison is WITHDRAWN rather than reported, and the artifact records what window "
+        "observed rates and window length. Then tau is NOT MEASURABLE in this corpus, the comparison to published timescales "
+        "is WITHDRAWN rather than reported, and the artifact records what window "
         "length would be required, computed from the calibration."
     ),
     "note": (
@@ -126,14 +126,14 @@ def _bin_spike_counts(spike_times: np.ndarray, onsets: np.ndarray) -> np.ndarray
 
 
 def _fit_tau(counts: np.ndarray, exclude_lag0: bool = True) -> tuple[float | None, str | None]:
-    """Murray et al. 2014's exponential-decay-plus-offset fit to the pooled
+    """The source paper's exponential-decay-plus-offset fit to the pooled
     (across-trial) spike-count autocovariance.
 
     ac[0] is the total variance, which contains the private Poisson
-    counting-noise variance as a delta at zero lag; Murray et al. fit from
+    counting-noise variance as a delta at zero lag; the original method fits from
     the first NONZERO lag to exclude it (`exclude_lag0=True`, the default and
     the only mode used outside the regression test that documents the
-    defect). ac[0] is still used as the amplitude initial guess either way.
+    error). ac[0] is still used as the amplitude initial guess either way.
     """
     if counts.shape[0] < MIN_TRIALS_FOR_TAU:
         return None, f"fewer than {MIN_TRIALS_FOR_TAU} trials"
@@ -332,7 +332,7 @@ def main() -> None:
             f"tau_estimator_calibration.json: 0/{len(calibration['cells'])} grid cells resolvable "
             f"at the observed n_trials={calibration['n_trials_used']}, "
             f"bin_width_s={calibration['bin_width_s']}, baseline_window_s={calibration['baseline_window_s']}. "
-            "Corrected tau is NOT MEASURABLE in this corpus; the Murray et al. 2014 comparison is "
+            "Corrected tau is NOT MEASURABLE in this corpus; the intrinsic-timescale comparison is "
             "WITHDRAWN rather than reported (per-structure tau values below are descriptive only, "
             "not interpretable as intrinsic timescales)."
         )
@@ -376,7 +376,7 @@ def main() -> None:
             verdict_reason = (
                 "corrected tau is resolvable and the tau / 1-over-lambda orderings agree for the "
                 "pre-SMA-vs-hippocampus pair; task-driven confinement is not dissociable from "
-                "intrinsic autocorrelation in this corpus, and the Murray comparison collapses to "
+                "intrinsic autocorrelation in this corpus, and the comparison to published timescales collapses to "
                 "a replication."
             )
         elif non_overlapping_pair:
@@ -403,7 +403,7 @@ def main() -> None:
         "schema_version": "1.0.0", "analysis_id": "intrinsic_timescale_vs_confinement",
         "trigger": "does task-driven confinement (lambda) measure the same quantity as intrinsic autocorrelation timescale (tau)?",
         "code_commit": git_commit(ROOT), "source_hash": sha256_file(Path(__file__)),
-        "method_citation": "Murray, Bernacchia, Freedman et al. 2014, Nat Neurosci 17:1661 (PMC4241138, read directly)",
+        "method_citation": "Nat Neurosci 17:1661 (PMC4241138, read directly)",
         "method_note": (
             "Spike-count autocorrelation, 50 ms bins, exponential-decay-plus-offset fit "
             "(A*exp(-k*bin/tau)+C), pooled across trials, per unit, then median across units per "
@@ -411,14 +411,13 @@ def main() -> None:
             "(timestamps_FixationCross to timestamps_FixationCross+0.9s), the closest available "
             "task-free window in this corpus -- not a true inter-task baseline."
         ),
-        "scope": "DANDI 000469 only; 000574/001187/000673 intrinsic-timescale extension deferred (see crack register)",
+        "scope": "DANDI 000469 only; 000574/001187/000673 intrinsic-timescale extension deferred",
         "predeclared_interpretation": PREDECLARED_INTERPRETATION,
         "estimator_fix": (
-            "2026-08-07: _fit_tau now excludes lag 0 from the curve_fit data. Lag 0 is the total "
+            "_fit_tau excludes lag 0 from the curve_fit data. Lag 0 is the total "
             "variance, contaminated by Poisson counting noise, and made the prior fit track "
             "firing rate instead of the autocorrelation timescale. All tau values below supersede "
-            "the artifact as it stood before this fix -- see PAPER_REPORT.tex and the crack "
-            "register for the former (void) values."
+            "the artifact as it stood before this fix."
         ),
         "gated_on_unit_count_sensitivity": (
             "reported regardless of the unit-count-matched sensitivity verdict on the lambda "
@@ -464,10 +463,9 @@ def main() -> None:
                 ),
                 "resolution": (
                     "estimator_non_identified: tau is not measurable in this corpus at its "
-                    "available window length. The Murray et al. 2014 comparison is withdrawn "
+                    "available window length. The intrinsic-timescale comparison is withdrawn "
                     "rather than reported. The old 'dissociated' verdict, all void tau values "
-                    "(5.6-14.9 ms), tau_order_*, and orderings_agree=False are superseded; see "
-                    "PAPER_REPORT.tex for where the former values are struck. "
+                    "(5.6-14.9 ms), tau_order_*, and orderings_agree=False are superseded. "
                     "The real-data re-run still reports descriptive per-structure tau (now "
                     "90-220 ms, order-of-magnitude plausible) and mean rate alongside it "
                     "(Spearman rho=-0.6, p=0.36, n=5 structures -- not significant, so the "

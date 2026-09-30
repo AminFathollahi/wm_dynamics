@@ -70,7 +70,7 @@ warnings.filterwarnings("ignore")
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
-from project_config import data_root  # noqa: E402
+from project_config import data_root
 
 from geometry import _fit_pca_fold, _project_fold, _ctg_splits, _ctg_score_fold  # noqa: E402
 from statistics import (  # noqa: E402
@@ -81,19 +81,16 @@ from data_integrity import missing_files  # noqa: E402
 from io_utils import locked_json_update  # noqa: E402
 from provenance import _json_safe, checkpoint_safe, restore_checkpoint, canonical_json  # noqa: E402
 from corpus_sessions import SCALP_EEG_DELAY_BINS, MIN_TRIALS, _scalp_delay_bin_power  # noqa: E402
-from run_ds005034_tacs_aftereffect import load_events  # noqa: E402
-from run_cross_window_code_generalisation import (  # noqa: E402
-    _standardize_train_test, cell_status, N_BOOT, N_PERM_SIGN_FLIP, FDR_ALPHA,
-    MIN_TRIALS_PER_CLASS, MIN_TRIALS_PER_CLASS_COMPARISON, _choose_n_splits,
-    subject_cluster_bootstrap_paired, STIMULATION_ARM_DEFINITION_SUFFIX, CLEARING_RULE_STATUS,
-)
+from preprocessing import load_events
+from statistics import _standardize_train_test, cell_status, _choose_n_splits, subject_cluster_bootstrap_paired, STIMULATION_ARM_DEFINITION_SUFFIX
+from statistics import N_BOOT, N_PERM_SIGN_FLIP, FDR_ALPHA, CLEARING_RULE_STATUS
+from info_decoding import MIN_TRIALS_PER_CLASS, MIN_TRIALS_PER_CLASS_COMPARISON
+from preprocessing import session_cells  # noqa: E402
+from corpus_sessions import _load_ds005034_session  # noqa: E402
 
 RESULTS = ROOT / "results"
 CHECKPOINT_DIR = RESULTS / ".checkpoints" / "run_ds005034_operation_versus_load_decoding"
 CHECKPOINT_SCHEMA = "ds005034_operation_versus_load_v1"
-N_PC = 8
-OPERATION_LEVELS = ("forward", "backward", "alphabetical")
-OPERATION_PAIRS = (("forward", "backward"), ("forward", "alphabetical"), ("backward", "alphabetical"))
 
 BEHAVIOUR_LINK_UNAVAILABLE = (
     "config/datasets.json ds005034.behaviour_available is false: this release ships no trial-level "
@@ -165,97 +162,14 @@ def _ds005034_candidates(directory):
             yield subject_dir, session, f"{subject_dir.name}_ses-{session}"
 
 
-def _load_ds005034_session(directory, subject_dir, session):
-    """Loads one (subject, stimulation-arm) recording directly, duplicating the minimal
-    admission/window logic iter_ds005034 (src/corpus_sessions.py) applies -- needed so an
-    already-checkpointed session can be skipped without paying that corpus iterator's own
-    per-session EEG-load cost (a plain generator cannot be fast-forwarded past expensive
-    items, and the iterator itself may not be edited in place). Field-for-field identical
-    to what iter_ds005034 yields for the fields this script actually reads."""
-    eeg_dir = subject_dir / f"ses-{session}" / "eeg"
-    set_path = eeg_dir / f"{subject_dir.name}_ses-{session}_task-memory_eeg.set"
-    if not set_path.is_file():
-        return None
-    events_path = eeg_dir / f"{subject_dir.name}_ses-{session}_task-memory_events.tsv"
-    events = load_events(events_path)
-    if len(events) < MIN_TRIALS:
-        return None
-    payload = loadmat(set_path, variable_names=("data", "srate"), squeeze_me=True)
-    data_tc = np.asarray(payload["data"], dtype=np.float64).T
-    srate = float(payload["srate"])
-    onset_samples = np.array([int(round((event["onset"] + 0.5) * srate)) for event in events])
-    counts = _scalp_delay_bin_power(data_tc, srate, onset_samples, window_s=6.0, n_bins=SCALP_EEG_DELAY_BINS)
-    keep = np.isfinite(counts).all(axis=(1, 2))
-    if keep.sum() < MIN_TRIALS:
-        return None
-    return {
-        "patient": subject_dir.name, "session": f"{subject_dir.name}_ses-{session}",
-        "stimulation_session": session, "counts": counts[keep],
-        "task_condition": np.array([event["task"] for event in events])[keep],
-        "load": np.array([event["load"] for event in events], dtype=float)[keep],
-    }
 
 
-def within_window_ctg(psth, y, n_components, n_splits, rng):
-    y = np.asarray(y)
-    t_idx = np.arange(psth.shape[2])
-    fold_mats = []
-    for tr_idx, te_idx in _ctg_splits(y, n_splits, rng, None):
-        X_tr, X_te = _standardize_train_test(psth[tr_idx], psth[te_idx], psth.shape[2], joint=True)
-        mu, V = _fit_pca_fold(X_tr, n_components)
-        Z_tr, Z_te = _project_fold(X_tr, mu, V), _project_fold(X_te, mu, V)
-        fold_mats.append(_ctg_score_fold(Z_tr, y[tr_idx], Z_te, y[te_idx], t_idx))
-    return np.nanmean(np.stack(fold_mats), axis=0)
 
 
-def window_stats(auc_mat):
-    n = auc_mat.shape[0]
-    offdiag_mask = ~np.eye(n, dtype=bool)
-    return {
-        "offdiag_effect": float(np.nanmean(auc_mat[offdiag_mask]) - 0.5),
-        "diag_mean_auc": float(np.nanmean(np.diag(auc_mat))),
-    }
 
 
-def fit_cell(tag, psth, y_raw):
-    y = np.asarray(y_raw)
-    classes, counts = np.unique(y, return_counts=True)
-    if len(classes) < 2 or counts.min() < MIN_TRIALS_PER_CLASS:
-        return None
-    n_units = psth.shape[1]
-    n_comp = max(2, min(N_PC, n_units - 1))
-    n_splits = _choose_n_splits(y)
-    rng = np.random.default_rng(stable_seed(tag))
-    auc_mat = within_window_ctg(psth, y, n_comp, n_splits, rng)
-    stats = window_stats(auc_mat)
-    stats["min_class_count"] = int(counts.min())
-    stats["admitted_at_comparison_floor"] = bool(counts.min() >= MIN_TRIALS_PER_CLASS_COMPARISON)
-    return stats
 
 
-def session_cells(sess):
-    tc, load = sess["task_condition"], sess["load"]
-    psth = sess["counts"]
-    out = {}
-
-    for op_a, op_b in OPERATION_PAIRS:
-        name = f"operation_{op_a}_vs_{op_b}"
-        mask = np.isin(tc, (op_a, op_b))
-        y = (tc[mask] == op_b).astype(float)
-        tag = f"ds005034_{sess['session']}_{name}"
-        out[name] = fit_cell(tag, psth[mask], y)
-
-    name = "operation_forward_vs_transform"
-    y = (tc != "forward").astype(float)
-    out[name] = fit_cell(f"ds005034_{sess['session']}_{name}", psth, y)
-
-    for op in OPERATION_LEVELS:
-        name = f"load_within_{op}"
-        mask = tc == op
-        y = (load[mask] == 6).astype(float)
-        out[name] = fit_cell(f"ds005034_{sess['session']}_{name}", psth[mask], y)
-
-    return out
 
 
 CELL_FAMILY = {
@@ -320,7 +234,7 @@ def aggregate_cell(entries, dataset_tag):
 
 
 def subject_count_discrepancy_check(root):
-    from run_ds005034_tacs_aftereffect import paired_inventory
+    from corpus_sessions import paired_inventory
     inv = paired_inventory(root / "ds005034")
     return {
         "config_datasets_json_prose": "25 registered participants, 18 with an actual memory-task EEG "

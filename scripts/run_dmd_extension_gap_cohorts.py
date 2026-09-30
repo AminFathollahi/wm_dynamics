@@ -11,9 +11,8 @@ reusing dynamics.ensemble_dmd exactly as run_dmd_rank_selection.py does, per
 subject/session, at r in {4,5,6,7,8}.
 
 No targeting/LQR benchmark is computed here for any of the three cohorts:
-none has TES1 stimulation-field coverage (Boran/Rutishauser MTL implants have
-no DLPFC electrodes TES1 maps to) -- this is the SAME principled exclusion
-already recorded in DATASET_ANALYSIS_MATRIX.md, restated in each cohort's
+none has TES1 stimulation-field coverage (DANDI 000574/human single-unit DANDI MTL implants have
+no DLPFC electrodes TES1 maps to) -- this exclusion is restated in each cohort's
 output rather than silently omitted.
 
 High-load trial selection matches run_divergence_analysis.py's own
@@ -51,7 +50,7 @@ NO_BENCHMARK_NOTE = (
     "No LQR/TES1 targeting benchmark: this cohort has no TES1 stimulation-field "
     "coverage (MTL/hippocampal-amygdala implants; TES1 maps DLPFC-region "
     "electrodes only) -- dynamics-only metrics reported, matching the "
-    "principled exclusion already recorded in DATASET_ANALYSIS_MATRIX.md."
+    "principled exclusion for cohorts without TES1 coverage."
 )
 
 

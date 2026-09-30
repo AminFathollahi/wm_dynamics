@@ -12,7 +12,7 @@ independent method and directly answers "why not RL?" -- divergence would
 question the plant/cost, and is reported as such, not papered over.
 
 True feedback RL (closed-loop stim -> observed neural response -> reward) is
-NOT possible here: DANDI/Boran are recording-only, no delivered stimulation
+NOT possible here: DANDI 000574 are recording-only, no delivered stimulation
 with an observed response exists in this data. What IS possible, and what
 this script does: train the policy against the FITTED linear plant
 (x_{t+1} = A x_t + b u_t) exactly as an RL agent would train against a
@@ -68,11 +68,10 @@ from closed_loop import simulate_closed_loop, _b_hat_at_angle
 from statistics import stable_seed
 from io_utils import locked_json_update
 from provenance import _json_safe
-from run_targeting_benchmark import (
-    RESULTS, BORAN_SUBJECTS, B_HAT_MISMATCH_DEG,
-    _stability_horizon, _pool_arm, _near_tie_candidates,
-)
-from run_closed_loop_behavior_flip import _fit_outcome_decoder_and_margin, _flip_one_trial
+from run_targeting_benchmark import RESULTS
+from stimulation_events import BORAN_SUBJECTS, B_HAT_MISMATCH_DEG, _stability_horizon, _near_tie_candidates
+from causal import _pool_arm
+from closed_loop import _fit_outcome_decoder_and_margin, _flip_one_trial
 
 ARM_NAME = "rl_policy_alignment"
 
@@ -147,7 +146,7 @@ def dominant_eigvec(A: np.ndarray) -> np.ndarray:
     return v_star / (np.linalg.norm(v_star) + 1e-12)
 
 
-# ── Boran per-subject integration (mirrors run_boran_targeting_benchmark) ──
+# ── DANDI 000574 per-subject integration (mirrors run_boran_targeting_benchmark) ──
 
 def run_rl_arm_on_boran() -> dict:
     tes1_boran = np.load(RESULTS / "tes1_boran_B.npz", allow_pickle=True)
@@ -261,10 +260,10 @@ def run_rl_arm_on_boran() -> dict:
 
 
 def main():
-    print(f"Training RL policy-direction arm ({ARM_NAME}) per Boran subject...")
+    print(f"Training RL policy-direction arm ({ARM_NAME}) per DANDI 000574 subject...")
     per_subject = run_rl_arm_on_boran()
     if not per_subject:
-        print("No usable Boran subject -- STOP, cannot build the RL arm.")
+        print("No usable DANDI 000574 subject -- STOP, cannot build the RL arm.")
         return
 
     dr = _pool_arm(per_subject, ARM_NAME, "drift_reduction")

@@ -29,7 +29,7 @@ from provenance import _json_safe
 
 RESULTS = ROOT / "results"
 DMD_RANK = 8
-RANK_SWEEP = (5, 6, 7, 8)   # truncation ranks below full rank (d=8); audit item 9
+RANK_SWEEP = (5, 6, 7, 8)   # truncation ranks below full rank (d=8)
 DT = 0.1   # 100 ms bins, matches run_000469_pipeline.py BIN_MS and run_divergence_analysis.py
 MIN_TRIALS_PER_GROUP = 8   # matches PR_MIN_TRIALS_PER_GROUP elsewhere in this project
 

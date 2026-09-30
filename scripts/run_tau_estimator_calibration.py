@@ -44,12 +44,12 @@ PREDECLARED_DECISION = {
     "refuted": (
         "corrected tau is resolvable and the orderings of tau and 1/lambda agree for the "
         "pre-SMA-vs-hippocampus pair; task-driven confinement is then not dissociable from "
-        "intrinsic autocorrelation in this corpus, and the Murray comparison collapses to a "
+        "intrinsic autocorrelation in this corpus, and the comparison to published timescales collapses to a "
         "replication."
     ),
     "estimator_non_identified": (
         "this table shows the corrected estimator is NOT resolvable at the observed rates and "
-        "window length. Then tau is NOT MEASURABLE in this corpus, the Murray comparison is "
+        "window length. Then tau is NOT MEASURABLE in this corpus, the comparison to published timescales is "
         "WITHDRAWN rather than reported, and the artifact records what window length would be "
         "required, computed from this table."
     ),

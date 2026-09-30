@@ -15,6 +15,7 @@ for _sub in ("src", "scripts"):
         sys.path.insert(0, _p)
 
 import run_within_session_permutation_control as m  # noqa: E402
+from info_decoding import _cheap_partial_r, _circular_outcome_shift, _circular_residual_shift
 
 
 def _blocks_true_effect(rng, n_sessions=10, n_trials=60, beta=0.6, controls=False):
@@ -41,7 +42,7 @@ def test_cheap_partial_r_matches_plain_pearson_with_no_controls():
     rng = np.random.default_rng(0)
     x, y = rng.normal(size=200), rng.normal(size=200)
     x = x + 0.3 * y
-    got = m._cheap_partial_r(y, x, [])
+    got = _cheap_partial_r(y, x, [])
     expected = float(np.corrcoef(x, y)[0, 1])
     assert abs(got - expected) < 1e-9
 
@@ -53,7 +54,7 @@ def test_cheap_partial_r_removes_a_perfectly_confounding_control():
     z = rng.normal(size=300)
     x = 2.0 * z + rng.normal(scale=0.001, size=300)
     y = -3.0 * z + rng.normal(scale=0.001, size=300)
-    r = m._cheap_partial_r(y, x, [z])
+    r = _cheap_partial_r(y, x, [z])
     assert abs(r) < 0.05
 
 
@@ -95,7 +96,7 @@ def test_within_session_permutation_preserves_session_means_and_sizes():
 
 def test_circular_outcome_shift_preserves_ordered_series_up_to_rotation():
     block = {"n": 10, "predictor": np.arange(10.0), "outcome": np.arange(10.0), "controls": []}
-    shifted = m._circular_outcome_shift(np.random.default_rng(7), block)
+    shifted = _circular_outcome_shift(np.random.default_rng(7), block)
     assert np.array_equal(np.sort(shifted["outcome"]), block["outcome"])
     assert not np.array_equal(shifted["outcome"], block["outcome"])
 
@@ -105,7 +106,7 @@ def test_circular_residual_shift_uses_existing_partial_correlation_design():
     nuisance = rng.normal(size=60)
     outcome = 3.0 * nuisance + rng.normal(size=60)
     block = {"n": 60, "predictor": rng.normal(size=60), "outcome": outcome, "controls": [nuisance]}
-    shifted = m._circular_residual_shift(rng, block)
+    shifted = _circular_residual_shift(rng, block)
     assert shifted["controls"] is block["controls"]
     assert np.array_equal(shifted["predictor"], block["predictor"])
     assert not np.array_equal(shifted["outcome"], block["outcome"])
@@ -118,8 +119,8 @@ def test_default_stat_of_session_is_trial_count_weighted_average_across_blocks()
     block_a["outcome"] = 0.8 * block_a["predictor"] + rng.normal(scale=0.01, size=100)
     block_b["outcome"] = -0.8 * block_b["predictor"] + rng.normal(scale=0.01, size=20)
     combined = m._default_stat_of_session([block_a, block_b])
-    r_a = m._cheap_partial_r(block_a["outcome"], block_a["predictor"], [])
-    r_b = m._cheap_partial_r(block_b["outcome"], block_b["predictor"], [])
+    r_a = _cheap_partial_r(block_a["outcome"], block_a["predictor"], [])
+    r_b = _cheap_partial_r(block_b["outcome"], block_b["predictor"], [])
     expected = (100 * r_a + 20 * r_b) / 120
     assert abs(combined - expected) < 1e-9
 

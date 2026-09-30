@@ -35,6 +35,7 @@ from state_persistence import (  # noqa: E402
     two_component_fit, two_component_identifiability_ladder,
 )
 from statistics import spearman_permutation_test  # noqa: E402
+from info_decoding import _lag_lists  # noqa: E402
 
 LAG_PATH = Path(__file__).resolve().parents[1] / "results" / "state_persistence_lag.json"
 OUTPUT_PATH = Path(__file__).resolve().parents[1] / "results" / "state_persistence_shape.json"
@@ -44,21 +45,8 @@ DECIDING_WIDTH = 3
 HUMAN_DATASETS = ("dandi_000469", "dandi_001187", "dandi_000574")
 
 
-def _to_int_keyed(d: dict) -> dict:
-    return {int(k): v for k, v in d.items()}
 
 
-def _lag_lists(rows: list[dict], width: int) -> tuple[list[dict], list[dict], list[dict]]:
-    profiles, pois, perm = [], [], []
-    for r in rows:
-        if r.get("width_bins") != width:
-            continue
-        if r["profile"].get("status") != "fitted" or r.get("null_poisson") is None or r.get("null_permutation") is None:
-            continue
-        profiles.append(_to_int_keyed(r["profile"]["lags"]))
-        pois.append(_to_int_keyed(r["null_poisson"]["lags"]))
-        perm.append(_to_int_keyed(r["null_permutation"]["lags"]))
-    return profiles, pois, perm
 
 
 def _declared_breakpoint_bins(profiles: list[dict], perm: list[dict]) -> tuple[int, dict]:
@@ -262,7 +250,7 @@ def cohort_control(delay_pooled_rows: list[dict], width: int) -> dict:
             "'stayed_on_the_clock' if the breakpoint's spread across cohorts in raw seconds is no larger "
             "than its spread as a fraction of each cohort's window length; 'moved_with_the_geometry' "
             "otherwise. A feature that moves with the geometry is an estimator property regardless of "
-            "significance (rounds 26 and 27 both died on this)."
+            "significance."
         ),
     }
 
@@ -302,7 +290,7 @@ def main() -> None:
     human_encoding = _arm_analysis(encoding_pooled, "human_encoding_pooled_opportunistic", prior_encoding_branch)
     print("Mouse ALM...", file=sys.stderr)
     alm = _arm_analysis(alm_rows, "alm_delay_rate_matched", prior_alm_branch)
-    print("Macaque Panichello (re-labelled from existing rows -- see panichello_rerun_note)...", file=sys.stderr)
+    print("Macaque prefrontal spatial working-memory corpus (Dryad doi:10.5061/dryad.kkwh70sct) (re-labelled from existing rows -- see panichello_rerun_note)...", file=sys.stderr)
     panichello = _arm_analysis(panichello_rows, "panichello_lpfc_delay", prior_panichello_branch)
 
     print("Cohort control (2.3s vs 3.0s delay, deciding width)...", file=sys.stderr)
@@ -322,7 +310,7 @@ def main() -> None:
             "recorded per arm below in 'change_reason'."
         ),
         "panichello_rerun_note": (
-            "A re-run of Panichello at w=3 with both nulls, at the widest lag range its native window "
+            "A re-run of the macaque spatial working-memory corpus at w=3 with both nulls, at the widest lag range its native window "
             "supports, was expected to be necessary on the belief that the existing arm ran at w=2 over a "
             "narrower range. Checked directly: state_persistence_lag.json's panichello_lag_arm was already "
             "computed at w=3 with both nulls, and its native window (300-1450 ms, bounded by the deposited "

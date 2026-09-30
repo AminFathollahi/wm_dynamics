@@ -27,7 +27,7 @@ Scope: delay epoch, the deciding window width (3 bins = 300 ms) only, the
 same sessions reachable through the lag census (src/corpus_sessions.py's
 iter_all_corpora for the three human corpora restricted to the pooled
 structure, src/corpus_sessions.py's iter_alm for mouse ALM, and the
-Panichello 2024 macaque .mat files read directly, exactly as
+the macaque spatial working-memory corpus .mat files read directly, exactly as
 run_state_persistence.py and run_state_content_link.py already do). The
 macaque arm is run first and in full: it has the strongest d_perm of any
 corpus, and it is the only one where item content is both strongly decodable
@@ -49,7 +49,7 @@ estimator does not need to worry about but a per-trial quantity does.
 (2) Reaction time and trial accuracy are not usable per-trial covariates in
 any of the three corpora this module reads: every human corpus's session
 loader already restricts to correct trials before this module ever sees
-them (accuracy is constant, not a variable), the Panichello .mat files carry
+them (accuracy is constant, not a variable), the macaque spatial working-memory corpus .mat files carry
 no response-time field among the keys this project has ever found in them,
 and the ALM loader does not expose one. Extracting a genuine RT covariate
 would need new loader code that does not exist yet; the gap is recorded
@@ -82,14 +82,13 @@ from state_persistence import (  # noqa: E402
     rank1_gain_share, residual_pair_correlations, slope_across_sessions_test, temporal_profile_sign_crossings,
 )
 from statistics import auroc, fdr_bh, spearman_permutation_test, stable_seed  # noqa: E402
+from corpus_sessions import alm_sessions, human_sessions, macaque_sessions  # noqa: E402
+from info_decoding import session_rank1_and_residual, BIN_WIDTH_S  # noqa: E402
+from spike_pipeline import DECIDING_WIDTH_BINS  # noqa: E402
 
 BIN_MS = 100.0
-BIN_WIDTH_S = BIN_MS / 1000.0
-DECIDING_WIDTH_BINS = 3
 HUMAN_DATASETS = ("dandi_000469", "dandi_001187", "dandi_000574")
 COMMON_RANGE_BINS = (3, 8)  # 0.3-0.8 s, the deciding early-segment range used across this project's lag contrasts
-PANICHELLO_DELAY_WINDOW_MS = (300.0, 1450.0)
-N_SHUFFLES_RANK1 = 200
 N_PERM_LABEL = 300
 CONTENT_K_MAX = 8
 
@@ -104,9 +103,6 @@ def _no_null(d: dict) -> dict:
     return {k: v for k, v in d.items() if k != "null"}
 
 
-def _counts_from_spikes(spike_lists, onset, window_s: float, bin_ms: float = BIN_MS) -> np.ndarray:
-    rate = build_psth(spike_lists, onset, bin_ms=bin_ms, smooth_ms=0.0, window_s=window_s)
-    return rate * (bin_ms / 1000.0)
 
 
 # ============================================================================
@@ -123,48 +119,10 @@ def _panichello_directory(root: Path) -> Path | None:
     return path if path.is_dir() else None
 
 
-def macaque_sessions(root: Path):
-    directory = _panichello_directory(root)
-    if directory is None:
-        return
-    for path in sorted(glob.glob(str(directory / "*.mat"))):
-        raw = loadmat(path, squeeze_me=True)
-        spikes = np.asarray(raw["spks"], dtype=float)
-        time_ms = np.asarray(raw["tc"], dtype=float).reshape(-1)
-        correct = np.asarray(raw["isCorr"], dtype=bool).reshape(-1)
-        cue_idx = np.asarray(raw["cueAngIdx"]).reshape(-1)
-        spikes, cue_idx = spikes[correct], cue_idx[correct]
-        starts = np.arange(PANICHELLO_DELAY_WINDOW_MS[0], PANICHELLO_DELAY_WINDOW_MS[1], BIN_MS)
-        binned = [spikes[:, (time_ms >= s) & (time_ms < s + BIN_MS), :].sum(axis=1) for s in starts]
-        counts = np.stack(binned, axis=2)
-        yield {
-            "corpus": "panichello_lpfc", "session": Path(path).stem, "counts": counts,
-            "label": cue_idx.astype(int), "label_field": "cueAngIdx (8-way cued colour/location bin)",
-            "n_splits": 10, "n_null_replicates": 10,
-        }
 
 
-def human_sessions(root: Path):
-    for meta in iter_all_corpora(root):
-        if meta["structure"] != "pooled":
-            continue
-        onset = meta["epoch_onsets"]["delay"]
-        window_s = meta["epoch_windows"]["delay"]
-        counts = _counts_from_spikes(meta["spike_lists"], onset, window_s)
-        yield {
-            "corpus": "human_delay", "dataset": meta["dataset"], "session": meta["session"], "counts": counts,
-            "label": meta.get("item_ids"), "label_field": meta.get("item_id_field"),
-            "n_splits": 12, "n_null_replicates": 20,
-        }
 
 
-def alm_sessions(root: Path):
-    for meta in iter_alm(root, bin_ms=BIN_MS, window_s=ALM_WINDOW_S):
-        yield {
-            "corpus": "alm", "session": meta["session"], "counts": meta["counts"],
-            "label": meta.get("condition"), "label_field": meta.get("item_id_field"),
-            "n_splits": 12, "n_null_replicates": 20,
-        }
 
 
 # ============================================================================
@@ -281,28 +239,6 @@ def pool_position_vs_lag(per_session: list[dict]) -> dict:
 # once that component is removed?
 # ============================================================================
 
-def session_rank1_and_residual(counts: np.ndarray, width_bins: int, seed: int) -> dict | None:
-    rng = np.random.default_rng(seed)
-    n_trials = counts.shape[0]
-    perm = rng.permutation(n_trials)
-    half = n_trials // 2
-    train_idx, test_idx = perm[:half], perm[half:]
-    if len(train_idx) < 6 or len(test_idx) < 6:
-        return None
-    transform = FrozenPSTHTransform().fit(counts[train_idx])
-    z_train, z_test = transform.transform(counts[train_idx]), transform.transform(counts[test_idx])
-    latent = _leading_latent_projection(z_train, z_test)
-    window_means = _window_means_at_width(latent, width_bins)
-    if window_means is None or window_means.shape[1] < 4:
-        return None
-    rank1 = rank1_gain_share(window_means, n_shuffles=N_SHUFFLES_RANK1, rng=rng)
-    gain, h_profile, residual = rank1_gain_and_residual(window_means)
-    crossings = temporal_profile_sign_crossings(h_profile)
-    position_corr = [float(np.corrcoef(gain, window_means[:, j])[0, 1]) if window_means[:, j].std() > 0 else None
-                      for j in range(window_means.shape[1])]
-    return {"test_idx": test_idx, "gain": gain, "rank1": rank1, "residual": residual,
-            "temporal_profile_sign_crossings": crossings,
-            "position_corr": [c for c in position_corr if c is not None]}
 
 
 def residual_existence_by_lag(residual: np.ndarray, width_bins: int, null_lookup: dict) -> dict[int, float]:
@@ -522,10 +458,10 @@ def pool_gain_correlates(per_session: list[dict]) -> dict:
             "status": "not_available_in_any_corpus_this_module_reads",
             "reason": "every human corpus's session loader (src/corpus_sessions.py) already restricts to "
                       "correct trials before this module sees them, so accuracy is constant, not a usable "
-                      "covariate; the Panichello .mat files carry no response-time field among the keys this "
+                      "covariate; the macaque spatial working-memory corpus .mat files carry no response-time field among the keys this "
                       "project has found in them (cueAng, cueAngIdx, isCorr, spks, tc); the ALM loader does not "
                       "expose a per-trial response time. Extracting a genuine RT covariate needs new loader "
-                      "code that does not exist yet. (Panichello trial accuracy, specifically, IS usable as a "
+                      "code that does not exist yet. (macaque spatial working-memory corpus trial accuracy, specifically, IS usable as a "
                       "per-trial covariate for a within-session behavioural contrast -- see "
                       "scripts/run_state_behavior_link.py, which reads isCorr directly rather than through this "
                       "module's session loader.)",
@@ -686,9 +622,9 @@ def main() -> None:
             "Reaction time and trial accuracy were wanted as gain correlates (see each corpus's "
             "gain_correlates.reaction_time_and_accuracy field below) but are not usable through any session "
             "loader this module reads: every human corpus's session loader already restricts to correct "
-            "trials before this module ever sees them, so accuracy is constant; the Panichello .mat files "
+            "trials before this module ever sees them, so accuracy is constant; the macaque spatial working-memory corpus .mat files "
             "carry no response-time field among the keys this project has found in them; the ALM loader does "
-            "not expose one. Panichello trial accuracy specifically IS usable and is tested directly against "
+            "not expose one. Trial accuracy in the macaque spatial working-memory corpus specifically IS usable and is tested directly against "
             "isCorr in scripts/run_state_behavior_link.py, which bypasses this module's session loader for "
             "exactly that reason."
         ),

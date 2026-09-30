@@ -78,15 +78,19 @@ sys.path.insert(0, str(_ROOT / "scripts"))
 from corpus_sessions import data_root, iter_watters, watters_session_dates  # noqa: E402
 from provenance import _json_safe  # noqa: E402
 from run_dissociation_cross_preparation_test import reproduction_gate  # noqa: E402
-from run_dissociation_replication_and_counting_noise import (  # noqa: E402
-    MIN_TRIALS_WITH_DEFINED_DIRECTION, _load_panichello_for_counting_noise_census, _observable_arrays,
-)
-from run_rate_free_state_geometry_behavior_link import rate_free_state_deviation  # noqa: E402
-from run_state_behavior_link import _counts_from_spikes, _panichello_directory, trial_amplitude_covariates  # noqa: E402
-from run_watters_state_geometry import MIN_TRIALS_FOR_BEHAVIOURAL_CORRELATION  # noqa: E402
+from corpus_sessions import _observable_arrays
+from corpus_sessions import _load_panichello_for_counting_noise_census
+from statistics import MIN_TRIALS_WITH_DEFINED_DIRECTION
+from stimulation_response_estimator import rate_free_state_deviation
+from state_persistence import trial_amplitude_covariates
+from spike_pipeline import _counts_from_spikes
+from corpus_sessions import _panichello_directory
+from corpus_sessions import MIN_TRIALS_FOR_BEHAVIOURAL_CORRELATION
 from scipy.io import loadmat  # noqa: E402
 from state_persistence import slope_across_sessions_test  # noqa: E402
 from statistics import minimum_detectable_paired_difference, partial_correlation_permutation_test, stable_seed  # noqa: E402
+from corpus_sessions import pool_draws_within_session  # noqa: E402
+from statistics import FAILING_REFERENCE_EFFECT_ABS, FAILING_REFERENCE_EFFECT_SOURCE  # noqa: E402
 
 OUTPUT_PATH = _ROOT / "results" / "count_subsampling_ladder.json"
 CHECKPOINT_DIR = _ROOT / "results" / ".checkpoints" / "run_count_subsampling_ladder"
@@ -128,11 +132,6 @@ N_PERM_NATIVE_RUNG = 10000
 # ---------------------------------------------------------------------------------------------------
 HIGHEST_FAILING_CORPUS_TARGET = 353.0  # inagaki_alm5_mouse_ALM's own median total spikes/trial -- the
                                        # highest among the three corpora whose gate is significant
-FAILING_CORPORA_GATE_R = {
-    "inagaki_alm5_mouse_ALM": -0.2056989552659982,
-    "dandi_000469_human": -0.17039588572106096,
-    "dandi_001187_human": -0.19121890365509575,
-}
 FAILING_CORPORA_GATE_P = {
     "inagaki_alm5_mouse_ALM": 0.0004999500049995,
     "dandi_000469_human": 0.028497150284971504,
@@ -146,8 +145,6 @@ FAILING_CORPORA_MEDIAN_SPIKES_PER_UNIT_PER_TRIAL = {
 }
 # The conservative (smallest-magnitude) failing-corpus gate effect: a null powered against this one is
 # powered against every failing corpus, not only the nearest one.
-FAILING_REFERENCE_EFFECT_ABS = min(abs(v) for v in FAILING_CORPORA_GATE_R.values())
-FAILING_REFERENCE_EFFECT_SOURCE = "dandi_000469_human"
 
 # The passing corpora's own median spikes/unit/trial, quoted the same way, needed for the recording-
 # specification block's unit-count translation and reported for all five census preparations together.
@@ -229,16 +226,6 @@ def resolve_unit_target(n_units_full: int, native_median_total: float, target_me
     if k >= n_units_full:
         return {"status": "native", "n_units": int(n_units_full)}
     return {"status": "subsample", "n_units": k}
-
-
-def pool_draws_within_session(draw_values: list) -> float | None:
-    """Mean of a session's own repeated-draw correlation coefficients -- the within-session pooling step
-    that runs BEFORE any cross-session significance test, so a session is represented by one value per
-    rung regardless of how many independent unit subsamples were drawn for it. None/NaN draws (a
-    not-computable fit) are dropped rather than propagated; a session with no usable draw at all pools to
-    None, which the caller must treat as an exclusion, not a zero."""
-    finite = [float(v) for v in draw_values if v is not None and np.isfinite(v)]
-    return float(np.mean(finite)) if finite else None
 
 
 def combine_within_load_trial_weighted(level_results: dict) -> float | None:

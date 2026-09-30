@@ -91,22 +91,17 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from corpus_sessions import data_root, iter_watters  # noqa: E402
 from provenance import _json_safe  # noqa: E402
-from run_dissociation_cross_preparation_test import MIN_TRIALS_WITH_DEFINED_DIRECTION  # noqa: E402
-from run_dissociation_replication_and_counting_noise import (  # noqa: E402
-    _observable_arrays, _session_observable_arm,
-)
-from run_dominant_latent_identity_and_behaviour_breadth import (  # noqa: E402
-    _load_session as _macaque_load_session, _session_paths as _macaque_session_paths,
-)
+from statistics import MIN_TRIALS_WITH_DEFINED_DIRECTION
+from run_dissociation_replication_and_counting_noise import _session_observable_arm
+from corpus_sessions import _observable_arrays
+from corpus_sessions import _load_session as _macaque_load_session, _session_paths as _macaque_session_paths
 from run_human_maintenance_behaviour_link import ADMISSION_ITERATORS  # noqa: E402
-from run_rate_free_state_geometry_behavior_link import rate_free_state_deviation  # noqa: E402
-from run_state_behavior_link import (  # noqa: E402
-    MIN_ERROR_TRIALS_FOR_REACHABILITY, trial_amplitude_covariates,
-)
-from run_state_content_link import delay_counts  # noqa: E402
-from run_watters_state_geometry import (  # noqa: E402
-    MIN_TRIALS_FOR_BEHAVIOURAL_CORRELATION, PRIMARY_QUALITY_TIER, _pool_values,
-)
+from stimulation_response_estimator import rate_free_state_deviation
+from state_persistence import trial_amplitude_covariates
+from statistics import MIN_ERROR_TRIALS_FOR_REACHABILITY
+from spike_pipeline import delay_counts
+from state_persistence import _pool_values
+from corpus_sessions import MIN_TRIALS_FOR_BEHAVIOURAL_CORRELATION, PRIMARY_QUALITY_TIER
 from scipy.stats import norm  # noqa: E402
 from state_persistence import slope_across_sessions_test  # noqa: E402
 from statistics import (  # noqa: E402

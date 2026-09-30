@@ -6,11 +6,11 @@ axis's near-identity alignment with the session's slow linear drift direction, |
 item corpus) is a discovery or a construction artifact. This module does three things, reusing every
 estimator that artifact already delivers unchanged and never rerunning or overwriting it:
 
-Part one pools the four already-computed alignments properly (session-clustered, multi-object corpus
+The pooled-alignment stage pools the four already-computed alignments properly (session-clustered, multi-object corpus
 combined within item-count level by trial-count weighting before pooling across sessions) and fires one
 pre-declared branch per reference.
 
-Part two asks whether the slow-drift alignment is mechanical: the residual r_i is, by construction, the
+The drift-control stage asks whether the slow-drift alignment is mechanical: the residual r_i is, by construction, the
 component of trial i's direction orthogonal to the session's leave-one-out mean direction, so if that mean
 itself translates linearly over the session, every residual is pushed toward the SAME direction the mean
 moved along, with no deviation structure required at all. This is tested three ways: (1) an analytic/
@@ -20,7 +20,7 @@ path; (2) a detrended control -- the linear trend removed from the input before 
 separately a temporally-local leave-one-out reference in place of the whole-session one; (3) a mandatory
 fold-based bias-only control on every behavioural cell this module recomputes.
 
-Part three tests, rather than asserts, whether the axis's substantial alignment with the total-spike-count
+The rate-reconciliation stage tests, rather than asserts, whether the axis's substantial alignment with the total-spike-count
 direction is in tension with the delivered claim that the deviation's MAGNITUDE is rate-free: the
 correlation between the deviation magnitude and total spike count, the correlation between the axis's own
 signed projection and total spike count, and whether the deviation-behaviour link survives partialling
@@ -39,7 +39,7 @@ imported unchanged from where this project already defines them (the deviation-a
 its own upstream dependencies). The only new functions this module introduces are the mechanical-drift
 synthetic generator, the linear and local-window detrending controls, the four draws-exposing mirrors of
 the delivered alignment-null functions needed to pool a rotation-null test across sessions (identical
-formula, only the raw draws returned), and the rate-reconciliation correlations of part three.
+formula, only the raw draws returned), and the rate-reconciliation correlations of the rate-reconciliation stage.
 """
 
 from __future__ import annotations
@@ -65,26 +65,35 @@ for _sub in ("src", "scripts"):
 
 from corpus_sessions import data_root, iter_watters  # noqa: E402
 from provenance import _json_safe  # noqa: E402
-from run_deviation_axis_structure import (  # noqa: E402
-    CORPORA, MIN_FOLD_TRIALS, N_CV_FOLDS, N_PERM, N_ROTATION_DRAWS, RESIDUAL_NORM_FLOOR, SHARP_TEST_MIN_PER_CLASS,
-    SIGN_TO_WORSE_BEHAVIOUR, WATTERS_REGRESSION_DIM, _bias_only_reproduces, _class_mean_dict,
-    _class_mean_subspace_basis, _contiguous_folds, _fold_combined_and_pooled, _macaque_bundles,
-    _panichello_directory, _pool_rotation_statistic, _reachable_sessions, _regression_direction,
-    _regression_subspace_basis, _residual_rows, _trial_count_weighted, _unit_residual_matrix, _watters_bundles,
-    _weighted_combine_draws, _worse_behaviour, full_reproduction_gate, leading_eigenvector,
-    unit_direction_vectors,
-)
-from run_deviation_axis_structure import MIN_TRIALS_WITH_DEFINED_DIRECTION  # noqa: E402
-from run_deviation_axis_structure import _MACAQUE_DELIVERED_RAW_R as MACAQUE_REFERENCE_R  # noqa: E402
-from run_deviation_axis_structure import _WATTERS_DELIVERED_RAW_R as WATTERS_REFERENCE_R  # noqa: E402
-from run_rate_free_state_geometry_behavior_link import (  # noqa: E402
-    MEANINGFUL_EFFECT_THRESHOLD_R_UNITS, rate_free_state_deviation,
-)
+from run_deviation_axis_structure import _macaque_bundles
+from info_decoding import _fold_combined_and_pooled
+from subspace_identity import _class_mean_subspace_basis, _regression_subspace_basis
+from info_decoding import _residual_rows
+from info_decoding import _class_mean_dict
+from state_persistence import _pool_rotation_statistic
+from info_decoding import _regression_direction, _unit_residual_matrix, _weighted_combine_draws, _worse_behaviour
+from corpus_sessions import _watters_bundles
+from subspace_identity import leading_eigenvector
+from info_decoding import CORPORA, MIN_FOLD_TRIALS, N_PERM, N_ROTATION_DRAWS, RESIDUAL_NORM_FLOOR
+from subspace_identity import N_CV_FOLDS, _contiguous_folds
+from run_deviation_serial_dependence_and_temporal_locus import full_reproduction_gate
+from statistics import SHARP_TEST_MIN_PER_CLASS, SIGN_TO_WORSE_BEHAVIOUR, unit_direction_vectors
+from info_decoding import WATTERS_REGRESSION_DIM
+from statistics import _bias_only_reproduces
+from corpus_sessions import _panichello_directory
+from corpus_sessions import _reachable_sessions
+from run_multi_object_interference_and_locus_within_item_count import _trial_count_weighted
+from statistics import MIN_TRIALS_WITH_DEFINED_DIRECTION
+from run_deviation_serial_dependence_and_temporal_locus import MACAQUE_DEVIATION_RAW_R as MACAQUE_REFERENCE_R
+from run_deviation_serial_dependence_and_temporal_locus import WATTERS_DEVIATION_RAW_R as WATTERS_REFERENCE_R
+from statistics import MEANINGFUL_EFFECT_THRESHOLD_R_UNITS
+from stimulation_response_estimator import rate_free_state_deviation
 from state_persistence import slope_across_sessions_test  # noqa: E402
 from statistics import (  # noqa: E402
     minimum_detectable_paired_difference, partial_correlation_permutation_test, permutation_pvalue,
     stable_seed,
 )
+from info_decoding import _linear_detrend_activity, _vector_reference_alignment_with_draws  # noqa: E402
 
 OUTPUT_PATH = ROOT / "results" / "deviation_axis_identity_controls.json"
 CHECKPOINT_DIR = ROOT / "results" / ".checkpoints" / "run_deviation_axis_identity_controls"
@@ -145,7 +154,7 @@ DRIFT_MECHANICAL_CONTROL_DECISION_RULE_DECLARED_BEFORE_FITTING = (
     "norm). The identical residual-axis code path and the identical slow_drift_direction construction are "
     "applied to the synthetic trials; the resulting synthetic axis-to-drift-direction cosine is averaged "
     "over the 20 repetitions to give one session-level synthetic alignment, paired against the real "
-    "observed alignment from part one for the SAME session. The paired difference (real minus synthetic) "
+    "observed alignment from the pooled-alignment stage for the SAME session. The paired difference (real minus synthetic) "
     "is pooled across sessions by the paired sign-flip test, clustered on session.\n"
     "  - the paired difference is NOT significant (two-sided, 0.05) AND its own minimum detectable "
     "difference is below the pre-declared 0.05 absolute-cosine-unit floor -> "
@@ -166,7 +175,7 @@ DETRENDED_CONTROL_DECISION_RULE_DECLARED_BEFORE_FITTING = (
     "(b) local_window -- the leave-one-out reference direction for trial i is recomputed from only the "
     "+/-15 chronologically nearest OTHER trials rather than every other trial in the session, on the "
     "UNMODIFIED raw activity. For each variant the resulting axis is realigned (fresh >=1000-draw rotation "
-    "nulls) against the SAME four reference directions part one used (computed from the original, non-"
+    "nulls) against the SAME four reference directions the pooled-alignment stage used (computed from the original, non-"
     "detrended data, since those references describe properties of the real recording, not of the "
     "detrending choice), and the change in each pooled alignment (variant minus part-one original, paired "
     "per session, paired sign-flip test) is reported with its own minimum detectable difference. Branch per "
@@ -308,17 +317,6 @@ def _flush(output: dict) -> None:
 # needed here to pool a rotation-null test across sessions via _pool_rotation_statistic.
 # =======================================================================================================
 
-def _vector_reference_alignment_with_draws(a: np.ndarray, ref: np.ndarray | None, n_draws: int, seed_tag: str) -> dict | None:
-    if ref is None:
-        return None
-    n_units = a.shape[0]
-    observed = abs(float(np.dot(a, ref)))
-    rng = np.random.default_rng(stable_seed(seed_tag))
-    g = rng.standard_normal((n_draws, n_units))
-    g /= np.linalg.norm(g, axis=1, keepdims=True)
-    draws = np.abs(g @ ref)
-    return {"observed": observed, "draws": draws}
-
 
 def _subspace_reference_alignment_with_draws(a: np.ndarray, basis: np.ndarray | None, n_draws: int, seed_tag: str) -> dict | None:
     if basis is None:
@@ -366,8 +364,8 @@ def _preceding_reference_alignment_with_draws(a: np.ndarray, U: np.ndarray, labe
 def _alignment_suite(axis: np.ndarray, U: np.ndarray, spike_count: np.ndarray, trial_index: np.ndarray,
                       labels: np.ndarray, cued_theta: np.ndarray | None, seed_tag: str, is_watters: bool) -> dict:
     """The same four reference constructions the source artifact's axis-alignment block uses, applied here
-    to whatever (axis, U) pair the caller hands in -- the real axis in part one, a detrended-variant axis
-    in part two -- so the identical alignment machinery serves all three parts without being duplicated
+    to whatever (axis, U) pair the caller hands in -- the real axis in the pooled-alignment stage, a detrended-variant axis
+    in the drift-control stage -- so the identical alignment machinery serves all three stages without being duplicated
     three times."""
     out: dict[str, dict | None] = {}
     ref = _regression_direction(U, spike_count)
@@ -389,7 +387,7 @@ def _alignment_suite(axis: np.ndarray, U: np.ndarray, spike_count: np.ndarray, t
 
 
 # =======================================================================================================
-# PART ONE -- pooled alignment
+# Pooled alignment
 # =======================================================================================================
 
 def _pooled_alignment_macaque_session(bundle: dict) -> dict:
@@ -507,7 +505,7 @@ def _classify_alignment_branch(pooled: dict) -> str:
 
 
 # =======================================================================================================
-# PART TWO, CONTROL 1 -- analytic/synthetic pure-drift control
+# Drift control 1 -- analytic/synthetic pure-drift control
 # =======================================================================================================
 
 def _linear_trend_vector(U: np.ndarray, covariate: np.ndarray) -> tuple[np.ndarray, np.ndarray, float]:
@@ -631,16 +629,8 @@ def run_drift_mechanical_control(bundles: list[dict], corpus_key: str) -> dict:
 
 
 # =======================================================================================================
-# PART TWO, CONTROL 2 -- detrended controls
+# Drift control 2 -- detrended controls
 # =======================================================================================================
-
-def _linear_detrend_activity(activity_by_unit: np.ndarray, trial_index: np.ndarray) -> np.ndarray:
-    n = activity_by_unit.shape[0]
-    t_centered = trial_index - trial_index.mean()
-    design = np.column_stack([np.ones(n), t_centered])
-    coef, *_ = np.linalg.lstsq(design, activity_by_unit, rcond=None)
-    slope = coef[1]
-    return activity_by_unit - np.outer(t_centered, slope)
 
 
 def _local_window_residual_rows(activity_by_unit: np.ndarray, half_window: int, floor: float = RESIDUAL_NORM_FLOOR) -> dict:
@@ -911,7 +901,7 @@ def run_detrended_deviation_behaviour(bundles: list[dict], corpus_key: str) -> d
 
 
 # =======================================================================================================
-# PART THREE -- rate reconciliation
+# Rate reconciliation
 # =======================================================================================================
 
 def _rate_reconciliation_level(activity: np.ndarray, deviation: np.ndarray, spike_count: np.ndarray,
@@ -1258,13 +1248,13 @@ def main() -> None:
     corpora = {CORPORA[0]: macaque_bundles, CORPORA[1]: watters_bundles}
     delivered_reference_effect = {CORPORA[0]: abs(float(MACAQUE_REFERENCE_R)), CORPORA[1]: abs(float(WATTERS_REFERENCE_R))}
 
-    _log("part one: pooling axis alignments")
+    _log("pooled alignment: pooling axis alignments")
     part_one = run_part_one(corpora)
     output["part_one_pooled_alignment"] = part_one
     _flush(output)
     for corpus_key in CORPORA:
         for ref_name, entry in part_one[corpus_key]["by_reference"].items():
-            _log(f"  part one [{corpus_key}][{ref_name}]: {entry['branch']}")
+            _log(f"  pooled alignment [{corpus_key}][{ref_name}]: {entry['branch']}")
 
     output["reproduction_gate_against_axis_structure"] = _reproduction_gate_against_source(part_one, session_limited)
     _flush(output)
@@ -1278,7 +1268,7 @@ def main() -> None:
         _log("STOPPING: recomputed alignment values did not match the source artifact to 1e-6")
         return
 
-    _log("part two: drift-mechanical control (synthetic pure-drift generator)")
+    _log("drift controls: drift-mechanical control (synthetic pure-drift generator)")
     part_two = {"slow_drift_direction_definition": SLOW_DRIFT_DIRECTION_DEFINITION, "drift_mechanical_control": {},
                 "detrended_control": {}, "detrended_deviation_behaviour": {}}
     for corpus_key, bundles in corpora.items():
@@ -1294,7 +1284,7 @@ def main() -> None:
         for corpus_key in CORPORA
     }
 
-    _log("part two: detrended controls (linear + local-window)")
+    _log("drift controls: detrended controls (linear + local-window)")
     for variant in ("linear_detrend", "local_window"):
         part_two["detrended_control"][variant] = {}
         for corpus_key, bundles in corpora.items():
@@ -1305,7 +1295,7 @@ def main() -> None:
     output["part_two_drift_mechanical_control"] = part_two
     _flush(output)
 
-    _log("part two: detrended deviation vs behaviour (linear detrend only), with mandatory bias-only control")
+    _log("drift controls: detrended deviation vs behaviour (linear detrend only), with mandatory bias-only control")
     for corpus_key, bundles in corpora.items():
         result = run_detrended_deviation_behaviour(bundles, corpus_key)
         part_two["detrended_deviation_behaviour"][corpus_key] = result
@@ -1314,9 +1304,9 @@ def main() -> None:
     output["status"] = "part_one_and_two_complete"
     output["wall_clock_s_after_part_two"] = time.time() - t0
     _flush(output)
-    _log(f"PART ONE AND TWO COMPLETE, elapsed={time.time() - t0:.0f}s -- proceeding to part three")
+    _log(f"POOLED ALIGNMENT AND DRIFT CONTROLS COMPLETE, elapsed={time.time() - t0:.0f}s -- proceeding to rate reconciliation")
 
-    _log("part three: rate reconciliation")
+    _log("rate reconciliation stage")
     part_three = {}
     for corpus_key, bundles in corpora.items():
         result = run_part_three(bundles, corpus_key, delivered_reference_effect[corpus_key])

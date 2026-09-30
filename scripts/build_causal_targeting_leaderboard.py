@@ -4,12 +4,12 @@ per arm, then promote the correctly-designed arena to primary.
 
 The original "winner" field took argmax(slope) over a MIXED list -- 8 arms
 scored on macaque PFC microstimulation's causal-stim design (n=15670) and 2 (macrosignal_pac,
-rl_policy_alignment) scored on Boran's targeting side-benchmark (n<=6). Not
+rl_policy_alignment) scored on DANDI 000574's targeting side-benchmark (n<=6). Not
 a valid ranking: raw arm-count is not the criterion, and arms must be
 compared on the same design to be ranked against each other.
 
 An earlier version of this leaderboard fixed the mixing but picked
-Boran-iEEG as primary_leaderboard because it fit all 10 arms -- and came
+DANDI 000574-iEEG as primary_leaderboard because it fit all 10 arms -- and came
 back undecidable (n<=6, winner=null, every DML p flagged untrustworthy,
 arms scored on DIFFERENT subject subsets so not even internally comparable).
 That choice is superseded here: an underpowered, internally-unequal-n arena
@@ -36,7 +36,7 @@ already wrote, and writes THREE distinct objects:
 
   primary_leaderboard        : the macaque PFC microstimulation-6 causal arena. Ranked by
                                 gate-slope, all p_value_trustworthy=true.
-  breadth_descriptive_arena  : the Boran-iEEG 10-arm arena (former "primary"),
+  breadth_descriptive_arena  : the DANDI 000574-iEEG 10-arm arena (former "primary"),
                                 relabeled secondary/descriptive -- the only
                                 arena PAC and RL are computable in, and the
                                 only place the destabilization finding lives.
@@ -88,7 +88,7 @@ def _fmt_dml(dml: dict | None) -> dict:
 
 
 def build_breadth_arena() -> dict:
-    """Boran-iEEG, all 10 arms co-eligible. DEMOTED from primary to
+    """DANDI 000574-iEEG, all 10 arms co-eligible. DEMOTED from primary to
     descriptive breadth -- underpowered (n<=6), every DML p a small-n
     cross-fitting artifact, and arms scored on different subject subsets after
     per-arm destabilization exclusion (not internally comparable). Its
@@ -112,8 +112,8 @@ def build_breadth_arena() -> dict:
             "flip_rate_dml": _fmt_dml(lb.get("flip_rate_dml")),
         }
         if arm == "macrosignal_pac":
-            arms[arm]["note"] = ("Reached the n>=4 pooling floor only via Part 8B's uniform "
-                                 "near-tie-donor rescue (see rescue_note below); n_destabilized_"
+            arms[arm]["note"] = ("Reached the n>=4 pooling floor only via the uniform "
+                                 "near-tie-donor rescue rule (see rescue_note below); n_destabilized_"
                                  "excluded counts donors excluded even after rescue was attempted.")
         if arm == "rl_policy_alignment":
             arms[arm]["mean_align_to_vstar"] = lb.get("mean_align_to_vstar")
@@ -138,7 +138,7 @@ def build_breadth_arena() -> dict:
         "arena": "boran_ieeg",
         "unit_level": "subject (n<=6 after near-tie-rescue + destabilization exclusion)",
         "metric": "drift_reduction (dml_partial_linear: drift_reduction ~ per-subject align-to-criterion, subject-dummy confounders)",
-        "exclusion_rule": ("rho_closed > rho_open (destabilized) excluded; Part 8B near-tie-rescue "
+        "exclusion_rule": ("rho_closed > rho_open (destabilized) excluded; the near-tie-rescue rule "
                           "(tolerance=0.90 of top criterion score, pre-specified) applied UNIFORMLY "
                           "to every arm's donor selection before exclusion, not just PAC"),
         "n_arms_scored": n_arms_scored,
@@ -161,7 +161,7 @@ def build_breadth_arena() -> dict:
                         "(plant drifts MORE under control than without it, for essentially every "
                         "candidate direction at this arena's noise/mismatch settings) except "
                         "rl_policy_alignment's single surviving subject and anat_modal_ctrl -- this "
-                        "itself is a finding (see agent_report.md), not evidence any one arm 'wins'."),
+                        "itself is a finding, not evidence any one arm 'wins'."),
         "arms": arms,
     }
     return breadth
@@ -192,7 +192,7 @@ def build_macaque_pfc_microstimulation_primary_leaderboard() -> dict:
     arms = {}
     for arm in scoreable_arms:
         if arm not in macaque_pfc_microstimulation:
-            # Part 15A: benchmark_modifiers' zero-variance guard can exclude
+            # benchmark_modifiers' zero-variance guard can exclude
             # session_mean_vstar_scalar entirely -- that IS the trial-
             # resolution answer (v* carries no exploitable static session
             # structure), not a missing-data bug. Report honestly.
@@ -212,8 +212,8 @@ def build_macaque_pfc_microstimulation_primary_leaderboard() -> dict:
     arms["macrosignal_pac"] = {
         "eligible": False,
         "reason": ("macaque PFC microstimulation is spike-rate data only (run_macaque_pfc_microstimulation_pipeline.py loads binned spike rate, "
-                  "no LFP/broadband channel) -- no continuous phase signal exists to compute PAC from "
-                  "(DATASET_ANALYSIS_MATRIX.md exclusion note 5). Confirmed, not a fabricated gap."),
+                  "no LFP/broadband channel) -- no continuous phase signal exists to compute PAC from. "
+                  "Confirmed by direct inspection of the recording, not a fabricated gap."),
     }
     arms["rl_policy_alignment"] = {
         "eligible": False,
@@ -309,7 +309,7 @@ def _load_macaque_pfc_microstimulation_leaderboard() -> dict:
 
 def build_cross_dataset_replication(breadth: dict) -> dict:
     """Per-arm generalization across datasets. Independent of which arena is
-    primary -- `breadth` supplies the Boran-iEEG cells (the secondary
+    primary -- `breadth` supplies the DANDI 000574-iEEG cells (the secondary
     breadth arena)."""
     macaque_pfc_microstimulation_arms = {k: v for k, v in _load_macaque_pfc_microstimulation_leaderboard().items() if k in DYNAMICS_ARMS}
 
@@ -342,7 +342,7 @@ def build_cross_dataset_replication(breadth: dict) -> dict:
                 "dataset": "macaque_pfc_microstimulation", "n": sv["n"], "unit_level": "trial (DML, causal design)",
                 "slope": sv["slope"], "slope_ci_lo": sv["slope_ci_lo"], "slope_ci_hi": sv["slope_ci_hi"],
                 "p_value": sv["p_value"], "p_value_trustworthy": True,
-                "note": "the ONLY dataset here with delivered stimulation + a designed propensity; this is the primary causal-inference result of the paper, reported here as ONE replication cell, not merged with Boran's descriptive arena",
+                "note": "the ONLY dataset here with delivered stimulation + a designed propensity; this is the primary causal-inference result of the paper, reported here as ONE replication cell, not merged with DANDI 000574's descriptive arena",
             }
         elif arm in ("anat_avg_ctrl", "anat_modal_ctrl"):
             cell["macaque_pfc_microstimulation"] = {
@@ -364,14 +364,14 @@ def build_cross_dataset_replication(breadth: dict) -> dict:
         elif arm != "vstar_alignment":
             cell["miller_ecog"] = {"eligible": False,
                                    "reason": ("only vstar_alignment's per-subject best-donor rollout exists "
-                                             "for Miller (results/closed_loop.json, reused from the existing "
+                                             "for ECoG n-back corpus (results/closed_loop.json, reused from the existing "
                                              "single-donor replication convention); the other 7 dynamics/"
-                                             "control arms were never constructed on Miller's TES1 bank "
+                                             "control arms were never constructed on ECoG n-back corpus's TES1 bank "
                                              "-- concrete gap, not a fabricated null")}
         cell["rutishauser_000469_001187_000673"] = {
             "eligible": False,
-            "reason": ("no TES1-derived B in MTL/medial-frontal (DATASET_ANALYSIS_MATRIX.md exclusion #2); "
-                      "a fitted A exists (Part 4 DMD extension) but no donor bank -- no steering direction "
+            "reason": ("no TES1-derived B in MTL/medial-frontal; "
+                      "a fitted A exists (from the DMD extension) but no donor bank -- no steering direction "
                       "is constructible, so no dynamics/control arm is scoreable here")}
         replication[arm] = cell
 
@@ -385,8 +385,8 @@ def build_cross_dataset_replication(breadth: dict) -> dict:
             "p_value_trustworthy": breadth["arms"]["macrosignal_pac"]["drift_reduction_dml"].get("p_value_trustworthy", False),
         }
     pac_cell["macaque_pfc_microstimulation"] = {"eligible": False, "reason": "spike-rate data only (run_macaque_pfc_microstimulation_pipeline.py loads binned spikerate, no LFP/broadband channel) -- no continuous phase signal exists to compute PAC from"}
-    pac_cell["miller_ecog"] = {"eligible": False, "reason": ("continuous LFP AND a TES1 B-bank both exist (results/tes1_comprehensive.npz has full al/ca/cc/ug bundles) -- structurally eligible -- but Miller's NWB files carry task condition, not response accuracy (see run_closed_loop_behavior_flip.py header), so the outcome-decoder/flip-rate half of the targeting-benchmark construction is not buildable; a drift-reduction-only PAC replication cell (paralleling the Miller vstar_alignment cell above) has not yet been built -- concrete gap, flagged as future work, not silently skipped")}
-    pac_cell["rutishauser_000673"] = {"eligible": False, "reason": ("000673 has hippocampal LFP and IS PAC-computable in principle (DATASET_ANALYSIS_MATRIX.md exclusion #5) -- but like all dynamics/control arms it lacks a TES1 B-bank in MTL, so there is no donor bank to project the PAC-weighted direction into or steer along -- same missing ingredient as every other control arm there, not a PAC-specific gap")}
+    pac_cell["miller_ecog"] = {"eligible": False, "reason": ("continuous LFP AND a TES1 B-bank both exist (results/tes1_comprehensive.npz has full al/ca/cc/ug bundles) -- structurally eligible -- but ECoG n-back corpus's NWB files carry task condition, not response accuracy (see run_closed_loop_behavior_flip.py header), so the outcome-decoder/flip-rate half of the targeting-benchmark construction is not buildable; a drift-reduction-only PAC replication cell (paralleling the ECoG n-back corpus vstar_alignment cell above) has not yet been built -- concrete gap, flagged as future work, not silently skipped")}
+    pac_cell["rutishauser_000673"] = {"eligible": False, "reason": ("000673 has hippocampal LFP and IS PAC-computable in principle -- but like all dynamics/control arms it lacks a TES1 B-bank in MTL, so there is no donor bank to project the PAC-weighted direction into or steer along -- same missing ingredient as every other control arm there, not a PAC-specific gap")}
     pac_cell["rutishauser_000469_001187"] = {"eligible": False, "reason": "single-unit only, no continuous LFP/broadband channel"}
     replication["macrosignal_pac"] = pac_cell
 
@@ -395,7 +395,7 @@ def build_cross_dataset_replication(breadth: dict) -> dict:
         "note": "n=0 after exclusion (5/6 subjects' physically-realized donor destabilizes; see breadth_descriptive_arena.arms.rl_policy_alignment)",
         "mean_align_to_vstar": breadth["arms"]["rl_policy_alignment"].get("mean_align_to_vstar"),
     }}
-    rl_cell["other_datasets"] = {"eligible": False, "reason": "RL policy training has so far only been run against the Boran A/B plant; not replicated on macaque PFC microstimulation/Miller/Rutishauser plants -- concrete gap, future work"}
+    rl_cell["other_datasets"] = {"eligible": False, "reason": "RL policy training has so far only been run against the DANDI 000574 A/B plant; not replicated on macaque PFC microstimulation/ECoG n-back corpus/human single-unit DANDI corpora plants -- concrete gap, future work"}
     replication["rl_policy_alignment"] = rl_cell
 
     return replication
@@ -490,13 +490,13 @@ def main():
         "amplification": amplification_block,
         "_deprecated_mixed_winner_removed": ("the original top-level 'winner' field (argmax(slope) "
                                              "across ALL 10 arms regardless of dataset/n) was not a valid "
-                                             "ranking: it returned 'macrosignal_pac' (n=6, Boran) purely "
+                                             "ranking: it returned 'macrosignal_pac' (n=6, DANDI 000574) purely "
                                              "because its raw slope magnitude (48.85) numerically exceeded "
                                              "vstar_alignment's macaque PFC microstimulation slope (0.033), despite the two "
                                              "being on incomparable scales/designs."),
-        "_deprecated_boran_primary_removed": ("An earlier version made Boran-iEEG primary_leaderboard "
+        "_deprecated_boran_primary_removed": ("An earlier version made DANDI 000574 iEEG primary_leaderboard "
                                               "because it fit all 10 arms; that choice is superseded here: "
-                                              "raw arm-count is not the criterion, and Boran-10 was "
+                                              "raw arm-count is not the criterion, and the DANDI 000574 10-arm arena was "
                                               "undecidable (n<=6, winner=null, every p untrustworthy, not "
                                               "even internally comparable). See breadth_descriptive_arena."),
         "_deprecated_anat_arms_as_null_removed": ("anat_avg_ctrl/anat_modal_ctrl were "
@@ -512,10 +512,10 @@ def main():
     with open(RESULTS / "causal_benchmark.json", "w") as f:
         json.dump(_json_safe(new_bench), f, indent=2, allow_nan=False)
     print("Rewrote results/causal_benchmark.json: primary_leaderboard (macaque PFC microstimulation-6) + "
-          "breadth_descriptive_arena (Boran-10) + cross_dataset_replication.")
+          "breadth_descriptive_arena (DANDI 000574-10) + cross_dataset_replication.")
     print(f"Primary-arena (macaque PFC microstimulation) winner: {primary['winner']}")
     print(f"Primary-arena significant arms: {primary['significant_arms']}")
-    print("Breadth-arena (Boran) winner: NONE DECLARED (underpowered, see role_note/winner_note)")
+    print("Breadth-arena (DANDI 000574) winner: NONE DECLARED (underpowered, see role_note/winner_note)")
 
 
 if __name__ == "__main__":

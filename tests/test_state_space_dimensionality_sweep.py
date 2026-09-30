@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import run_state_space_dimensionality_sweep as m  # noqa: E402
+from info_decoding import _require_linear_representation, cross_validated_predictable_fraction, fit_linear_representation, in_sample_linear_fraction
 
 
 # ---------------------------------------------------------------------------------------------------
@@ -40,7 +41,7 @@ def test_predictable_fraction_reduces_to_subspace_projection():
     y = X @ w  # noiseless
 
     Z = X @ S
-    restated = m.cross_validated_predictable_fraction(y, Z, alpha=1e-6, rng=np.random.default_rng(1))
+    restated = cross_validated_predictable_fraction(y, Z, alpha=1e-6, rng=np.random.default_rng(1))
     assert restated["status"] == "computed"
 
     P = S @ S.T
@@ -60,8 +61,8 @@ def test_cross_validated_and_in_sample_coincide_noiseless():
     y = X @ w
     Z = X @ S
 
-    cv = m.cross_validated_predictable_fraction(y, Z, alpha=1e-6, rng=np.random.default_rng(3))
-    naive = m.in_sample_linear_fraction(y, Z)
+    cv = cross_validated_predictable_fraction(y, Z, alpha=1e-6, rng=np.random.default_rng(3))
+    naive = in_sample_linear_fraction(y, Z)
     assert cv["status"] == "computed" and naive["status"] == "computed"
     assert abs(cv["predictable_fraction"] - naive["linear_fraction"]) < 0.01
 
@@ -91,11 +92,11 @@ def test_fit_linear_representation_refuses_non_null_labels():
     consumes it project-wide."""
     rng = np.random.default_rng(8)
     X = rng.standard_normal((50, 6))
-    fit = m.fit_linear_representation(X, rank=3)  # labels omitted: does not raise
+    fit = fit_linear_representation(X, rank=3)  # labels omitted: does not raise
     assert fit["kind"] == "pca"
     assert fit["fitting_objective"] == "unsupervised_pca_reconstruction_no_labels"
     try:
-        m.fit_linear_representation(X, rank=3, labels=rng.integers(0, 2, size=50))
+        fit_linear_representation(X, rank=3, labels=rng.integers(0, 2, size=50))
         raised = False
     except ValueError:
         raised = True
@@ -105,9 +106,9 @@ def test_fit_linear_representation_refuses_non_null_labels():
 def test_require_linear_representation_guards_nonlinear_kind():
     """A subspace-angle projector has no canonical basis in a nonlinear embedding; the guard must
     refuse anything not explicitly flagged as a linear (PCA) representation."""
-    m._require_linear_representation({"kind": "pca"})  # does not raise
+    _require_linear_representation({"kind": "pca"})  # does not raise
     try:
-        m._require_linear_representation({"kind": "nonlinear_embedding"})
+        _require_linear_representation({"kind": "nonlinear_embedding"})
         raised = False
     except ValueError:
         raised = True

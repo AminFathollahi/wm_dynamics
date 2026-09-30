@@ -24,37 +24,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from statistics import Z_80_POWER  # noqa: E402
-from run_human_stimulation_component_response import (  # noqa: E402
-    ALPHA,
-    MEANINGFUL_EFFECT_THRESHOLD_NORMALISED_DISPLACEMENT,
-    _bipolar_channel_shanks,
-    _bootstrap_pooled_mdd_displacement,
-    _classify_component_recall_failure_link,
-    _classify_stimulation_displacement,
-    _classify_pretask_titration,
-    _classify_two_arm_meta,
-    _contact_shank,
-    _displacement_scale_arm,
-    _dose_scaling_interpretability_note,
-    _exhaustive_sign_flip_check,
-    _heterogeneity_guard_capacity,
-    _ladder_rung,
-    _pretask_titration_dose_arm,
-    _pretask_titration_subject_level_slopes,
-    _sign_flip_null_capacity,
-    _spontaneous_control_sd_direct,
-    _subjects_with_amplitude_variation,
-    _task_period_dose_arm,
-    _task_period_subject_level_slopes,
-    _verify_commensurable_normalisation,
-    channel_condition_masks,
-    compute_stimulation_displacement,
-    _dose_quantities,
-    find_pretask_titration_series,
-    minimum_detectable_correlation,
-    subject_aggregated_correlation,
-    subject_clustered_mean_test,
-)
+from run_human_stimulation_component_response import MEANINGFUL_EFFECT_THRESHOLD_NORMALISED_DISPLACEMENT, _bootstrap_pooled_mdd_displacement, _classify_component_recall_failure_link, _classify_stimulation_displacement, _classify_pretask_titration, _classify_two_arm_meta, _displacement_scale_arm, _dose_scaling_interpretability_note, _exhaustive_sign_flip_check, _heterogeneity_guard_capacity, _ladder_rung, _pretask_titration_dose_arm, _pretask_titration_subject_level_slopes, _sign_flip_null_capacity, _spontaneous_control_sd_direct, _subjects_with_amplitude_variation, _task_period_dose_arm, _task_period_subject_level_slopes, _verify_commensurable_normalisation, _dose_quantities, find_pretask_titration_series
+from stimulation_events import _bipolar_channel_shanks, _contact_shank, channel_condition_masks, compute_stimulation_displacement, minimum_detectable_correlation, required_subjects_for_detectable_correlation, subject_aggregated_correlation, subject_clustered_mean_test
+from stimulation_events import ALPHA
 
 
 def _random_unit_vectors(rng: np.random.Generator, n: int, d: int, center: np.ndarray, concentration: float) -> np.ndarray:
@@ -217,6 +189,25 @@ def test_minimum_detectable_correlation_shrinks_with_more_subjects():
     assert large["mdd"] < small["mdd"]
 
 
+def test_required_subjects_for_detectable_correlation_is_the_inverse():
+    mdd = minimum_detectable_correlation(47)
+    inverse = required_subjects_for_detectable_correlation(mdd["mdd"])
+    assert inverse["status"] == "computed"
+    assert inverse["n_subjects_required"] == 47
+
+
+def test_required_subjects_for_detectable_correlation_matches_stored_value():
+    out = required_subjects_for_detectable_correlation(0.14)
+    assert out["status"] == "computed"
+    assert out["raw_n_subjects"] == pytest.approx(398.21010192361365)
+    assert out["n_subjects_required"] == 399
+
+
+def test_required_subjects_for_detectable_correlation_rejects_out_of_range_r():
+    assert required_subjects_for_detectable_correlation(0.0)["status"] == "not_computable"
+    assert required_subjects_for_detectable_correlation(1.0)["status"] == "not_computable"
+
+
 # ---------------------------------------------------------------------------------------------------
 # Pre-declared branch classifiers
 # ---------------------------------------------------------------------------------------------------
@@ -330,7 +321,7 @@ def test_classify_pretask_titration_powered_null_only_when_every_series_clears_d
 
 
 def test_classify_pretask_titration_underpowered_when_no_series_clears_displacement_threshold():
-    # Reproduces the reported defect's actual numbers: a slope-scale mdd of ~0.00435 per microampere is
+    # Reproduces the reported error's actual numbers: a slope-scale mdd of ~0.00435 per microampere is
     # NOT directly comparable to the level-scale threshold of 1.0 -- converted onto the displacement
     # scale over each of the 13 series' own realised amplitude range, none of them clear it, so the arm
     # must classify as underpowered, not as a powered null.
@@ -623,7 +614,7 @@ def test_interpretability_note_uninterpretable_branches_say_not_the_answer():
 def test_interpretability_note_when_combinable_does_not_overclaim_the_heterogeneity_check():
     note = _dose_scaling_interpretability_note("dose_scaling_across_both_arms_pooled", True)
     assert "agree in sign" in note
-    # The defect this note fixes: claiming the heterogeneity check is itself positive evidence of
+    # The error this note fixes: claiming the heterogeneity check is itself positive evidence of
     # combinability, when with two arms it structurally cannot return anything else.
     assert "could not have flagged disagreement" in note
     assert "not independent evidence" in note
@@ -659,7 +650,7 @@ def test_pretask_titration_subject_level_slopes_collapses_multi_series_subjects_
 
 
 # ---------------------------------------------------------------------------------------------------
-# Sign-flip null capacity (item 1): why own_slope_p_value is exactly 1.0 for both arms
+# Sign-flip null capacity: why own_slope_p_value is exactly 1.0 for both arms
 # ---------------------------------------------------------------------------------------------------
 
 def test_sign_flip_null_capacity_matches_known_floor_at_n3_and_n7():
@@ -699,7 +690,7 @@ def test_exhaustive_sign_flip_check_rejects_non_minimum_observed():
 
 
 # ---------------------------------------------------------------------------------------------------
-# Bootstrap CI on the pooled minimum detectable displacement (item 2)
+# Bootstrap CI on the pooled minimum detectable displacement
 # ---------------------------------------------------------------------------------------------------
 
 _BOOT_TASK_VALS = np.array([-0.01, 0.02, 0.005])
@@ -727,7 +718,7 @@ def test_bootstrap_pooled_mdd_displacement_threshold_flag_matches_ci_upper():
 
 
 # ---------------------------------------------------------------------------------------------------
-# Heterogeneity guard capacity (item 5)
+# Heterogeneity guard capacity
 # ---------------------------------------------------------------------------------------------------
 
 def test_heterogeneity_guard_capacity_matches_closed_form_Q_round_trip():

@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 
 import run_band_versus_sensor_decomposition as bvs  # noqa: E402
+from spike_pipeline import _extract_noise_fraction, resolve_comparison
 
 
 class TestDegeneracyReasonCatchesADeadRecordingBeforeTheExpensiveFit:
@@ -54,22 +55,22 @@ def _session(noise_fraction: float | None, status: str = "fitted") -> dict:
 
 class TestExtractNoiseFractionHandlesMissingValues:
     def test_none_session_returns_none(self):
-        assert bvs._extract_noise_fraction(None) is None
+        assert _extract_noise_fraction(None) is None
 
     def test_degenerate_factor_model_returns_none_not_a_fabricated_number(self):
         session = _session(None, status="factor_model_did_not_converge_or_degenerate")
-        assert bvs._extract_noise_fraction(session) is None
+        assert _extract_noise_fraction(session) is None
 
     def test_missing_dimensionality_key_returns_none_rather_than_raising(self):
-        assert bvs._extract_noise_fraction({}) is None
+        assert _extract_noise_fraction({}) is None
 
     def test_fitted_session_returns_its_own_value(self):
-        assert bvs._extract_noise_fraction(_session(0.42)) == 0.42
+        assert _extract_noise_fraction(_session(0.42)) == 0.42
 
 
 class TestResolveComparisonNeverResolvesABranchFromAnAbsentValue:
     def test_no_sessions_in_common_is_not_computable_and_carries_no_branch(self):
-        result = bvs.resolve_comparison(
+        result = resolve_comparison(
             {("sub-01", "ses-01"): _session(0.5)}, {("sub-02", "ses-01"): _session(0.5)},
             np.random.default_rng(0), "costs_little", "is_expensive", "no_resolvable",
         )
@@ -80,7 +81,7 @@ class TestResolveComparisonNeverResolvesABranchFromAnAbsentValue:
         keys = [("sub-01", "ses-01"), ("sub-02", "ses-01"), ("sub-03", "ses-01")]
         sessions_a = {k: _session(0.5) for k in keys}
         sessions_b = {k: _session(0.3) for k in keys}
-        result = bvs.resolve_comparison(sessions_a, sessions_b, np.random.default_rng(0),
+        result = resolve_comparison(sessions_a, sessions_b, np.random.default_rng(0),
                                          "costs_little", "is_expensive", "no_resolvable")
         assert result["status"] == "not_computable"
         assert result["n_pairs"] == 3
@@ -96,7 +97,7 @@ class TestResolveComparisonNeverResolvesABranchFromAnAbsentValue:
             ("sub-01", "ses-01"): _session(0.1), ("sub-02", "ses-01"): _session(0.1),
             ("sub-03", "ses-01"): _session(0.1), ("sub-04", "ses-01"): _session(0.1),
         }
-        result = bvs.resolve_comparison(sessions_a, sessions_b, np.random.default_rng(0),
+        result = resolve_comparison(sessions_a, sessions_b, np.random.default_rng(0),
                                          "costs_little", "is_expensive", "no_resolvable")
         assert result["status"] == "fitted"
         assert result["n_pairs"] == 4, "the unpaired 5th session must not be counted"
@@ -107,7 +108,7 @@ class TestResolveComparisonNeverResolvesABranchFromAnAbsentValue:
         sessions_b = {k: _session(0.5) for k in keys[:3]}
         sessions_b[keys[3]] = _session(None, status="factor_model_did_not_converge_or_degenerate")
         sessions_b[keys[4]] = _session(None, status="factor_model_did_not_converge_or_degenerate")
-        result = bvs.resolve_comparison(sessions_a, sessions_b, np.random.default_rng(0),
+        result = resolve_comparison(sessions_a, sessions_b, np.random.default_rng(0),
                                          "costs_little", "is_expensive", "no_resolvable")
         assert result["status"] == "not_computable"
         assert result["n_pairs"] == 3
@@ -121,7 +122,7 @@ class TestResolveComparisonBranchesAreDirectionAware:
         keys = self._keys(8)
         sessions_a = {k: _session(0.2) for k in keys}
         sessions_b = {k: _session(0.6) for k in keys}
-        result = bvs.resolve_comparison(sessions_a, sessions_b, np.random.default_rng(1),
+        result = resolve_comparison(sessions_a, sessions_b, np.random.default_rng(1),
                                          "costs_little", "is_expensive", "no_resolvable")
         assert result["status"] == "fitted"
         assert result["branch"] == "costs_little"
@@ -132,7 +133,7 @@ class TestResolveComparisonBranchesAreDirectionAware:
         rng = np.random.default_rng(2)
         sessions_a = {k: _session(0.85 + 0.01 * rng.standard_normal()) for k in keys}
         sessions_b = {k: _session(0.15 + 0.01 * rng.standard_normal()) for k in keys}
-        result = bvs.resolve_comparison(sessions_a, sessions_b, np.random.default_rng(3),
+        result = resolve_comparison(sessions_a, sessions_b, np.random.default_rng(3),
                                          "costs_little", "is_expensive", "no_resolvable")
         assert result["status"] == "fitted"
         assert result["branch"] == "is_expensive"
@@ -145,7 +146,7 @@ class TestResolveComparisonBranchesAreDirectionAware:
         rng = np.random.default_rng(4)
         sessions_a = {k: _session(0.501 + 0.3 * rng.standard_normal()) for k in keys}
         sessions_b = {k: _session(0.500 + 0.3 * rng.standard_normal()) for k in keys}
-        result = bvs.resolve_comparison(sessions_a, sessions_b, np.random.default_rng(5),
+        result = resolve_comparison(sessions_a, sessions_b, np.random.default_rng(5),
                                          "costs_little", "is_expensive", "no_resolvable")
         if result["branch"] == "no_resolvable":
             assert result["minimum_detectable_paired_difference_80pct_power"]["status"] == "computed"
@@ -157,7 +158,7 @@ class TestResolveComparisonBranchesAreDirectionAware:
         keys = self._keys(6)
         sessions_a = {k: _session(0.7) for k in keys}
         sessions_b = {k: _session(0.3) for k in keys}
-        result = bvs.resolve_comparison(sessions_a, sessions_b, np.random.default_rng(6),
+        result = resolve_comparison(sessions_a, sessions_b, np.random.default_rng(6),
                                          "costs_little", "is_expensive", "no_resolvable")
         assert result["r_obs_median_value_of_interest"] == pytest.approx(0.7)
         assert result["r_obs_median_reference_value"] == pytest.approx(0.3)

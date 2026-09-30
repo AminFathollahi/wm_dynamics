@@ -7,9 +7,9 @@ cohort, giving real variance to test against.
 
 Datasets INSPECTED (not assumed) for a graded behavioral field aligned to the
 same trials table the maintenance geometry (Z, drift) was computed from:
-  - dandi000469 (Rutishauser, intervals/trials): no bare RT field; RT =
+  - dandi000469 (human single-unit DANDI corpora, intervals/trials): no bare RT field; RT =
     timestamps_Response - timestamps_Probe (both present).
-  - dandi001187 (Rutishauser, intervals/WM_trials): response_time field
+  - dandi001187 (human single-unit DANDI corpora, intervals/WM_trials): response_time field
     present and already trial-relative (verified against
     timestamps_Response - timestamps_Probe on real data -- matches to <0.03s).
     A genuine subject-reported "confidence" field EXISTS in this dataset, but
@@ -17,7 +17,7 @@ same trials table the maintenance geometry (Z, drift) was computed from:
     long-term-memory recognition task) -- NOT aligned to WM_trials / the
     maintenance geometry this script uses, so it is not usable here and is not
     fabricated as if it were.
-  - dandi000673 (Rutishauser, intervals/trials): no bare RT field, no
+  - dandi000673 (human single-unit DANDI corpora, intervals/trials): no bare RT field, no
     confidence field; RT = timestamps_Response - timestamps_Probe.
   - boran iEEG (000574, intervals/trials): response_time field present,
     already trial-relative once trial start_time is subtracted (matches
@@ -85,7 +85,6 @@ from statistics import (Z_80_POWER, linear_mixed_effects_test, forest_meta, stou
                         permutation_pvalue)
 
 RESULTS = ROOT / "results"
-DATA_ROOT = data_root()
 
 MIN_SUBJECTS = 2
 MIN_TRIALS = 30
@@ -600,7 +599,7 @@ def _run_control_arms(trials: dict, seed_prefix: str, native: dict) -> dict:
 
 # ── Per-dataset extraction ──────────────────────────────────────────────────
 
-def run_dandi000469() -> tuple[dict, dict | None]:
+def run_dandi000469(data_root_dir: Path) -> tuple[dict, dict | None]:
     all_drift, all_rt, all_subj, all_load, all_outcome, all_amp, all_idx = [], [], [], [], [], [], []
     sessions_seen, sessions_refused = 0, []
     for path in sorted(RESULTS.glob("dandi000469_geometry_sub-*.npz")):
@@ -610,7 +609,7 @@ def run_dandi000469() -> tuple[dict, dict | None]:
         if "drift" not in d:
             sessions_refused.append({"session": subj, "reason": "no drift field in geometry file"})
             continue
-        nwb = DATA_ROOT / "000469" / subj / f"{subj}_ses-2_ecephys+image.nwb"
+        nwb = data_root_dir / "000469" / subj / f"{subj}_ses-2_ecephys+image.nwb"
         if not nwb.exists():
             sessions_refused.append({"session": subj, "reason": "matching NWB file not found"})
             continue
@@ -640,7 +639,7 @@ def run_dandi000469() -> tuple[dict, dict | None]:
     return res, trials_bundle
 
 
-def run_dandi001187() -> tuple[dict, dict | None]:
+def run_dandi001187(data_root_dir: Path) -> tuple[dict, dict | None]:
     all_drift, all_rt, all_subj, all_load, all_outcome, all_amp, all_idx = [], [], [], [], [], [], []
     sessions_seen, sessions_refused = 0, []
     for path in sorted(RESULTS.glob("dandi001187_geometry_sub-*.npz")):
@@ -651,7 +650,7 @@ def run_dandi001187() -> tuple[dict, dict | None]:
         if "drift" not in d:
             sessions_refused.append({"session": key, "reason": "no drift field in geometry file"})
             continue
-        nwb = DATA_ROOT / "001187" / subj_dir / f"{key}.nwb"
+        nwb = data_root_dir / "001187" / subj_dir / f"{key}.nwb"
         if not nwb.exists():
             sessions_refused.append({"session": key, "reason": "matching NWB file not found"})
             continue
@@ -678,7 +677,7 @@ def run_dandi001187() -> tuple[dict, dict | None]:
     return res, trials_bundle
 
 
-def run_dandi000673() -> tuple[dict, dict | None]:
+def run_dandi000673(data_root_dir: Path) -> tuple[dict, dict | None]:
     all_drift, all_rt, all_subj, all_load, all_outcome, all_amp, all_idx = [], [], [], [], [], [], []
     sessions_seen, sessions_refused = 0, []
     for path in sorted(RESULTS.glob("dandi000673_geometry_sub-*.npz")):
@@ -689,7 +688,7 @@ def run_dandi000673() -> tuple[dict, dict | None]:
         if "drift" not in d:
             sessions_refused.append({"session": key, "reason": "no drift field in geometry file"})
             continue
-        nwb = DATA_ROOT / "000673" / subj_dir / f"{key}.nwb"
+        nwb = data_root_dir / "000673" / subj_dir / f"{key}.nwb"
         if not nwb.exists():
             sessions_refused.append({"session": key, "reason": "matching NWB file not found"})
             continue
@@ -719,7 +718,7 @@ def run_dandi000673() -> tuple[dict, dict | None]:
     return res, trials_bundle
 
 
-def run_boran() -> tuple[dict, dict | None]:
+def run_boran(data_root_dir: Path) -> tuple[dict, dict | None]:
     all_drift, all_rt, all_subj, all_load, all_outcome, all_amp, all_idx = [], [], [], [], [], [], []
     sessions_seen, sessions_refused = 0, []
     for path in sorted(RESULTS.glob("boran_geometry_sub-*.npz")):
@@ -736,7 +735,7 @@ def run_boran() -> tuple[dict, dict | None]:
             # -- re-derive directly from NWB, same convention
             # as run_boran_pipeline.load_subject_sessions (response_time is an
             # absolute NWB timestamp; subtract trial start_time for latency).
-            nwbs = sorted((DATA_ROOT / "000574" / subj).glob("*.nwb"))
+            nwbs = sorted((data_root_dir / "000574" / subj).glob("*.nwb"))
             rt_parts = []
             for nwb_path in nwbs:
                 with h5py.File(str(nwb_path), "r") as f:
@@ -938,6 +937,7 @@ def _require_complete_corpus_admission(scored_corpora: dict) -> None:
 
 
 def main():
+    data_root_dir = data_root()
     out = {}
     control_arms = {}
     for name, fn, seed_prefix in [
@@ -947,7 +947,7 @@ def main():
         ("boran_ieeg", run_boran, "geobeh_boran"),
     ]:
         print(f"\n=== {name} (RT ~ drift) ===")
-        res, trials = fn()
+        res, trials = fn(data_root_dir)
         response_time = dict(res)  # native keys unchanged; everything below is additive
         if trials is not None:
             arms = _run_control_arms(trials, seed_prefix, res)

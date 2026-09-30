@@ -5,7 +5,7 @@ k-dimensional subspace -- within_fraction must come out at approximately 1 and t
 reference at k/p; (2) a synthetic negative control where the tested direction is drawn uniformly at
 random in the full ambient space -- the pooled within_fraction must come out at approximately k/p,
 which is the assertion that proves the analytic chance reference is calibrated; (3) a direct pin of the
-degenerate within-subspace null's defect, so it is caught by a test rather than left to prose; plus
+degenerate within-subspace null's error, so it is caught by a test rather than left to prose; plus
 smaller unit checks on the whole-session cluster bootstrap and the per-corpus branch rule.
 """
 import sys
@@ -20,9 +20,10 @@ for _sub in ("src", "scripts"):
         sys.path.insert(0, _p)
 
 from run_occupied_subspace_rank_estimation import _within_subspace_null_decomposition  # noqa: E402
-from run_deviation_axis_structure import _occupied_space_decomposition  # noqa: E402
+from info_decoding import _occupied_space_decomposition
 
 import run_occupied_subspace_membership_effect_size as mod  # noqa: E402
+from info_decoding import _whole_session_cluster_bootstrap
 
 
 def test_planted_axis_inside_known_subspace_recovers_within_fraction_near_one():
@@ -76,13 +77,13 @@ def test_degenerate_within_subspace_null_has_near_zero_off_fraction_by_construct
     assert result["null_off_fraction_mean"] < 1e-10
     assert result["null_is_degenerate_by_construction"] is True
     # any strictly positive observed off-fraction -- true for essentially every real, non-degenerate axis
-    # -- tests as "above" this null; the defect is that this comparison cannot fail.
+    # -- tests as "above" this null; the error is that this comparison cannot fail.
     assert result["off_fraction"] > result["null_off_fraction_mean"]
 
 
 def test_whole_session_cluster_bootstrap_ci_brackets_a_clear_positive_effect():
     values = [0.8, 0.85, 0.9, 0.82, 0.88, 0.79, 0.91]
-    out = mod._whole_session_cluster_bootstrap(values, "test|bootstrap|positive")
+    out = _whole_session_cluster_bootstrap(values, "test|bootstrap|positive")
     assert out["status"] == "computed"
     ci_low, ci_high = out["cluster_bootstrap_ci_95pct"]
     assert ci_low > 0.0
@@ -91,7 +92,7 @@ def test_whole_session_cluster_bootstrap_ci_brackets_a_clear_positive_effect():
 
 
 def test_whole_session_cluster_bootstrap_not_computable_below_minimum_sessions():
-    out = mod._whole_session_cluster_bootstrap([0.5, 0.6], "test|bootstrap|too_few")
+    out = _whole_session_cluster_bootstrap([0.5, 0.6], "test|bootstrap|too_few")
     assert out["status"] == "not_computable"
     assert out["n_sessions"] == 2
 

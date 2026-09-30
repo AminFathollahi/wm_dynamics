@@ -29,10 +29,10 @@ from drift_dynamics import fit_gaussian_state_space, leave_one_out_condition_res
 from provenance import git_commit  # noqa: E402
 from statistics import stable_seed  # noqa: E402
 from run_macaque_pfc_microstimulation_pipeline import DATA, SESSIONS, load_macaque_pfc_microstimulation_session  # noqa: E402
+from corpus_sessions import ONSET_BIN  # noqa: E402
+from spike_pipeline import N_BINS  # noqa: E402
 
 BIN_MS = 50
-N_BINS = 30
-ONSET_BIN = 16
 N_COMPONENTS = 8
 N_BOOT = 500
 

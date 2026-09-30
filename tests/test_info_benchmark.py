@@ -13,13 +13,17 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import run_info_benchmark as mod  # noqa: E402
+import info_decoding  # noqa: E402
 from info_decoding import _stratified_permutation, make_folds  # noqa: E402
+from info_decoding import CANDIDATES, DECODERS, atomic_write, fold_signature
+from info_decoding import _metric, score_null_draw, score_observed
+from info_decoding import render_summary
 
 
 def test_metric_uses_matched_draws():
     observed = np.array([0.8, 0.7])
     null = np.array([[0.5, 0.5], [0.6, 0.5], [0.4, 0.6]])
-    result = mod._metric(observed, null)
+    result = _metric(observed, null)
     assert result["status"] == "computed"
     assert np.isclose(result["auc"], 0.75)
     assert np.isclose(result["null_auc"], 31 / 60)
@@ -38,7 +42,7 @@ def test_scoring_uses_fold_specific_latents_for_observed_and_null(monkeypatch):
         return np.array([[0.8, 0.7], [0.7, 0.8]])
 
     monkeypatch.setattr(
-        mod,
+        info_decoding,
         "_decoder_api",
         lambda: SimpleNamespace(
             split_auc=split,
@@ -49,8 +53,8 @@ def test_scoring_uses_fold_specific_latents_for_observed_and_null(monkeypatch):
         {"latent_train": np.full((2, 2, 3), i), "latent_test": np.full((2, 2, 3), i + 10)}
         for i in range(2)
     ]
-    observed = mod.score_observed(fits, np.array([0, 0, 1, 1]), "linear", folds, 3)
-    null = mod.score_null_draw(
+    observed = score_observed(fits, np.array([0, 0, 1, 1]), "linear", folds, 3)
+    null = score_null_draw(
         fits, np.array([0, 0, 1, 1]), "linear", folds, 4, 3
     )
     assert observed["status"] == "computed"
@@ -78,14 +82,14 @@ def test_null_draw_assigns_one_label_per_trial_across_folds(monkeypatch):
         return np.full((1, 1), 0.5)
 
     monkeypatch.setattr(
-        mod,
+        info_decoding,
         "_decoder_api",
         lambda: SimpleNamespace(
             split_auc=split,
             stratified_permutation=_stratified_permutation,
         ),
     )
-    mod.score_null_draw(fits, labels, "linear", folds, 7, 11)
+    score_null_draw(fits, labels, "linear", folds, 7, 11)
     assert set(assignments) == set(range(labels.size))
     assert all(len(values) == 1 for values in assignments.values())
 
@@ -94,7 +98,7 @@ def test_native_activity_runs_both_decoders_on_shared_folds(monkeypatch, tmp_pat
     monkeypatch.setattr(mod, "CHECKPOINT_DIR", tmp_path / "checkpoints")
     monkeypatch.setattr(
         mod,
-        "_folds",
+        "_seeded_folds",
         lambda labels, n_splits, seed: ((np.array([0, 2]), np.array([1, 3])),),
     )
     monkeypatch.setattr(
@@ -143,7 +147,7 @@ def test_native_activity_runs_both_decoders_on_shared_folds(monkeypatch, tmp_pat
 
 def test_completed_records_preserve_seed(monkeypatch, tmp_path):
     monkeypatch.setattr(mod, "CHECKPOINT_DIR", tmp_path)
-    monkeypatch.setattr(mod, "_folds", lambda labels, n_splits, seed: ((np.array([0, 2]), np.array([1, 3])),))
+    monkeypatch.setattr(mod, "_seeded_folds", lambda labels, n_splits, seed: ((np.array([0, 2]), np.array([1, 3])),))
     monkeypatch.setattr(mod, "fit_candidate", lambda train_activity, test_activity, candidate, seed: {"status": "fitted", "k_used": 1, "latent_train": train_activity, "latent_test": test_activity})
     monkeypatch.setattr(mod, "score_observed", lambda *args, **kwargs: {"status": "computed", "temporal_auc": np.eye(2)})
     monkeypatch.setattr(mod, "score_null_draw", lambda *args, **kwargs: {"status": "computed", "temporal_auc": np.eye(2) / 2})
@@ -156,7 +160,7 @@ def test_representation_receives_exact_outer_fold_arrays(monkeypatch, tmp_path):
     train = np.array([0, 3, 4, 7])
     test = np.array([1, 2, 5, 6])
     folds = ((train, test),)
-    monkeypatch.setattr(mod, "_folds", lambda labels, n_splits, seed: folds)
+    monkeypatch.setattr(mod, "_seeded_folds", lambda labels, n_splits, seed: folds)
     activity = np.arange(8 * 3 * 2, dtype=float).reshape(8, 3, 2)
     seen = []
 
@@ -192,7 +196,7 @@ def test_representation_receives_exact_outer_fold_arrays(monkeypatch, tmp_path):
 def test_null_draws_are_matched_across_candidates_and_decoders(monkeypatch, tmp_path):
     monkeypatch.setattr(mod, "CHECKPOINT_DIR", tmp_path)
     folds = ((np.array([0, 2]), np.array([1, 3])),)
-    monkeypatch.setattr(mod, "_folds", lambda labels, n_splits, seed: folds)
+    monkeypatch.setattr(mod, "_seeded_folds", lambda labels, n_splits, seed: folds)
     monkeypatch.setattr(mod, "implementation_identity", lambda: {"version": "a"})
     monkeypatch.setattr(
         mod,
@@ -253,7 +257,7 @@ def test_checkpoint_and_summary_are_incrementally_recoverable(monkeypatch, tmp_p
             "p_value": 0.04,
         },
     }
-    mod.atomic_write(path, mod.render_summary([row], complete=False))
+    atomic_write(path, render_summary([row], complete=False))
     text = path.read_text()
     assert "Status: running" in text
     assert "native_full_rank" in text
@@ -341,7 +345,7 @@ def test_lfads_identity_normalizes_distribution_name(monkeypatch, tmp_path):
 def test_fold_signature_changes_with_split_definition():
     folds_a = ((np.array([0, 1]), np.array([2, 3])), (np.array([2, 3]), np.array([0, 1])))
     folds_b = ((np.array([0, 2]), np.array([1, 3])), (np.array([1, 3]), np.array([0, 2])))
-    assert mod.fold_signature(folds_a) != mod.fold_signature(folds_b)
+    assert fold_signature(folds_a) != fold_signature(folds_b)
 
 
 def test_changed_fold_definition_does_not_reuse_representation(monkeypatch, tmp_path):
@@ -350,7 +354,7 @@ def test_changed_fold_definition_does_not_reuse_representation(monkeypatch, tmp_
         2: ((np.array([0, 1]), np.array([2, 3])),),
         3: ((np.array([0, 2]), np.array([1, 3])),),
     }
-    monkeypatch.setattr(mod, "_folds", lambda labels, n_splits, seed: folds[n_splits])
+    monkeypatch.setattr(mod, "_seeded_folds", lambda labels, n_splits, seed: folds[n_splits])
     calls = []
 
     def fit(train_activity, test_activity, candidate, seed):
@@ -391,7 +395,7 @@ def test_changed_fold_definition_does_not_reuse_representation(monkeypatch, tmp_
 def test_representations_fit_full_resolution_before_decoder_thinning(monkeypatch, tmp_path):
     monkeypatch.setattr(mod, "CHECKPOINT_DIR", tmp_path / "checkpoints")
     folds = ((np.array([0, 2]), np.array([1, 3])),)
-    monkeypatch.setattr(mod, "_folds", lambda labels, n_splits, seed: folds)
+    monkeypatch.setattr(mod, "_seeded_folds", lambda labels, n_splits, seed: folds)
     shapes = []
 
     def fit(train_activity, test_activity, candidate, seed):
@@ -450,7 +454,7 @@ def test_decoder_scoring_applies_time_step_to_fold_latents(monkeypatch):
         return np.zeros((3, 3))
 
     monkeypatch.setattr(
-        mod,
+        info_decoding,
         "_decoder_api",
         lambda: SimpleNamespace(
             split_auc=split,
@@ -458,8 +462,8 @@ def test_decoder_scoring_applies_time_step_to_fold_latents(monkeypatch):
         ),
     )
     labels = np.array([0, 1, 0, 1])
-    mod.score_observed(fits, labels, "linear", folds, 2, time_step=3)
-    mod.score_null_draw(fits, labels, "linear", folds, 3, 2, time_step=3)
+    score_observed(fits, labels, "linear", folds, 2, time_step=3)
+    score_null_draw(fits, labels, "linear", folds, 3, 2, time_step=3)
     assert shapes == [((2, 3, 3), (2, 3, 3))] * 4
 
 
@@ -538,7 +542,7 @@ def test_tphate_padding_uses_training_filler_and_removes_separators(monkeypatch)
 def test_changed_data_and_implementation_refit(monkeypatch, tmp_path):
     monkeypatch.setattr(mod, "CHECKPOINT_DIR", tmp_path)
     folds = ((np.array([0, 2]), np.array([1, 3])),)
-    monkeypatch.setattr(mod, "_folds", lambda labels, n_splits, seed: folds)
+    monkeypatch.setattr(mod, "_seeded_folds", lambda labels, n_splits, seed: folds)
     version = {"value": "a"}
     monkeypatch.setattr(mod, "implementation_identity", lambda: {"version": version["value"]})
     calls = []
@@ -583,7 +587,7 @@ def test_null_draws_resume_after_interruption(monkeypatch, tmp_path):
     resumed_dir = tmp_path / "resumed"
     monkeypatch.setattr(mod, "CHECKPOINT_DIR", resumed_dir)
     folds = ((np.array([0, 2]), np.array([1, 3])),)
-    monkeypatch.setattr(mod, "_folds", lambda labels, n_splits, seed: folds)
+    monkeypatch.setattr(mod, "_seeded_folds", lambda labels, n_splits, seed: folds)
     monkeypatch.setattr(mod, "implementation_identity", lambda: {"version": "a"})
     monkeypatch.setattr(
         mod,
@@ -653,8 +657,8 @@ def test_null_draws_resume_after_interruption(monkeypatch, tmp_path):
 def test_smoke_preset_is_bounded():
     args = SimpleNamespace(
         smoke=True,
-        candidates=list(mod.CANDIDATES),
-        decoders=list(mod.DECODERS),
+        candidates=list(CANDIDATES),
+        decoders=list(DECODERS),
         single_item_sessions_limit=None,
         multi_object_sessions_limit=None,
         multi_object_levels_limit=None,

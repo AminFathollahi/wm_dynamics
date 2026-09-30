@@ -120,7 +120,8 @@ def test_region_with_no_matched_site_is_reported_not_computed():
 
 if __name__ == "__main__":
     import subprocess
-    subprocess.check_call(["/home/amin/miniconda3/envs/wm_dynamics/bin/python", "-m", "pytest", "-q", __file__])
+    import sys
+    subprocess.check_call([sys.executable, "-m", "pytest", "-q", __file__])
 
 
 def test_distribution_summary_reports_the_actual_spread():

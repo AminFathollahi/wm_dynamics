@@ -79,9 +79,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from io_utils import locked_json_update  # noqa: E402
 from observability import nugget_fraction  # noqa: E402
 from provenance import canonical_json, git_commit  # noqa: E402
-from run_latent_model_comparison import LATENT_DIM  # noqa: E402
-from run_latent_model_observation_noise_comparison import dimensionality_and_noise_term  # noqa: E402
-from run_observability_and_power_census import N_SPLITS as CENSUS_N_SPLITS  # noqa: E402
+from info_decoding import LATENT_DIM
+from info_decoding import dimensionality_and_noise_term
+from statistics import N_SPLITS as CENSUS_N_SPLITS
 from statistics import stable_seed  # noqa: E402
 
 SEED = 20260813

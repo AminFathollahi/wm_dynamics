@@ -25,7 +25,7 @@ Cluster-robust bootstrap OVER SUBJECTS (not trial-level), reusing
 cate_vs_modifier_slope (src/causal.py untouched).
 
 Run:
-    /home/amin/miniconda3/envs/wm_dynamics/bin/python scripts/run_ram_within_subject_test.py
+    python scripts/run_ram_within_subject_test.py
 """
 from __future__ import annotations
 
@@ -44,6 +44,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from causal import cate_vs_modifier_slope
 from statistics import stable_seed
 import run_ram_openloop_pipeline as ram  # noqa: E402
+from corpus_sessions import DATA
 
 RESULTS = ROOT / "results"
 N_BOOT = 2000
@@ -70,7 +71,7 @@ def main() -> None:
         try:
             feat = ram.build_session_features(ieeg_json)
         except Exception as e:
-            print(f"  {ieeg_json.relative_to(ram.DATA)} FAILED: {e}")
+            print(f"  {ieeg_json.relative_to(DATA)} FAILED: {e}")
             continue
         if feat is None:
             continue

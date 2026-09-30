@@ -8,11 +8,8 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from run_state_content_link import (  # noqa: E402
-    session_subtractive_test,
-    session_trial_resolved_test,
-    usable_label,
-)
+from run_state_content_link import session_trial_resolved_test, usable_label
+from info_decoding import session_subtractive_test
 
 BIN_WIDTH_S = 0.1
 

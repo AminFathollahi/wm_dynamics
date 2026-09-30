@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Minimum-energy manifold-rescue analysis: error-trial versus correct-trial
-latent centroids as the LQR target, for all nine Boran subjects.
+latent centroids as the LQR target, for all nine DANDI 000574 subjects.
 
 scripts/run_tes1_analysis.py already validated this LQR framework (src/control.py)
 using condition-averaged latent centroids as the state-space target (0-back
-versus 2-back for Miller; set-size 4 versus 8 for Boran), with a real,
+versus 2-back for ECoG n-back corpus; set-size 4 versus 8 for DANDI 000574), with a real,
 stimulation-response-derived input matrix B interpolated from the TES1
-(Huang et al. 2017 eLife) dataset at each subject's own electrode positions.
+dataset at each subject's own electrode positions.
 This script substitutes a different pair of centroids — the mean latent state
 of error trials (x0) versus correct trials (xf), both averaged over the
 maintenance window already saved in results/boran_geometry_sub-*.npz — reusing

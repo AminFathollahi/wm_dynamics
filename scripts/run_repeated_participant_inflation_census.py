@@ -30,7 +30,7 @@ field of the written artifact for the complete, standalone statement of
 what was and was not measured.
 
 Run:
-    /home/amin/miniconda3/envs/wm_dynamics/bin/python scripts/run_repeated_participant_inflation_census.py
+    python scripts/run_repeated_participant_inflation_census.py
 """
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ from pathlib import Path
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
-from project_config import data_root, dataset_path, load_dataset_registry  # noqa: E402
+from project_config import data_root, dataset_path, load_dataset_registry
 
 RESULTS_DIR = ROOT / "results"
 OUT_PATH = RESULTS_DIR / "repeated_participant_inflation_census.json"

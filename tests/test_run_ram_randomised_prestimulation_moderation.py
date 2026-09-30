@@ -2,7 +2,7 @@
 """Runnable, assert-based check for scripts/run_ram_randomised_prestimulation_moderation.py.
 
 No test framework: run directly with
-    /home/amin/miniconda3/envs/wm_dynamics/bin/python tests/test_run_ram_randomised_prestimulation_moderation.py
+    python tests/test_run_ram_randomised_prestimulation_moderation.py
 
 Exercises the bias-only construction (_add_bias_only_moderator, the exact function
 scripts/run_ram_randomised_prestimulation_moderation.py's main() calls) on two synthetic

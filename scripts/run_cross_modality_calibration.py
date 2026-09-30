@@ -4,12 +4,12 @@
 Question: does a non-invasive measurement recover the intracranial
 confinement rate at all? This is a calibration, not a discovery claim.
 
-Four rungs, same lab (Sarnthein, Zurich), same verbal Sternberg task
+Four rungs, same lab (Zurich), same verbal Sternberg task
 (encoding 2s, maintenance 3s, probe), on the 9 patients shared between the
-already-staged Boran/DANDI-000574 release and OpenNeuro ds004752
-(Dimakopoulos et al., eLife 2022, doi 10.7554/eLife.78677):
+already-staged DANDI 000574 release and OpenNeuro ds004752
+(doi 10.7554/eLife.78677):
 
-  1. MTL units (Boran spikes, hippocampus/amygdala) -- intracranial,
+  1. MTL units (DANDI 000574 spikes, hippocampus/amygdala) -- intracranial,
      permanently invasive-only reference (2C.4). Reused unchanged from
      `results/boran_modality_consistency.json`'s spike arm; no new fit.
   2. MTL depth LFP (ds004752 iEEG, Hipp/Amyg-labelled contacts) --
@@ -332,8 +332,8 @@ def main() -> None:
         "trigger": "non-invasive-vs-intracranial cross-modality calibration",
         "code_commit": git_commit(ROOT),
         "identifiers_verified": {
-            "ds004752": "Dimakopoulos, Megevand, Stieglitz, Imbach, Sarnthein; eLife 2022; doi 10.7554/eLife.78677 -- confirmed via OpenNeuro GraphQL and Crossref",
-            "boran_2020": "Boran, Fedele, Steiner, Hilfiker, Stieglitz, Grunwald, Sarnthein; Scientific Data 2020; doi 10.1038/s41597-020-0364-3 -- confirmed via Crossref; staged in this project as DANDI 000574",
+            "ds004752": "eLife 2022; doi 10.7554/eLife.78677 -- confirmed via OpenNeuro GraphQL and Crossref",
+            "boran_2020": "Scientific Data 2020; doi 10.1038/s41597-020-0364-3 -- confirmed via Crossref; staged in this project as DANDI 000574",
         },
         "patient_overlap": {
             "method": "age/sex/pathology triple fingerprint match between ds004752 participants.tsv and DANDI 000574 NWB subject metadata, both sub-01..sub-09",

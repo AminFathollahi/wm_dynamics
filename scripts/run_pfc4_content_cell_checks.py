@@ -20,7 +20,7 @@ from corpus_sessions import (  # noqa: E402
     data_root, independent_unit, iter_pfc4, load_watters_session, watters_behaviour, watters_session_dates,
 )
 from provenance import _json_safe, git_commit  # noqa: E402
-from run_component_identity_subspace_atlas import _panichello_session_inputs  # noqa: E402
+from corpus_sessions import _panichello_session_inputs
 from statistics import stable_seed  # noqa: E402
 import run_within_animal_component_identity as identity_analysis  # noqa: E402
 
@@ -65,8 +65,8 @@ DECISION_RULE_CHECK_2 = (
     "uses), as the fraction of total-spike-count variance a linear fit of the memorandum construction "
     "explains, corrected for the fit's own mechanical inflation by subtracting the mean of the identical "
     "statistic computed under label permutation -- because the three corpora's memorandum constructions "
-    "have different column counts (one column for pfc4's frequency, two for the Watters angle, one column "
-    "per discrete location for Panichello's class-mean construction), an uncorrected in-sample fraction of "
+    "have different column counts (one column for pfc4's frequency, two for the macaque multi-object corpus angle, one column "
+    "per discrete location for the macaque spatial working-memory corpus class-mean construction), an uncorrected in-sample fraction of "
     "variance explained is not comparable across them on its own. Reported per session, as a per-animal "
     "distribution, and as a whole-session cluster bootstrap summary per animal. No clear/bound verdict is "
     "assigned; this is a measurement, not a hypothesis test."

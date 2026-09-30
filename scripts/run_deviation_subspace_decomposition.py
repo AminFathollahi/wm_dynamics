@@ -45,13 +45,13 @@ estimated where the memorandum does not decode is a subspace of noise, and
 projecting onto it ranks noise. Sessions that do not clear are reported as
 void, not dropped.
 
-Two arms. PRIMARY: macaque lateral prefrontal cortex (Panichello et al.
-2024), the same corpus and the same >=60-error-trial reachability floor as
+Two arms. PRIMARY: macaque lateral prefrontal cortex (doi
+10.1038/s41586-024-08139-9), the same corpus and the same >=60-error-trial reachability floor as
 results/rate_free_state_geometry_behavior_link.json (11 sessions); floors of
 45 and 30 error trials are sensitivity analyses, reported beside the primary
 and never substituted for it. REPLICATION: the multi-object corpus behind
-results/watters_state_geometry.json (Watters, Gabel, Tenenbaum, Jazayeri;
-bioRxiv preprint, posted 2026-01-27, DOI 10.64898/2026.01.27.702062; DANDI
+results/watters_state_geometry.json (bioRxiv
+preprint, posted 2026-01-27, DOI 10.64898/2026.01.27.702062; DANDI
 000620 -- an unreviewed preprint, said wherever it is used here), 41
 sessions, 2 animals, continuous graded report, no error floor.
 
@@ -88,32 +88,36 @@ for _sub in ("src", "scripts"):
 
 from corpus_sessions import data_root, iter_watters  # noqa: E402
 from provenance import _json_safe  # noqa: E402
-from run_rate_free_state_geometry_behavior_link import (  # noqa: E402
-    MEANINGFUL_EFFECT_THRESHOLD_R_UNITS, rate_free_state_deviation,
-)
-from run_state_behavior_link import MIN_ERROR_TRIALS_FOR_REACHABILITY, _counts_from_spikes, _panichello_directory  # noqa: E402
-from run_state_content_link import BIN_MS, MIN_CLASSES, MIN_TRIALS_PER_CLASS, session_subtractive_test, usable_label  # noqa: E402
-from run_watters_state_geometry import _behaviour_observables  # noqa: E402
+from statistics import MEANINGFUL_EFFECT_THRESHOLD_R_UNITS
+from stimulation_response_estimator import rate_free_state_deviation
+from statistics import MIN_ERROR_TRIALS_FOR_REACHABILITY
+from spike_pipeline import _counts_from_spikes
+from corpus_sessions import _panichello_directory
+from run_state_content_link import MIN_TRIALS_PER_CLASS, usable_label
+from info_decoding import session_subtractive_test
+from spike_pipeline import BIN_MS
+from info_decoding import MIN_CLASSES
+from corpus_sessions import _behaviour_observables
 from spike_pipeline import FrozenPSTHTransform  # noqa: E402
 from state_persistence import slope_across_sessions_test  # noqa: E402
 from statistics import (  # noqa: E402
     fdr_bh, minimum_detectable_paired_difference, partial_correlation_permutation_test,
     permutation_pvalue, stable_seed,
 )
+from info_decoding import IDENTITY_TOLERANCE, WATTERS_RECOVERABILITY_K_CLASSES, WATTERS_REGRESSION_DIM, _leave_one_out_unit_directions, cv_regression_subspace, residual_decomposition_and_identity_check  # noqa: E402
+from subspace_identity import _orthonormal_basis  # noqa: E402
+from corpus_sessions import WATTERS_MIN_TRIALS_FOR_CORRELATION, _watters_reachability  # noqa: E402
 
 OUTPUT_PATH = _ROOT / "results" / "deviation_subspace_decomposition.json"
 CHECKPOINT_PATH = _ROOT / "results" / ".checkpoints" / "deviation_subspace_decomposition_checkpoint.json"
 
 N_PERM = 10000
 N_RANDOM_SUBSPACE_DRAWS = 200
-IDENTITY_TOLERANCE = 1e-8
 
 MACAQUE_ERROR_FLOORS = (60, 45, 30)  # 60 primary, 45/30 sensitivity, never substituted for it
 MACAQUE_LOWEST_FLOOR = min(MACAQUE_ERROR_FLOORS)
 PANICHELLO_DELAY_WINDOW_MS = (300.0, 1450.0)
 
-WATTERS_MIN_TRIALS_FOR_CORRELATION = 16
-WATTERS_REGRESSION_DIM = 2
 # The reachability gate discretises the continuous cued position into this many classes and reuses the
 # project's own classification-based decodability test (session_subtractive_test), the same mechanism the
 # macaque arm's gate uses and the same one results/watters_state_geometry.json's own cardinality ladder
@@ -122,7 +126,6 @@ WATTERS_REGRESSION_DIM = 2
 # R-squared indistinguishable from its own permutation null on every session probed), while the
 # classification test clears cleanly on several sessions of the same data. The DECOMPOSITION itself still
 # uses the continuous 2-dimensional regression subspace described above; only the gate is discrete.
-WATTERS_RECOVERABILITY_K_CLASSES = 8
 
 # The outcome variable's sign convention differs by arm (see module docstring); this is the multiplier
 # such that mean_value * WORSE_BEHAVIOUR_SIGN[arm] > 0 means "in the direction of worse behaviour".
@@ -188,66 +191,10 @@ REACHABILITY_RULE_DECLARED_BEFORE_FITTING = (
 # two agree, not an assumption.
 # ----------------------------------------------------------------------------------------------------
 
-def _leave_one_out_unit_directions(activity_by_unit: np.ndarray) -> dict:
-    activity = np.asarray(activity_by_unit, dtype=float)
-    n_trials = activity.shape[0]
-    norms = np.linalg.norm(activity, axis=1, keepdims=True)
-    with np.errstate(invalid="ignore", divide="ignore"):
-        unit_vectors = np.where(norms > 0, activity / np.where(norms > 0, norms, 1.0), np.nan)
-    valid = ~np.isnan(unit_vectors).any(axis=1)
-    total = np.nansum(unit_vectors, axis=0)
-    n_valid = int(valid.sum())
-
-    loo_mean_normalized = np.full_like(unit_vectors, np.nan)
-    for i in range(n_trials):
-        if not valid[i]:
-            continue
-        n_other = n_valid - 1
-        if n_other < 1:
-            continue
-        loo_mean = (total - unit_vectors[i]) / n_other
-        loo_norm = np.linalg.norm(loo_mean)
-        if loo_norm == 0.0:
-            continue
-        loo_mean_normalized[i] = loo_mean / loo_norm
-    return {"unit_vectors": unit_vectors, "loo_mean_normalized": loo_mean_normalized, "valid": valid}
 
 
-def residual_decomposition_and_identity_check(activity_by_unit: np.ndarray) -> dict:
-    """Residual r_i for every trial, plus the decomposition-identity proof:
-    the deviation recomputed from this module's own u_i and m_i must match
-    rate_free_state_deviation's delivered output to floating-point tolerance
-    on every finite trial of this session."""
-    directions = _leave_one_out_unit_directions(activity_by_unit)
-    unit_vectors, loo_mean, valid = directions["unit_vectors"], directions["loo_mean_normalized"], directions["valid"]
-    delivered = rate_free_state_deviation(activity_by_unit)
-    finite_delivered = np.isfinite(delivered)
-
-    with np.errstate(invalid="ignore"):
-        cosine = np.einsum("ij,ij->i", unit_vectors, loo_mean)
-    recomputed = 1.0 - cosine
-    finite_recomputed = np.isfinite(recomputed)
-    same_finite_mask = bool(np.array_equal(finite_delivered, finite_recomputed))
-    diffs = (np.abs(delivered[finite_delivered] - recomputed[finite_delivered])
-             if finite_delivered.any() else np.array([0.0]))
-    max_abs_diff = float(np.max(diffs)) if diffs.size else 0.0
-
-    with np.errstate(invalid="ignore"):
-        residual = unit_vectors - cosine[:, None] * loo_mean
-
-    return {
-        "residual": residual, "deviation_recomputed": recomputed, "deviation_delivered": delivered,
-        "cosine": cosine, "finite": finite_delivered,
-        "identity_same_finite_mask": same_finite_mask, "identity_max_abs_diff": max_abs_diff,
-        "identity_passed": bool(same_finite_mask and max_abs_diff < IDENTITY_TOLERANCE),
-    }
 
 
-def _orthonormal_basis(row_vectors: np.ndarray, dim: int) -> np.ndarray:
-    """(units,) orthonormal basis of the row space of ``row_vectors`` (k,
-    units), top ``dim`` left singular vectors of its transpose."""
-    u_svd, _, _ = np.linalg.svd(row_vectors.T, full_matrices=False)
-    return u_svd[:, :dim]
 
 
 def _random_orthonormal_basis(n_units: int, dim: int, rng: np.random.Generator) -> np.ndarray:
@@ -290,25 +237,6 @@ def cv_class_mean_subspace(u: np.ndarray, labels: np.ndarray, residual: np.ndarr
     return within, outside
 
 
-def cv_regression_subspace(u: np.ndarray, target_2d: np.ndarray, residual: np.ndarray, dim: int = WATTERS_REGRESSION_DIM) -> tuple[np.ndarray, np.ndarray]:
-    """Multi-object arm: for each trial, fit the dim-dimensional regression
-    subspace (each unit's direction regressed on the target's coordinates)
-    from every OTHER trial, project that trial's own residual onto it."""
-    n = u.shape[0]
-    within = np.full(n, np.nan)
-    outside = np.full(n, np.nan)
-    for i in range(n):
-        keep = np.ones(n, dtype=bool)
-        keep[i] = False
-        x_held_in, u_held_in = target_2d[keep], u[keep]
-        x_centred = x_held_in - x_held_in.mean(axis=0)
-        u_centred = u_held_in - u_held_in.mean(axis=0)
-        coefficients, *_ = np.linalg.lstsq(x_centred, u_centred, rcond=None)  # (dim, units)
-        basis = _orthonormal_basis(coefficients, dim)
-        proj = basis @ (basis.T @ residual[i])
-        within[i] = np.linalg.norm(proj)
-        outside[i] = np.linalg.norm(residual[i] - proj)
-    return within, outside
 
 
 def random_subspace_null_raw_correlations(residual: np.ndarray, dim: int, outcome: np.ndarray, seed: int,
@@ -479,30 +407,6 @@ def _analyse_macaque_session(path: Path) -> dict:
 # Multi-object corpus arm
 # ----------------------------------------------------------------------------------------------------
 
-def _watters_reachability(counts: np.ndarray, discretized_label: np.ndarray, seed: int) -> dict:
-    """Reachability gate for the continuous multi-object memorandum, using the project's own
-    classification-based decodability test (session_subtractive_test) -- the same machinery the macaque
-    arm's gate uses -- rather than a continuous regression R-squared. A direct linear regression of unit
-    direction on the raw [cos, sin] cued-position target was tried first and was far too weak an estimator
-    to answer "does this decode at all" (observed R-squared indistinguishable from its own permutation
-    null on every session probed), while the classification test clears cleanly on several sessions of the
-    same data. The cued position is discretised into classes with the identical binning rule
-    results/watters_state_geometry.json's own cardinality ladder uses for this corpus so the gate result is
-    directly comparable to that delivered result. The DECOMPOSITION itself still uses the continuous
-    2-dimensional regression subspace; only this gate is discrete."""
-    if counts.shape[0] < WATTERS_MIN_TRIALS_FOR_CORRELATION:
-        return {"status": "too_few_trials", "n_trials": int(counts.shape[0])}
-    window_mean = FrozenPSTHTransform().fit(counts).transform(counts).mean(axis=2)[:, :, None]
-    result = session_subtractive_test(window_mean, discretized_label, seed)
-    if result.get("status") != "tested":
-        return {"status": "content_reachability_not_computable", "subtractive_status": result.get("status")}
-    cleared = bool(result.get("a_full_clears_own_null", False))
-    return {
-        "status": "tested", "n_trials": int(counts.shape[0]),
-        "n_classes_discretised": WATTERS_RECOVERABILITY_K_CLASSES,
-        "a_full": result["a_full"], "a_full_p_value": result["a_full_p_value"],
-        "cleared": cleared, "k_latents": result["k_latents"],
-    }
 
 
 def _analyse_watters_session(session: dict) -> dict:
@@ -825,7 +729,7 @@ def main() -> None:
             "sensitivity_error_floors": [f for f in MACAQUE_ERROR_FLOORS if f != 60],
             "replication_arm": "watters_multi_object",
             "replication_arm_caveat": (
-                "The multi-object corpus (Watters, Gabel, Tenenbaum, Jazayeri; bioRxiv preprint, posted "
+                "The multi-object corpus (bioRxiv preprint, posted "
                 "2026-01-27, DOI 10.64898/2026.01.27.702062; data DANDI 000620) is an UNREVIEWED PREPRINT. "
                 "This arm reuses only its existence and reachability machinery; "
                 "results/watters_state_geometry.json's own delivered behavioural branch "

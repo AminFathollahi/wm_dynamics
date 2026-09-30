@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Trajectory-tangling Q(t) FWER-corrected cluster permutation test (target
-vs. non-target 2-back trials, Miller ECoG) -- regenerates results/03_cluster_q.npz.
+vs. non-target 2-back trials, ECoG n-back corpus) -- regenerates results/03_cluster_q.npz.
 
 results/03_dynamics.npz (Q_tgt_pool/Q_ntgt_pool) is written by
 notebooks/03_tangling_dynamics.ipynb, but that notebook imports

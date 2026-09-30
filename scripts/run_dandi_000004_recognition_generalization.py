@@ -16,12 +16,13 @@ for directory in ("src", "scripts"):
 
 from project_config import dataset_path
 from provenance import canonical_json, git_commit
-from run_rate_free_state_geometry_behavior_link import rate_free_state_deviation
-from run_state_content_link import delay_counts
-from run_within_session_permutation_control import _cheap_partial_r
+from stimulation_response_estimator import rate_free_state_deviation
+from spike_pipeline import delay_counts
+from info_decoding import _cheap_partial_r
 from spike_pipeline import filter_units_by_region, load_spike_times, low_rate_unit_mask, resolve_unit_regions
 from state_persistence import slope_across_sessions_test
 from statistics import fdr_bh, minimum_detectable_paired_difference
+from corpus_sessions import recognition_correct  # noqa: E402
 
 OUTPUT_PATH = ROOT / "results" / "dandi_000004_recognition_generalization.json"
 REGIONS = ("hippocampus", "amygdala")
@@ -29,12 +30,6 @@ WINDOW_S = 0.45
 MIN_TRIALS = 40
 MIN_UNITS = 8
 REFERENCE_R = 0.14
-
-
-def recognition_correct(labels: np.ndarray, responses: np.ndarray) -> np.ndarray:
-    true_old = np.asarray(labels).astype(str) == "0"
-    response_old = np.asarray(responses, dtype=float) >= 34
-    return true_old == response_old
 
 
 def _session(path: Path) -> dict:

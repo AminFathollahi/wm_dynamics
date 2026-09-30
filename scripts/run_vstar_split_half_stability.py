@@ -27,7 +27,7 @@ run_target_transfer._fit_session_v_and_V for the full-session v*_chan (the
 identical geometry run_target_transfer.py's transfer target uses).
 
 Run:
-    /home/amin/miniconda3/envs/wm_dynamics/bin/python scripts/run_vstar_split_half_stability.py
+    python scripts/run_vstar_split_half_stability.py
 """
 from __future__ import annotations
 
@@ -48,9 +48,10 @@ from dynamics import dmd_reconstruction_error
 from control import dominant_eigenmode
 
 sys.path.insert(0, str(ROOT / "scripts"))
-from run_macaque_pfc_microstimulation_pipeline import (
-    load_macaque_pfc_microstimulation_session, crop_trial, SESSIONS, N_PC, DMD_RANK, N_BINS, BIN_S,
-)
+from run_macaque_pfc_microstimulation_pipeline import load_macaque_pfc_microstimulation_session, SESSIONS
+from spike_pipeline import crop_trial
+from dynamics import N_PC, DMD_RANK
+from spike_pipeline import N_BINS, BIN_S
 from run_target_transfer import _fit_session_v_and_V
 
 RESULTS = ROOT / "results"

@@ -16,9 +16,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from run_macaque_pfc_microstimulation_stimulation_deviation_axis_alignment import (  # noqa: E402
-    _bias_only_voids, _classify_arm, displacement_vector, estimate_axis,
-)
+from corpus_sessions import _bias_only_voids, _classify_arm, displacement_vector, estimate_axis
 
 
 def _synthetic_control(rng: np.random.Generator, n_trials: int, n_units: int, axis_direction: np.ndarray,

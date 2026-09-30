@@ -63,19 +63,22 @@ from dynamics import fit_input_lds, simulate_input_response  # noqa: E402
 from causal import crossfit_nuisances, aipw_pseudo_outcome  # noqa: E402
 from statistics import stable_seed, bootstrap_ci  # noqa: E402
 from geometry import pca_decompose  # noqa: E402
+from dynamics import DMD_RANK, N_PC
+from spike_pipeline import BIN_S, N_BINS, PRE_S
+from spike_pipeline import crop_trial
 
 RESULTS = ROOT / "results"
 
 # Onset bin: PRE_S=0.8s pre-stim-onset, BIN_S=0.05s bins -> bin 16 is the
 # first post-onset bin (matches build_session_features' crop window,
 # -0.8..+0.7 s re: stim onset over N_BINS=30 bins).
-ONSET_BIN = round(macaque_pfc_microstimulation.PRE_S / macaque_pfc_microstimulation.BIN_S)
+ONSET_BIN = round(PRE_S / BIN_S)
 STIM_ON_DURATION_S = 0.3   # boxcar width: conservative sub-window of the
                             # post-onset delay period actually available
                             # (30 - 16 = 14 bins ~= 0.7s); 0.3s = 6 bins
                             # keeps the "pulse" well inside the crop window
                             # for every session.
-STIM_ON_BINS = max(1, round(STIM_ON_DURATION_S / macaque_pfc_microstimulation.BIN_S))
+STIM_ON_BINS = max(1, round(STIM_ON_DURATION_S / BIN_S))
 
 
 def _fit_twin_for_session(prefix: str) -> dict | None:
@@ -97,7 +100,7 @@ def _fit_twin_for_session(prefix: str) -> dict | None:
         for tr in cond_source["trials"]:
             if tr["stim_cond"] != cond:
                 continue
-            cropped = macaque_pfc_microstimulation.crop_trial(tr["spikerate"])
+            cropped = crop_trial(tr["spikerate"])
             if cropped is not None:
                 out.append((cropped, label_correct, tr["angle_idx"]))
         return out
@@ -105,7 +108,7 @@ def _fit_twin_for_session(prefix: str) -> dict | None:
     ctrl_epochs = [e for e, _, _ in _epochs_for(corr, control_idx, 1)]
     if len(ctrl_epochs) < 10:
         return None
-    n_bins = macaque_pfc_microstimulation.N_BINS
+    n_bins = N_BINS
     if n_bins <= ONSET_BIN:
         # Self-gate: no post-onset bins available to build a stim-on boxcar.
         return None
@@ -119,12 +122,12 @@ def _fit_twin_for_session(prefix: str) -> dict | None:
     # trajectory in that space is then fed to fit_input_lds with an
     # ALL-ZERO input (so any B that call returns is unidentified from
     # no-stim data -- discarded below, never used; only A is kept).
-    _, V, _ = pca_decompose(X_flat, macaque_pfc_microstimulation.N_PC)   # V: (C_chan, k) -- control-fit latent basis
+    _, V, _ = pca_decompose(X_flat, N_PC)   # V: (C_chan, k) -- control-fit latent basis
     k_pc = V.shape[1]
     x_mean = X_flat.mean(0)
     Z_ctrl_mean = ((X_flat - x_mean) @ V).reshape(Z_ctrl.shape[0], n_bins, k_pc).mean(0)  # (N_BINS, k_pc)
     U_ctrl = np.zeros((n_bins, 1))
-    r_use = min(macaque_pfc_microstimulation.DMD_RANK, k_pc, n_bins - 2)
+    r_use = min(DMD_RANK, k_pc, n_bins - 2)
     A, _B_unused, C_local, _z = fit_input_lds(Z_ctrl_mean, U_ctrl, latent_dim=r_use)
     k = A.shape[0]
     # Compose: control-space channel coords -> PCA latent (V) -> fit_input_lds's

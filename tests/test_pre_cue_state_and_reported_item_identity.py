@@ -19,21 +19,11 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from run_pre_cue_state_and_reported_item_identity import (  # noqa: E402
-    BRANCH_A_BIAS_CONFOUND, BRANCH_A_INCONCLUSIVE, BRANCH_A_POSITIVE, BRANCH_A_POWERED_NULL,
-    BRANCH_A_SURPRISE, BRANCH_A_TOO_FEW, BRANCH_B_BOTH, BRANCH_B_INSIDE, BRANCH_B_NEITHER,
-    BRANCH_B_ORDERING_NOT_ESTABLISHED, BRANCH_B_OUTSIDE, BRANCH_REPRODUCTION_GATE_FAILED,
-    BRANCH_TASK_GEOM_NEEDS_DECODED, BRANCH_TASK_GEOM_NOT_COVERED, BRANCH_TASK_GEOM_NOT_SEPARABLE,
-    BRANCH_TASK_GEOM_POWERED_NULL, BRANCH_TASK_GEOM_REPRODUCED, MIN_POOLED_TEST_TRIALS,
-    _subspace_component_label_validity_gap_statement, _landed_and_target_index, _landed_identity_check,
-    _loo_subspace_component_vectors, _paired_session_test_full,
-    _primary_below_half_bias_only_control_gap_statement, _pool_against_half, _report_following_fraction,
-    _subspace_decomposition_identity_check, circular_abs_diff, decide_report_following_branch,
-    measure_pre_cue_window_timing_premise,
-    decide_subspace_component_branch, decide_swap_destination_task_geometry,
-)
-from run_component_and_item_binding import _object_geometry  # noqa: E402
-from run_deviation_subspace_decomposition import cv_regression_subspace  # noqa: E402
+import run_pre_cue_state_and_reported_item_identity as pre_cue_module
+from run_pre_cue_state_and_reported_item_identity import BRANCH_A_BIAS_CONFOUND, BRANCH_A_INCONCLUSIVE, BRANCH_A_POSITIVE, BRANCH_A_POWERED_NULL, BRANCH_A_SURPRISE, BRANCH_A_TOO_FEW, BRANCH_B_BOTH, BRANCH_B_INSIDE, BRANCH_B_NEITHER, BRANCH_B_ORDERING_NOT_ESTABLISHED, BRANCH_B_OUTSIDE, BRANCH_REPRODUCTION_GATE_FAILED, BRANCH_TASK_GEOM_NEEDS_DECODED, BRANCH_TASK_GEOM_NOT_COVERED, BRANCH_TASK_GEOM_NOT_SEPARABLE, BRANCH_TASK_GEOM_POWERED_NULL, BRANCH_TASK_GEOM_REPRODUCED, MIN_POOLED_TEST_TRIALS, _subspace_component_label_validity_gap_statement, _loo_subspace_component_vectors, _paired_session_test_full, _primary_below_half_bias_only_control_gap_statement, _pool_against_half, _subspace_decomposition_identity_check, decide_report_following_branch, measure_pre_cue_window_timing_premise, decide_subspace_component_branch, decide_swap_destination_task_geometry
+from statistics import _landed_and_target_index, _landed_identity_check, _report_following_fraction, circular_abs_diff
+from corpus_sessions import _object_geometry
+from info_decoding import cv_regression_subspace
 
 
 # ---------------------------------------------------------------------------------------------------
@@ -453,3 +443,30 @@ def test_subspace_component_label_validity_gap_statement_clear_above_half():
     pooled_a = _pooled(0.60, True)
     statement = _subspace_component_label_validity_gap_statement(pooled_a)
     assert "does not apply here" in statement
+
+
+# ---------------------------------------------------------------------------------------------------
+# _fit's whole-dict checkpoint write across a resume: the second write must serialise the first
+# entry's value even though, after a reload, that value is a real numpy array rather than JSON-safe
+# data (restore_checkpoint's output), not the checkpoint_safe-encoded form it started as.
+# ---------------------------------------------------------------------------------------------------
+
+def test_fit_checkpoint_write_survives_a_resume_that_adds_one_new_entry(tmp_path, monkeypatch):
+    monkeypatch.setattr(pre_cue_module, "CHECKPOINT_PATH", tmp_path / "checkpoint.json")
+    monkeypatch.setattr(pre_cue_module, "_COMPLETED_FITS", {})
+
+    first_value = {"eigenvalues": np.array([1.0, 2.0, 3.0])}
+    pre_cue_module._fit("first", lambda: first_value)
+
+    # A fresh process resuming reloads _COMPLETED_FITS through restore_checkpoint, which hands
+    # back a real ndarray for "eigenvalues" -- not the JSON-safe form _fit itself just wrote.
+    monkeypatch.setattr(pre_cue_module, "_COMPLETED_FITS", pre_cue_module._load_completed_fits())
+    assert isinstance(pre_cue_module._COMPLETED_FITS["first"]["value"]["eigenvalues"], np.ndarray)
+
+    second_value = {"eigenvalues": np.array([4.0, 5.0])}
+    pre_cue_module._fit("second", lambda: second_value)  # must not raise TypeError on the old entry
+
+    reloaded = pre_cue_module._load_completed_fits()
+    assert set(reloaded) == {"first", "second"}
+    np.testing.assert_array_equal(reloaded["first"]["value"]["eigenvalues"], first_value["eigenvalues"])
+    np.testing.assert_array_equal(reloaded["second"]["value"]["eigenvalues"], second_value["eigenvalues"])

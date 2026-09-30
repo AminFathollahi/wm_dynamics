@@ -7,7 +7,7 @@ population state rotates across a session, a subspace fit on the training fold p
 stale by the evaluation fold, while a permuted label fits whatever is temporally stationary and
 transfers better. This module holds the estimand fixed and manipulates only the fold structure
 (contiguous block vs temporally-interleaved) to tell that nonstationarity account apart from an
-estimator defect, then adds an independent measurement (early-to-late subspace rotation) that does
+estimator error, then adds an independent measurement (early-to-late subspace rotation) that does
 not depend on the fold argument at all.
 
 Every basis-fitting and cross-fitting primitive (block_folds, class_basis, regression_basis,
@@ -43,21 +43,22 @@ for part in ("src", "scripts"):
 from corpus_sessions import data_root, independent_unit  # noqa: E402
 from geometry import principal_angles, subspace_overlap  # noqa: E402
 from provenance import _json_safe, git_commit  # noqa: E402
-from run_component_identity_subspace_atlas import MAX_SESSIONS_ENV_VAR, Z_80_POWER  # noqa: E402
-from run_rank_free_component_identity import (  # noqa: E402
-    MIN_INDEPENDENT_UNITS, N_BOOT, N_FOLDS, N_PERM,
-    OUTPUT_PATH as DELIVERED_OUTPUT_PATH,
-    _cell as _delivered_cell, _finite, _pool as _delivered_pool, _standard_sessions,
-)
+from info_decoding import MAX_SESSIONS_ENV_VAR
+from statistics import Z_80_POWER
+from run_rank_free_component_identity import N_PERM, OUTPUT_PATH as DELIVERED_OUTPUT_PATH, _cell as _delivered_cell, _pool as _delivered_pool, _standard_sessions
+from info_decoding import _finite
+from info_decoding import MIN_INDEPENDENT_UNITS, N_BOOT, N_FOLDS
 from statistics import stable_seed  # noqa: E402
 from subspace_identity import block_folds, class_basis, permutation_alignment, regression_basis  # noqa: E402
+from info_decoding import REPRODUCTION_TOLERANCE  # noqa: E402
+from info_decoding import _rotation  # noqa: E402
+from info_decoding import _prepare_trials  # noqa: E402
 
 OUTPUT_PATH = ROOT / "results" / "alignment_below_null_diagnostic.json"
 CHECKPOINT_DIR = ROOT / "results" / ".checkpoints" / "run_alignment_below_null_diagnostic"
 SCHEMA_VERSION = "1.0"
 VERSION = "2026-09-18"
 SEED_NAMESPACE = f"alignment_below_null_diagnostic|{VERSION}"
-REPRODUCTION_TOLERANCE = 1e-9
 
 DECISION_RULES = {
     "cells_under_test": (
@@ -106,7 +107,7 @@ DECISION_RULES = {
     "rotation_prediction": (
         "under the nonstationarity account the anomalous scalp aperiodic-slope cell should show lower "
         "early-to-late subspace overlap (larger principal angles) than cells that behave normally; "
-        "under the defect account there is no reason for its rotation to differ from the others'"
+        "under the estimator-error account there is no reason for its rotation to differ from the others'"
     ),
     "power_reporting": (
         "a cell that does not clear its own refit null, or a block-versus-interleaved difference or "
@@ -133,7 +134,7 @@ def _hash() -> str:
     digest = hashlib.sha256()
     paths = (
         Path(__file__), ROOT / "src" / "subspace_identity.py", ROOT / "src" / "corpus_sessions.py",
-        ROOT / "src" / "statistics.py", ROOT / "src" / "geometry.py", ROOT / "src" / "provenance.py",
+        ROOT / "src" / "statistics.py", ROOT / "src" / "geometry.py", ROOT / "src" / "provenance.py", ROOT / "src" / "info_decoding.py", ROOT / "src" / "state_persistence.py",
         ROOT / "scripts" / "run_component_identity_subspace_atlas.py",
         ROOT / "scripts" / "run_rank_free_component_identity.py",
         ROOT / "scripts" / "run_dominant_latent_identity_and_behaviour_breadth.py",
@@ -189,36 +190,8 @@ def interleaved_folds(n: int, n_folds: int) -> np.ndarray:
     return (np.arange(n) % n_folds).astype(int)
 
 
-def _prepare_trials(activity: np.ndarray, target: np.ndarray):
-    """Mirrors run_rank_free_component_identity._cell's own trial-validity filter exactly (same
-    _finite import, same N_FOLDS-derived floor), so the interleaved-fold and rotation cells here see
-    the identical trial set the delivered block-fold cell used internally."""
-    activity = np.asarray(activity, dtype=float)
-    target = np.asarray(target)
-    norms = np.linalg.norm(activity, axis=1)
-    valid = np.isfinite(activity).all(axis=1) & (norms > 0) & _finite(target)
-    if int(valid.sum()) < 2 * max(3, N_FOLDS):
-        return None
-    return activity[valid] / norms[valid, None], target[valid]
 
 
-def _rotation(directions: np.ndarray, target: np.ndarray, kind: str) -> dict:
-    n = len(target)
-    folds = block_folds(n, N_FOLDS)
-    fit_basis = class_basis if kind == "categorical" else regression_basis
-    early_basis = fit_basis(directions[folds == 0], target[folds == 0])
-    late_basis = fit_basis(directions[folds == 1], target[folds == 1])
-    if early_basis is None or late_basis is None:
-        return {"status": "not_computable", "reason": "label subspace could not be fit in one or both halves"}
-    angles = principal_angles(early_basis, late_basis)
-    return {
-        "status": "computed",
-        "n_trials_early": int((folds == 0).sum()),
-        "n_trials_late": int((folds == 1).sum()),
-        "principal_angles_radians": [float(a) for a in angles],
-        "mean_principal_angle_radians": float(np.mean(angles)),
-        "subspace_overlap": float(subspace_overlap(early_basis, late_basis)),
-    }
 
 
 def _corpus_needed(root: Path, corpus: str, names: list[str], n_perm: int, identity: dict) -> dict:

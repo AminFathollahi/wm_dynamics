@@ -24,26 +24,24 @@ from corpus_sessions import (  # noqa: E402
 )
 from data_integrity import missing_files  # noqa: E402
 from provenance import _json_safe, git_commit  # noqa: E402
-from run_component_identity_subspace_atlas import (  # noqa: E402
-    CANDIDATE_KEYS, CANDIDATE_SUPPORT_MATRIX, MAX_SESSIONS_ENV_VAR, Z_80_POWER, _alm_session_inputs,
-    _human_session_covariate_inputs, _panichello_reproduction_gate, _panichello_session_inputs,
-    _previous_label, _session_core,
-)
+from run_component_identity_subspace_atlas import _alm_session_inputs, _human_session_covariate_inputs, _panichello_reproduction_gate
+from corpus_sessions import _panichello_session_inputs
+from info_decoding import _session_core
+from info_decoding import CANDIDATE_KEYS, CANDIDATE_SUPPORT_MATRIX, MAX_SESSIONS_ENV_VAR, _previous_label
+from statistics import Z_80_POWER
 from statistics import fdr_bh, stable_seed  # noqa: E402
 from subspace_identity import (  # noqa: E402
     block_folds, class_basis, permutation_alignment, regression_basis,
 )
+from info_decoding import FDR_ALPHA, MIN_INDEPENDENT_UNITS, N_BOOT, N_FOLDS  # noqa: E402
+from info_decoding import _combine_levels, _finite  # noqa: E402
 
 OUTPUT_PATH = ROOT / "results" / "rank_free_component_identity.json"
 CHECKPOINT_DIR = ROOT / "results" / ".checkpoints" / "run_rank_free_component_identity"
 SCHEMA_VERSION = "1.0"
 VERSION = "2026-09-18"
 SEED_NAMESPACE = f"rank_free_component_identity|{VERSION}"
-N_FOLDS = 2
 N_PERM = 1000
-N_BOOT = 2000
-MIN_INDEPENDENT_UNITS = 4
-FDR_ALPHA = 0.05
 DATASET_KEYS = (
     "panichello_2024", "watters_2026", "inagaki_alm5", "dandi_000469", "dandi_001187",
     "dandi_000574", "dandi_000004", "ds006848", "ds005034",
@@ -54,7 +52,7 @@ def _hash() -> str:
     digest = hashlib.sha256()
     paths = (
         Path(__file__), ROOT / "src" / "subspace_identity.py", ROOT / "src" / "corpus_sessions.py",
-        ROOT / "src" / "statistics.py", ROOT / "scripts" / "run_component_identity_subspace_atlas.py",
+        ROOT / "src" / "statistics.py", ROOT / "src" / "info_decoding.py", ROOT / "src" / "state_persistence.py", ROOT / "scripts" / "run_component_identity_subspace_atlas.py",
         ROOT / "scripts" / "run_dominant_latent_identity_and_behaviour_breadth.py",
     )
     for path in paths:
@@ -103,11 +101,6 @@ def _checkpoint(key: str, identity: dict, fit) -> dict:
     return record
 
 
-def _finite(target: np.ndarray) -> np.ndarray:
-    target = np.asarray(target)
-    if target.ndim == 1:
-        return np.isfinite(target)
-    return np.isfinite(target).all(axis=tuple(range(1, target.ndim)))
 
 
 def _cell(activity: np.ndarray, target: np.ndarray, kind: str, n_perm: int, seed: str) -> dict:
@@ -220,30 +213,6 @@ def _standard_sessions(root: Path, corpus: str):
         yield session, None if activity is not None else "session geometry unavailable", activity, categorical, continuous
 
 
-def _combine_levels(levels: list[tuple[int, dict]]) -> dict:
-    usable = [(weight, cell) for weight, cell in levels if cell.get("status") == "computed"]
-    if not usable:
-        return {"status": "not_computable", "reason": "no item-count level was computable"}
-    weights = np.asarray([weight for weight, _ in usable], dtype=float)
-    observed = np.average([cell["alignment"] for _, cell in usable], weights=weights)
-    n_draws = min(len(cell["null_draws"]) for _, cell in usable)
-    draws = np.average(
-        np.stack([np.asarray(cell["null_draws"])[:n_draws] for _, cell in usable]), axis=0, weights=weights,
-    )
-    return {
-        "status": "computed",
-        "alignment": float(observed),
-        "null_mean": float(draws.mean()),
-        "alignment_above_null": float(observed - draws.mean()),
-        "p_value": float((1 + np.sum(draws >= observed)) / (len(draws) + 1)),
-        "n_permutations": len(draws),
-        "null_interval_95pct": [float(value) for value in np.percentile(draws, [2.5, 97.5])],
-        "null_draws": draws,
-        "n_levels": len(usable),
-        "n_trials": int(weights.sum()),
-        "target_kind": usable[0][1].get("target_kind"),
-        "seed_ids": [cell.get("seed_id") for _, cell in usable],
-    }
 
 
 def _watters_session_record(

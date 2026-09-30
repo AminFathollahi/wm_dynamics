@@ -15,9 +15,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-from run_dominant_latent_identity_and_behaviour_breadth import (  # noqa: E402
-    circular_shift_labels, history_labels,
-)
+from run_dominant_latent_identity_and_behaviour_breadth import circular_shift_labels
+from state_persistence import history_labels
 
 
 def test_each_trial_takes_the_item_from_exactly_lag_trials_earlier():

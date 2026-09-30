@@ -9,38 +9,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from run_selective_persistence_and_attractor_geometry import (  # noqa: E402
-    CATEGORY_SUBSPACE_DIMENSIONALITY,
-    DPCA_RIDGE_LAMBDA_GRID,
-    CORPUS_SPECS,
-    _category_469,
-    _category_divided,
-    _category_neuron_test,
-    _da_session,
-    _build_pseudopopulation,
-    _category_time_marginal,
-    _fit_axes_arm_a,
-    _fit_axes_arm_b_nested,
-    _fit_axes_arm_b_nested_pseudopop,
-    _fit_pca_2d,
-    _fit_selective_persistence_glm,
-    _lambda_sweep,
-    _lambda_sweep_flatness,
-    _part1_region_summary,
-    _project_pca_2d,
-    _project_pca_3d,
-    _pseudopopulation_decoding,
-    _pseudopopulation_region_report,
-    _pseudopopulation_region_report_all_arms,
-    _selective_neuron_keys,
-    _region_association,
-    _select_lambda_cv_pseudopop,
-    _split_trial_pool,
-    _session_correlation,
-    _part1_reaction_time_cells,
-    _session_latency,
-    MIN_UNITS_PER_REGION,
-)
+from run_selective_persistence_and_attractor_geometry import CATEGORY_SUBSPACE_DIMENSIONALITY, CORPUS_SPECS, _category_neuron_test, _da_session, _build_pseudopopulation, _category_time_marginal, _fit_axes_arm_a, _fit_axes_arm_b_nested, _fit_axes_arm_b_nested_pseudopop, _fit_pca_2d, _fit_selective_persistence_glm, _lambda_sweep, _lambda_sweep_flatness, _part1_region_summary, _project_pca_2d, _project_pca_3d, _pseudopopulation_decoding, _pseudopopulation_region_report, _pseudopopulation_region_report_all_arms, _selective_neuron_keys, _region_association, _select_lambda_cv_pseudopop, _split_trial_pool, _session_correlation, _part1_reaction_time_cells, _session_latency, MIN_UNITS_PER_REGION
+from info_decoding import DPCA_RIDGE_LAMBDA_GRID, _category_469, _category_divided
 import run_selective_persistence_and_attractor_geometry as target_module  # noqa: E402
 
 
@@ -319,7 +289,7 @@ def test_region_association_underpowered_below_four_patients(monkeypatch):
     assert out["status"] == "underpowered"
 
 
-def test_corpus_specs_regions_match_job_a_declared_regions():
+def test_corpus_specs_regions_match_region_resolved_rate_stability_behaviour():
     from run_region_resolved_rate_stability_behaviour import CORPUS_SPECS as REGION_CORPUS_SPECS
     for corpus in CORPUS_SPECS:
         assert CORPUS_SPECS[corpus]["regions"] == REGION_CORPUS_SPECS[corpus]["regions"]

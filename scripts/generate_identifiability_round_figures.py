@@ -65,7 +65,7 @@ def figure_tau_estimator_calibration() -> None:
         (axes[0], cells, "corrected (lag 0 excluded)"),
         (axes[1], lag0_cells, "old (lag 0 included)"),
     ]):
-        ax.axhspan(0.05, 0.35, color="#F0E68C", alpha=0.3, zorder=0, label="Murray et al. 2014 range")
+        ax.axhspan(0.05, 0.35, color="#F0E68C", alpha=0.3, zorder=0, label="published timescale range")
         ax.plot([0, 0.55], [0, 0.55], "k--", linewidth=0.6, label="identity")
         for i, rate in enumerate(rates):
             xs, ys = [], []

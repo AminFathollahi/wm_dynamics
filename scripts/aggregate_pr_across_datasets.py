@@ -6,7 +6,7 @@ cross-validated, native channel/unit space — src/geometry.py); this script
 just aggregates the already-computed per-subject/session pr_cv values into
 one LME-style permutation slope per dataset, so the null result can be
 reported and plotted on equal footing everywhere rather than only for
-Miller/Boran as before.
+ECoG n-back corpus/DANDI 000574 as before.
 
 Updates: results/all_statistics.json — "pr_lme_by_dataset" key
 """
@@ -40,7 +40,7 @@ def main():
     rng = np.random.default_rng(0)
     out = {}
 
-    # Miller: pr_per_trial in 02_geometry files, grouped by task_id (0/1/2)
+    # ECoG n-back corpus: pr_per_trial in 02_geometry files, grouped by task_id (0/1/2)
     records = []
     for subj in ["al", "ca", "cc", "ug"]:
         d = np.load(RESULTS / f"02_geometry_{subj}.npz", allow_pickle=True)
@@ -49,7 +49,7 @@ def main():
             records.append((subj, load, float(np.mean(pr[tid == load]))))
     out["miller"] = pr_lme(records, rng)
 
-    # Boran iEEG: boran_ctg[subj]["pr_per_set"][{4,6,8}]["pr_cv"]
+    # DANDI 000574 iEEG: boran_ctg[subj]["pr_per_set"][{4,6,8}]["pr_cv"]
     records = []
     for subj, v in stats["boran_ctg"].items():
         for ss, prd in v["pr_per_set"].items():
@@ -57,7 +57,7 @@ def main():
                 records.append((subj, float(ss), prd["pr_cv"]))
     out["boran_ieeg"] = pr_lme(records, rng) if records else None
 
-    # Boran single-units
+    # DANDI 000574 single-units
     records = []
     for key, v in stats.get("dandi000574_units_ctg", {}).items():
         for ss, prd in v["pr_per_set"].items():
@@ -65,8 +65,7 @@ def main():
                 records.append((v["subject"], float(ss), prd["pr_cv"]))
     out["boran_units"] = pr_lme(records, rng) if records else None
 
-    # 001187 and 000673 share 31 patients/37 sessions (corrected 2026-08-03 from a prior 16/19 undercount; see
-    # provenance/dataset_overlap_report.json); drop 000673's linked-duplicate
+    # 001187 and 000673 share 31 patients/37 sessions; drop 000673's linked-duplicate
     # sessions here so its LME reflects only patients not already counted via 001187.
     overlap_report = load_overlap_report(PROVENANCE)
     linked_keys = (linked_duplicate_000673_session_keys(overlap_report)

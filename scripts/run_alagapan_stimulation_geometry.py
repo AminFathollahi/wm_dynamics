@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Alagapan et al. (2019) stimulation-response geometry: does electrical
+"""Phase-locked intracranial stimulation corpus (doi:10.1016/j.celrep.2019.10.072) stimulation-response geometry: does electrical
 stimulation reshape the working-memory retention-period manifold, does the
 stimulated cortex align with this project's own fitted dynamics (DMD's
 leading mode v*) and controllability structure, and does the size of that
@@ -14,10 +14,9 @@ whether THOSE quantities respond to, and are predictive of, this causal
 stimulation, using each patient's own known stimulation electrodes (Codes/
 Preprocessing.m's hardcoded `stimElectrodes`) as the input direction.
 
-Citation: Alagapan S, Riddle J, Huang WA, Hadar E, Shin HW, Froehlich F.
-"Network-Targeted, Multi-site Direct Cortical Stimulation Enhances Working
+Source: "Network-Targeted, Multi-site Direct Cortical Stimulation Enhances Working
 Memory by Modulating Phase Lag of Low-Frequency Oscillations." Cell Reports
-2019;29(9):2590-2598. PMC6901101.
+29(9):2590-2598. PMC6901101.
 
 This complements scripts/run_alagapan_phase_omega.py, which only ever reads
 the BASELINE (no-stimulation) recording. That script cannot say anything
@@ -81,19 +80,13 @@ from geometry import (  # noqa: E402
     select_latent_dim,
     subspace_overlap,
 )
-from run_alagapan_phase_omega import (  # noqa: E402
-    DATA_DIR,
-    PATIENTS,
-    _load_mapping,
-    _load_seizure_electrodes,
-    load_baseline_data,
-    load_behavior,
-)
+from run_alagapan_phase_omega import DATA_DIR, _load_mapping, _load_seizure_electrodes, load_baseline_data, load_behavior
+from preprocessing import PATIENTS
 from statistics import stable_seed  # noqa: E402
+from preprocessing import CONDITIONS, RETENTION_ONSET_BUFFER_S  # noqa: E402
+from preprocessing import STIM_SITES, _spectral_sanity_check  # noqa: E402
 
 RESULTS = ROOT / "results"
-RETENTION_ONSET_BUFFER_S = 0.25  # guards against a stimulation-artifact decay tail
-CONDITIONS = ("In Phase", "Anti Phase", "Sham")
 GRAMIAN_HORIZON = 20
 N_RANDOM_DIRS = 20
 
@@ -108,11 +101,6 @@ N_RANDOM_DIRS = 20
 # (already tested by the per-condition geometry below), so this direction
 # instead asks whether the stimulated cortex overall aligns with the
 # patient's own fitted dynamics.
-STIM_SITES = {
-    "P1": [["LFA1", "LFA2"], ["LPA1", "LPA2"]],
-    "P2": [["LAF5", "LAF6"], ["LAP5", "LAP6"]],
-    "P3": [["RAF6", "RAF7"], ["RSP5", "RSP6"]],
-}
 
 
 def _stimulation_channel_weight(sites: list[list[str]], labels: list[str]) -> dict | None:
@@ -254,22 +242,6 @@ def _stimulation_retention_trials(patient: str) -> tuple[np.ndarray, list[str]] 
     trials = np.stack([data_full[:, s0:s0 + common_t] for _, s0, _ in windows], axis=0)
     kept_conditions = [conditions[k] for k, _, _ in windows]
     return trials, labels, kept_conditions
-
-
-def _spectral_sanity_check(baseline_pooled: np.ndarray, condition_pooled: np.ndarray,
-                            srate: float) -> dict:
-    """Compare power spectra of stimulation-session vs baseline retention data
-    as a coarse check against residual stimulation-artifact contamination
-    (mirrors the SASS-validation logic in run_haslacher_phase_omega.py's
-    dataset documentation): a plausible neural difference should not look like
-    a broadband gain change."""
-    f_b, p_b = welch(baseline_pooled, fs=srate, axis=-1, nperseg=min(256, baseline_pooled.shape[-1]))
-    f_c, p_c = welch(condition_pooled, fs=srate, axis=-1, nperseg=min(256, condition_pooled.shape[-1]))
-    ratio = np.mean(p_c) / np.mean(p_b) if np.mean(p_b) > 0 else float("nan")
-    return {"mean_power_ratio_condition_over_baseline": float(ratio),
-            "note": ("ratio far from 1 across the whole spectrum is more consistent with "
-                     "residual broadband artifact than a band-specific neural effect; "
-                     "reported as a caveat, not used to suppress the result")}
 
 
 def _geometry_vs_baseline(baseline_trials: np.ndarray, condition_trials: np.ndarray,
@@ -425,7 +397,7 @@ def main():
           f"(reported as sign agreement, not a p-value)")
 
     out["_meta"] = {
-        "citation": "Alagapan et al. 2019, Cell Reports, PMC6901101",
+        "citation": "Cell Reports, PMC6901101",
         "n_patients": len(PATIENTS), "n_evaluable": n_valid, "n_sign_agree": n_agree,
         "evidentiary_strength": "reanalysis of public raw data, n=3 patients, descriptive only",
         "note": ("Retention-period-only geometry, computed to avoid the unremovable "

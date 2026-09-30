@@ -79,7 +79,7 @@ def _round_trip(value):
     """The exact write-then-read path a checkpoint file goes through: encode,
     dump to a JSON string, parse it back, then restore. A test that only calls
     checkpoint_safe/restore_checkpoint directly, skipping the json.dumps/loads
-    in between, would not catch a defect that only shows up once every numpy
+    in between, would not catch an error that only shows up once every numpy
     and Python-native type has actually been forced through a JSON string."""
     return restore_checkpoint(json.loads(json.dumps(checkpoint_safe(value), allow_nan=False)))
 
@@ -152,3 +152,31 @@ def test_checkpoint_round_trip_falls_back_on_legacy_untagged_lists():
     restored = restore_checkpoint(legacy)
     assert isinstance(restored["mask"], np.ndarray)
     assert restored["mask"].dtype == bool
+
+
+def test_checkpoint_round_trip_preserves_key_type_and_order():
+    # An int key and a digit-only string key must not collapse into the same
+    # restored key: a dict keyed by str(level) (e.g. "2") stays string-keyed,
+    # a dict keyed by a genuine int (e.g. from range(k)) stays int-keyed, and
+    # a non-digit string key is untouched either way. Key order (insertion
+    # order, which a Python dict preserves and JSON objects preserve too) must
+    # also survive.
+    bundle = {
+        "per_level": {"3": {"n": 1}, "2": {"n": 2}, 5: {"n": 3}, "label": {"n": 4}},
+        "nested": {"outer": {"7": {"tag": "seven"}, "not_digit": {"tag": "other"}}},
+    }
+    restored = _round_trip(bundle)
+    assert restored == bundle
+    assert list(restored["per_level"]) == ["3", "2", 5, "label"]
+    assert all(isinstance(key, str) for key in ("3", "2", "label"))
+    assert isinstance(list(restored["per_level"])[2], int)
+    assert list(restored["nested"]["outer"]) == ["7", "not_digit"]
+    assert isinstance(list(restored["nested"]["outer"])[0], str)
+
+
+def test_checkpoint_round_trip_legacy_unescaped_digit_string_file_restores_to_int():
+    # A checkpoint on disk from before this escaping existed has a digit-only
+    # key with no escape prefix; restore_checkpoint must still convert it to
+    # int (unchanged legacy behaviour), the same as an int key written fresh.
+    legacy = json.loads(json.dumps({"2": "a", "10": "b"}))
+    assert restore_checkpoint(legacy) == {2: "a", 10: "b"}

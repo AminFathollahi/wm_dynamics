@@ -92,19 +92,21 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from corpus_sessions import data_root, iter_watters, watters_behaviour  # noqa: E402
 from provenance import _json_safe, checkpoint_safe, git_commit, restore_checkpoint  # noqa: E402
-from run_component_and_item_binding import _object_geometry  # noqa: E402
-from run_deviation_serial_dependence_and_temporal_locus import (  # noqa: E402
-    CONTENT_LABEL_K_CLASSES, SHARP_TEST_MIN_CLASSES, SHARP_TEST_MIN_PER_CLASS,
-    SHARP_TEST_MIN_QUALIFYING_TRIALS, _content_specific_serial_pull, _watters_session_bundle,
-    unit_direction_vectors,
-)
-from run_dissociation_replication_and_counting_noise import (  # noqa: E402
-    _observable_arrays, _pool_cell, _session_observable_arm,
-)
+from corpus_sessions import _object_geometry
+from run_deviation_serial_dependence_and_temporal_locus import _content_specific_serial_pull
+from statistics import SHARP_TEST_MIN_CLASSES, SHARP_TEST_MIN_PER_CLASS, SHARP_TEST_MIN_QUALIFYING_TRIALS, unit_direction_vectors
+from corpus_sessions import _watters_session_bundle
+from statistics import CONTENT_LABEL_K_CLASSES
+from run_dissociation_replication_and_counting_noise import _session_observable_arm
+from state_persistence import _pool_cell
+from corpus_sessions import _observable_arrays
 from run_state_content_link import usable_label  # noqa: E402
-from run_watters_state_geometry import PRIMARY_QUALITY_TIER, _pool_values  # noqa: E402
+from state_persistence import _pool_values
+from corpus_sessions import PRIMARY_QUALITY_TIER
 from state_persistence import slope_across_sessions_test  # noqa: E402
 from statistics import minimum_detectable_paired_difference, paired_sign_flip_test, stable_seed  # noqa: E402
+from statistics import DROP_SESSION_ARRAYS, MIN_POOLED_ADMISSIBLE_SWAP_TRIALS, NEAR_SEPARATION_THRESHOLD_DEGREES, PRECEDING_ITEM_BEHAVIOURAL_MDD_POWERED_NULL_THRESHOLD, SURVIVING, _circular_distance_rad  # noqa: E402
+from statistics import _residualize  # noqa: E402
 
 OUTPUT_PATH = ROOT / "results" / "swap_target_and_preceding_trial_item.json"
 CHECKPOINT_PATH = ROOT / "results" / ".checkpoints" / "swap_target_and_preceding_trial_item_checkpoint.json"
@@ -119,16 +121,13 @@ SERIAL_DEPENDENCE_ARTIFACT_PATH = ROOT / "results" / "deviation_serial_dependenc
 # looked at and none is revisited after a number is seen.
 # ---------------------------------------------------------------------------
 
-MIN_POOLED_ADMISSIBLE_SWAP_TRIALS = 200
 BRANCH_TOO_FEW_TRIALS = "too_few_three_item_swap_trials_with_an_admissible_preceding_trial_to_test"
 BRANCH_GATE_FAILED = "void_reproduction_gate_did_not_reproduce"
 BRANCH_SYMMETRY_PREMISE_FAILED = "block_0_shuffled_null_not_centred_on_one_half_stopped_before_block_a_or_b"
 
-NEAR_SEPARATION_THRESHOLD_DEGREES = 15.0
 SYMMETRY_PREMISE_N_SHUFFLES = 1000
 SYMMETRY_PREMISE_CENTERING_Z_THRESHOLD = 3.0  # three Monte-Carlo standard errors, declared before any draw is run
 
-PRECEDING_ITEM_BEHAVIOURAL_MDD_POWERED_NULL_THRESHOLD = 0.05  # proportion units, both statistics; declared before any number is read
 
 BRANCH_A_TARGET = "swaps_land_on_the_object_nearest_the_preceding_trials_remembered_item"
 BRANCH_A_RESPONSE = "swaps_repeat_the_preceding_trials_response_rather_than_its_remembered_item"
@@ -160,8 +159,6 @@ DROP_NOT_SWAP = "not_a_swap_by_primary_definition"
 DROP_NO_PRECEDING = "no_admissible_preceding_trial"
 DROP_SWAP_DEST_UNDEFINED = "swap_destination_undefined"
 DROP_SWAP_DEST_TIE = "swap_destination_ambiguous_tie_between_the_two_uncued_objects"
-DROP_SESSION_ARRAYS = "session_excluded_arrays_not_computable"
-SURVIVING = "surviving_item_count_3_swap_trial_with_admissible_preceding_trial"
 
 PRECEDING_ITEM_BEHAVIOURAL_DECISION_RULE_DECLARED_BEFORE_FITTING = (
     "Two per-session two-alternative proportions (target-referenced, response-referenced), each pooled "
@@ -288,9 +285,6 @@ def _fit(key: str, compute) -> dict:
 # Small numeric helpers
 # ---------------------------------------------------------------------------
 
-def _circular_distance_rad(a, b) -> np.ndarray:
-    """Geodesic distance between two angles on the circle, in [0, pi]."""
-    return np.abs(np.angle(np.exp(1j * (np.asarray(a, dtype=float) - np.asarray(b, dtype=float)))))
 
 
 def _pool_vs_half(values: list[float]) -> dict:
@@ -578,10 +572,6 @@ def _symmetry_premise_shuffle_draws(swap_theta: np.ndarray, other_theta: np.ndar
 # Preceding-item behavioural / serial-pull neural pooling
 # ---------------------------------------------------------------------------
 
-def _residualize(y: np.ndarray, x: np.ndarray) -> np.ndarray:
-    design = np.column_stack([np.ones(len(x)), x])
-    coeffs, *_ = np.linalg.lstsq(design, y, rcond=None)
-    return y - design @ coeffs
 
 
 def _serial_pull_neural_session_values(session_rows: list[dict]) -> dict:

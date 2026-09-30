@@ -2,21 +2,14 @@
 dynamics.py — Dynamical systems analysis: DMD, trajectory tangling.
 
 Implements:
-  - Trajectory tangling Q(t) from Russo et al. 2018 (Neuron)
-  - Exact DMD following Tu et al. 2014 (J Comput Dyn)
+  - Trajectory tangling Q(t) (Neuron 97(4):953-66)
+  - Exact DMD (J Comput Dyn 1(2):391-421)
   - Per-trial eigenspectrum analysis for system stability assessment
-
-References
-----------
-Russo AA et al. (2018) Motor cortex embeds muscle-like commands in an
-  untangled population response. Neuron 97(4):953-66.
-Tu JH et al. (2014) On dynamic mode decomposition: theory and applications.
-  J Comput Dyn 1(2):391-421.
-Brunton SL & Kutz JN (2022) Data-Driven Science and Engineering: Machine
-  Learning, Dynamical Systems, and Control. Cambridge Univ. Press (Ch 7).
 """
 
 from __future__ import annotations
+
+import re
 
 import numpy as np
 from numpy.typing import NDArray
@@ -63,17 +56,17 @@ def trajectory_tangling(
     dt: float = 1.0,
     rng: np.random.Generator | None = None,
 ) -> NDArray:
-    """Trajectory tangling metric Q(t) from Russo et al. 2018.
+    """Trajectory tangling metric Q(t).
 
     Q(t) = max_{t'} ‖Ż(t) - Ż(t')‖² / (‖Z(t) - Z(t')‖² + ε)
 
     Q is high when two time points have similar states but divergent velocities —
-    the hallmark of dynamical instability. Russo et al. show motor cortex
-    has low Q throughout a movement cycle (untangled flow field), enabling
+    the hallmark of dynamical instability. Motor cortex is known to have
+    low Q throughout a movement cycle (untangled flow field), enabling
     noise-robust execution.
 
     Candidate comparison points t' are drawn only from this single
-    trajectory. Russo et al.'s original quantity pools comparison points
+    trajectory. The original quantity pools comparison points
     across trials, conditions and time; this within-trial version is a
     narrower (and generally higher-variance) estimate. Use `trial_tangling`
     to get Q(t) per trial and pool across the returned (N, T) array at the
@@ -183,7 +176,7 @@ def exact_dmd(
     r: int | None = None,
     dt: float = 1.0,
 ) -> dict:
-    """Exact DMD (Tu et al. 2014) on a state matrix X.
+    """Exact DMD on a state matrix X.
 
     Fits the linear system: X' ≈ A X  (snapshot pair formulation)
 
@@ -571,8 +564,8 @@ def maintenance_eigenspectra(
     Z_trials     : (N, T, d) — single-trial latent trajectories
     times        : (T,) — time vector matching Z_trials' T axis
     conditions   : {condition_name: (N,) boolean trial mask} — caller-defined
-        (e.g. Miller's 0/2-back x target/non-target, Boran's set-size levels,
-        Rutishauser's load levels); this function makes no assumption about
+        (e.g. ECoG n-back corpus's 0/2-back x target/non-target, DANDI 000574's set-size levels,
+        the human single-unit DANDI corpora's load levels); this function makes no assumption about
         the task's condition scheme.
     maint_window : (t0, t1) window (in `times` units) each trial is cropped to
 
@@ -656,7 +649,7 @@ def ring_attractor_phase(
     phase angle θ(t) = arctan2(PC2, PC1) ∈ (-π, π].
 
     A ring attractor manifests as a monotonic or slow-drifting θ(t) during
-    WM maintenance. Decoded phase encodes WM content (Compte et al. 2000).
+    WM maintenance. Decoded phase encodes WM content in ring-attractor models.
 
     Parameters
     ----------
@@ -740,7 +733,7 @@ def koopman_edmd(
 ) -> dict:
     """Extended DMD (EDMD) — finite-dimensional Koopman approximation.
 
-    Koopman operator theory (Mezić 2005; Williams et al. 2015) states that any
+    Koopman operator theory states that any
     nonlinear dynamical system ẋ = f(x) has an EXACT linear representation in
     the infinite-dimensional space of all observables g(x).  EDMD approximates
     this by lifting x → ψ(x) with a finite dictionary of observables (polynomial
@@ -840,7 +833,7 @@ def sindy_neural_dynamics(
 ) -> dict:
     """SINDy (Sparse Identification of Nonlinear Dynamics) on latent trajectories.
 
-    Brunton, Proctor & Kutz (2016, PNAS): fits ẋ = Θ(x)ξ where Θ is a library
+    Fits ẋ = Θ(x)ξ where Θ is a library
     of candidate terms (polynomial) and ξ is a sparse coefficient matrix found
     via sequential thresholded least squares (STLSQ).
 
@@ -1453,3 +1446,22 @@ def switching_ar_score(params: dict, X1: NDArray, X2: NDArray) -> float:
         sq = np.sum(resid**2, axis=1)
         loglik_k[:, k] = -0.5 * sq / params["sigma2"][k] - 0.5 * d * np.log(2 * np.pi * params["sigma2"][k])
     return float(np.sum(np.max(loglik_k, axis=1)))
+
+
+DLPFC_CONNECTOME_AREA = "9/46d"
+
+
+DMD_RANK = 7
+
+
+N_PC = 8
+
+
+def _ascii_to_str(arr: np.ndarray) -> str:
+    return "".join(chr(int(x)) for x in np.asarray(arr).ravel())
+
+
+def _parse_chan_token(token: str) -> list[int]:
+    """'265  281' -> [265, 281]; '0  0' / '0' -> []; '31' -> [31]."""
+    nums = [int(x) for x in re.findall(r"\d+", token)]
+    return [n for n in nums if n != 0]

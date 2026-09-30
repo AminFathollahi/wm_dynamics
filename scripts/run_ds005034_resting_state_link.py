@@ -83,7 +83,7 @@ from preprocessing import bandpass_filter, common_average_reference  # noqa: E40
 from provenance import canonical_json, checkpoint_safe, git_commit, restore_checkpoint  # noqa: E402
 from provenance import _json_safe  # noqa: E402
 from io_utils import locked_json_update  # noqa: E402
-from project_config import data_root  # noqa: E402
+from project_config import data_root
 from data_integrity import missing_files  # noqa: E402
 from subject_independence import resolve_group, count_independent_groups  # noqa: E402
 from corpus_sessions import MIN_TRIALS  # noqa: E402
@@ -91,14 +91,12 @@ from statistics import (  # noqa: E402
     Z_80_POWER, stable_seed, fdr_bh, paired_sign_flip_test, pearson_permutation_test,
     bootstrap_ci, minimum_detectable_paired_difference,
 )
-from run_ds005034_tacs_aftereffect import (  # noqa: E402
-    BANDS, THETA_ROI, POSTERIOR_ROI, TARGET_SFREQ, MAX_GLOBAL_BAD_FRACTION,
-    periodogram_band_power, _mne_session_context, _global_bad_channels, _interpolate,
-)
-from run_ds005034_operation_versus_load_decoding import (  # noqa: E402
-    _load_ds005034_session, session_cells,
-)
-from run_cross_window_code_generalisation import FDR_ALPHA, MIN_TRIALS_PER_CLASS  # noqa: E402
+from preprocessing import THETA_ROI, TARGET_SFREQ, periodogram_band_power, _mne_session_context, _global_bad_channels, _interpolate
+from preprocessing import BANDS, POSTERIOR_ROI, MAX_GLOBAL_BAD_FRACTION
+from corpus_sessions import _load_ds005034_session
+from preprocessing import session_cells
+from statistics import FDR_ALPHA
+from info_decoding import MIN_TRIALS_PER_CLASS
 
 RESULTS = ROOT / "results"
 ANALYSIS_ID = "ds005034_resting_state_link"

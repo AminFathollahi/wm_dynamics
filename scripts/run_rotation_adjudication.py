@@ -214,7 +214,7 @@ def adjudicate_rotation(
 
 def run_region_stratified() -> dict[str, Any]:
     """Re-run the rotation-floor adjudication per anatomical region on DANDI 000469 only
-    -- 000574 and Miller's stationary floors are already invalid and are
+    -- 000574 and ECoG n-back corpus's stationary floors are already invalid and are
     not re-run per region.
     """
     artifact = json.loads((ROOT / "results" / "region_stratified_drift_000469.json").read_text())
@@ -273,7 +273,7 @@ def main() -> None:
             ),
             "resolution": (
                 f"{len(estimable)}/5 regions estimable. Minimum detectable planted rotation rate "
-                f"per estimable region (rad/s): {detectable}. Does not close the rotation crack: "
+                f"per estimable region (rad/s): {detectable}. Does not settle the pooled rotation result: "
                 f"a per-region floor at a coarser detection bound (or non-identified) is expected "
                 f"given the reduced per-region unit count, not evidence for or against rotation."
             ),

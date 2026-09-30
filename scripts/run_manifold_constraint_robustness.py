@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Cluster-robust, matched-design comparison of within_frac / outside_frac
-(Sadtler et al. 2014 within-manifold constraint) against vstar_alignment, on
+(within-manifold constraint) against vstar_alignment, on
 the SAME macaque PFC microstimulation rows/sessions/exclusions as
 run_macaque_pfc_microstimulation_headline_robustness.py's settled vstar/min_energy result.
 
@@ -15,7 +15,7 @@ results/manifold_constraint.json (within_frac varies, nanstd=0.033 >> 1e-9,
 gate passed).
 
 Run:
-    /home/amin/miniconda3/envs/wm_dynamics/bin/python scripts/run_manifold_constraint_robustness.py
+    python scripts/run_manifold_constraint_robustness.py
 """
 from __future__ import annotations
 
@@ -171,7 +171,7 @@ def main() -> None:
 
     out = {
         "n_sessions": n_sessions,
-        "degeneracy_gate": "passed (see results/manifold_constraint.json Part 19A)",
+        "degeneracy_gate": "passed",
         "vstar_alignment": cluster_robust["vstar_alignment"],
         "within_frac": w_cr,
         "outside_frac": o_cr,

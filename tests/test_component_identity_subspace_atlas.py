@@ -28,19 +28,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT / "src"))
 
-from run_component_identity_subspace_atlas import (  # noqa: E402
-    CANDIDATE_KEYS,
-    CANDIDATE_SUPPORT_MATRIX,
-    CORPORA,
-    _aligned_anywhere,
-    _bias_only_between_session_atlas,
-    _decide_branch,
-    _gram_schmidt_bases,
-    _panichello_reproduction_gate,
-    _rank_dependency_gate,
-    _reaction_time_branch,
-    _zero_drop_summary,
-)
+from run_component_identity_subspace_atlas import CORPORA, _aligned_anywhere, _bias_only_between_session_atlas, _decide_branch, _gram_schmidt_bases, _panichello_reproduction_gate, _rank_dependency_gate, _reaction_time_branch, _zero_drop_summary
+from info_decoding import CANDIDATE_KEYS, CANDIDATE_SUPPORT_MATRIX
 
 DATA_ROOT_AVAILABLE = bool(os.environ.get("WM_DYNAMICS_DATA_ROOT")) and Path(
     os.environ.get("WM_DYNAMICS_DATA_ROOT", "")
@@ -258,8 +247,8 @@ def test_decide_branch_is_inconclusive_when_a_supported_cell_is_missing_its_dete
 def test_decide_branch_multiply_aligned_only_orthogonalises_corpora_with_two_or_more_own_aligned_candidates(monkeypatch):
     import run_component_identity_subspace_atlas as m
 
-    # Panichello: two of its own candidates align (triggers Gram-Schmidt for this corpus only).
-    # Watters: one candidate aligns, but it is Watters' only aligned candidate (no orthogonalisation).
+    # macaque prefrontal spatial working-memory corpus (Dryad doi:10.5061/dryad.kkwh70sct): two of its own candidates align (triggers Gram-Schmidt for this corpus only).
+    # macaque multi-object working-memory corpus (doi:10.64898/2026.01.27.702062): one candidate aligns, but it is macaque multi-object corpus' only aligned candidate (no orthogonalisation).
     atlas = _synthetic_alignment_atlas({
         ("panichello_2024_macaque_lPFC", "memorandum_content"): True,
         ("panichello_2024_macaque_lPFC", "gain_total_spike_count"): True,

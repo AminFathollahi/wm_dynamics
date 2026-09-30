@@ -81,23 +81,21 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from corpus_sessions import data_root, iter_watters  # noqa: E402
 from provenance import _json_safe, checkpoint_safe, restore_checkpoint  # noqa: E402
 from run_dissociation_cross_preparation_test import reproduction_gate  # noqa: E402
-from run_dissociation_replication_and_counting_noise import (  # noqa: E402
-    _observable_arrays, _pool_cell, _session_observable_arm,
-)
-from run_dominant_latent_identity_and_behaviour_breadth import (  # noqa: E402
-    ANIMAL_ASSIGNMENT_SOURCE,
-    _load_session as _macaque_load_session, _session_paths as _macaque_session_paths,
-)
-from run_rate_free_state_geometry_behavior_link import (  # noqa: E402
-    _analyze_session as _macaque_analyze_session, _pool as _macaque_pool, rate_free_state_deviation,
-)
-from run_state_behavior_link import (  # noqa: E402
-    MIN_ERROR_TRIALS_FOR_REACHABILITY, _counts_from_spikes, _panichello_directory, trial_amplitude_covariates,
-)
-from run_watters_load_decomposition import _subsets  # noqa: E402
-from run_watters_state_geometry import (  # noqa: E402
-    MIN_TRIALS_FOR_BEHAVIOURAL_CORRELATION, PRIMARY_QUALITY_TIER, _pool_values,
-)
+from run_dissociation_replication_and_counting_noise import _session_observable_arm
+from state_persistence import _pool_cell
+from corpus_sessions import _observable_arrays
+from corpus_sessions import _load_session as _macaque_load_session, _session_paths as _macaque_session_paths
+from statistics import ANIMAL_ASSIGNMENT_SOURCE
+from run_rate_free_state_geometry_behavior_link import _analyze_session as _macaque_analyze_session
+from state_persistence import _pool as _macaque_pool
+from stimulation_response_estimator import rate_free_state_deviation
+from state_persistence import trial_amplitude_covariates
+from statistics import MIN_ERROR_TRIALS_FOR_REACHABILITY
+from spike_pipeline import _counts_from_spikes
+from corpus_sessions import _panichello_directory
+from corpus_sessions import _subsets
+from state_persistence import _pool_values
+from corpus_sessions import MIN_TRIALS_FOR_BEHAVIOURAL_CORRELATION, PRIMARY_QUALITY_TIER
 from state_persistence import slope_across_sessions_test  # noqa: E402
 from statistics import (  # noqa: E402
     auroc, fdr_bh, minimum_detectable_paired_difference, partial_correlation_permutation_test,
@@ -105,12 +103,13 @@ from statistics import (  # noqa: E402
 )
 
 from sklearn.linear_model import LinearRegression, LogisticRegression  # noqa: E402
+from subspace_identity import N_CV_FOLDS, _contiguous_folds  # noqa: E402
+from statistics import _trial_count_weighted  # noqa: E402
 
 OUTPUT_PATH = ROOT / "results" / "component_effect_size_and_anatomy.json"
 CHECKPOINT_PATH = ROOT / "results" / ".checkpoints" / "component_effect_size_and_anatomy_checkpoint.json"
 ANALYSIS_VERSION = "2026-08-19"
 
-N_CV_FOLDS = 5
 DECILE_FRACTION = 0.10
 QUINTILE_FRACTION = 0.20
 PREDICTORS = ("deviation", "amplitude", "spike_count")
@@ -333,14 +332,6 @@ def _spike_count_matched_contrast(deviation: np.ndarray, worse: np.ndarray, spik
     }
 
 
-def _contiguous_folds(n: int, k: int) -> np.ndarray:
-    edges = np.linspace(0, n, k + 1).astype(int)
-    fold = np.empty(n, dtype=int)
-    for f in range(k):
-        fold[edges[f]:edges[f + 1]] = f
-    return fold
-
-
 def _cv_discrimination_binary(feature: np.ndarray, y: np.ndarray, k: int = N_CV_FOLDS) -> dict:
     n = len(feature)
     if n < 2 * k:
@@ -389,15 +380,6 @@ def _cv_discrimination_continuous(feature: np.ndarray, target: np.ndarray, k: in
     return {"status": "computed", "n_trials": n, "n_folds": k, "n_valid": int(valid.sum()), "r": r,
             "r_per_fold_not_pooled_across_folds": _trial_count_weighted(per_fold_pairs),
             "n_folds_with_a_computable_per_fold_statistic": len(per_fold_pairs)}
-
-
-def _trial_count_weighted(entries: list[tuple[int, float | None]]) -> float | None:
-    tested = [(n, v) for n, v in entries if v is not None]
-    if not tested:
-        return None
-    n_arr = np.array([n for n, _ in tested], dtype=float)
-    v_arr = np.array([v for _, v in tested], dtype=float)
-    return float(np.sum((n_arr / n_arr.sum()) * v_arr))
 
 
 # =======================================================================================================

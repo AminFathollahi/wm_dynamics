@@ -39,7 +39,7 @@ cell, a rotation-arm gate decision, and a macaque PFC microstimulation damping-v
 readout comparing the legacy and primary sigma estimates).
 
 Run:
-    /home/amin/miniconda3/envs/wm_dynamics/bin/python scripts/run_vstar_fit_selection_factorial.py
+    python scripts/run_vstar_fit_selection_factorial.py
 """
 from __future__ import annotations
 

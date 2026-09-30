@@ -2,10 +2,10 @@
 """Does a nonlinear one-step transition model beat this project's linear DMD
 operator on the same working-memory latent trajectories?
 
-DFINE (Dynamical Flexible Inference for Nonlinear Estimation; Sani, Abbaspourazad,
-Wong, Shanechi 2024) motivates nonlinear latent dynamics for neural population
+DFINE (Dynamical Flexible Inference for Nonlinear Estimation, a published
+nonlinear latent-dynamics model) motivates nonlinear latent dynamics for neural population
 data. The earlier claim that its GitHub-only official code was unreachable was
-retested and corrected on 2026-08-01: ShanechiLab/torchDFINE is reachable from
+incorrect: the official torchDFINE repository is reachable from
 this environment. This retained script isolates DFINE's
 core motivating claim -- nonlinear vs. linear one-step latent dynamics -- with
 a minimal, honestly-labeled comparison: a small feedforward network trained to
@@ -129,8 +129,7 @@ def main():
         "mean_r2_linear_dmd": float(r2_lin.mean()), "mean_r2_nonlinear_mlp": float(r2_non.mean()),
         "nonlinear_vs_linear": {"mean_diff": comparison["mean_diff"], "p_value": comparison["p_value"]},
         "note": ("Scoped historical stand-in for DFINE's motivating claim (see module "
-                "docstring); the official GitHub repository is reachable as rechecked "
-                "on 2026-08-01, so network access is not a current limitation."),
+                "docstring); the official GitHub repository is reachable, so network access is not a current limitation."),
     }
     with open(RESULTS / "dfine_nonlinear_dynamics_check.json", "w") as f:
         json.dump(_json_safe(summary), f, indent=2, allow_nan=False)

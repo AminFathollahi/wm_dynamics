@@ -54,7 +54,6 @@ from statistics import paired_sign_flip_test, forest_meta, stable_seed  # noqa: 
 from provenance import _json_safe
 
 RESULTS = ROOT / "results"
-DATA_ROOT = data_root()
 
 BIN_MS = 100
 SMOOTH_MS = 200
@@ -65,7 +64,7 @@ CTG_STEP = 3
 CTG_N_PERM = 100
 AXIS_STEP = 3   # matches run_axis_rotation_analysis STEP_000469
 
-# The three Rutishauser-lineage Sternberg cohorts differ only in two NWB field
+# The three human single-unit DANDI Sternberg cohorts differ only in two NWB field
 # names (already the case across their per-dataset pipeline scripts).
 STERNBERG = {
     "dandi000469": {"dir": "000469", "trials": "intervals/trials", "pic": "loadsEnc1_PicIDs",
@@ -78,7 +77,7 @@ STERNBERG = {
 
 
 def _iter_nwb_paths(cfg: dict):
-    ddir = DATA_ROOT / cfg["dir"]
+    ddir = data_root() / cfg["dir"]
     if cfg["subs"] is not None:
         for subj in cfg["subs"]:
             p = ddir / subj / f"{subj}_{cfg['ses']}_ecephys+image.nwb"
@@ -217,8 +216,8 @@ def _headline_2_pr_slope() -> dict:
     stats = json.load(open(RESULTS / "all_statistics.json"))
     from scipy.stats import norm
     rows = []
-    for label, key in [("Miller", "miller"), ("Boran iEEG", "boran_ieeg"),
-                       ("Boran units", "boran_units"), ("DANDI 000469", "dandi000469"),
+    for label, key in [("ECoG n-back", "miller"), ("DANDI 000574 iEEG", "boran_ieeg"),
+                       ("DANDI 000574 units", "boran_units"), ("DANDI 000469", "dandi000469"),
                        ("DANDI 001187", "dandi001187"), ("DANDI 000673", "dandi000673")]:
         r = stats.get("pr_lme_by_dataset", {}).get(key)
         if r and "beta" in r:

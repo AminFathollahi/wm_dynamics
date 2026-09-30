@@ -1,16 +1,12 @@
 #!/usr/bin/env python3
-"""Haslacher et al. (2024) CLAM-tACS stimulation-response geometry: does
+"""CLAM-tACS stimulation-response geometry (doi 10.1016/j.brs.2024.07.007,
+Brain Stimulation 17 (2024) 850-859): does
 phase-tuned tACS reshape the working-memory retention-period manifold, does
 each participant's own stimulation site align with this project's own fitted
 dynamics (DMD's leading mode v*) and controllability structure, is any of
 this specific to the active (occipital) group vs. the control (frontal)
 group, and does its size predict each participant's own behavioral phase-
 modulation depth?
-
-Citation: Haslacher D, Cavallo A, Reber P, Kattein A, Thiele M, Nasr K,
-Hashemi K, Sokoliuk R, Thut G, Soekadar SR. "Working memory enhancement
-using real-time phase-tuned transcranial alternating current stimulation."
-Brain Stimulation 17 (2024) 850-859. https://doi.org/10.1016/j.brs.2024.07.007
 
 This complements scripts/run_haslacher_phase_omega.py, which reads the
 `stim` recording with `preload=False` for event markers only and never
@@ -72,20 +68,15 @@ from geometry import (  # noqa: E402
     select_latent_dim,
     subspace_overlap,
 )
-from run_haslacher_phase_omega import (  # noqa: E402
-    ACTIVE_SUBJECTS,
-    CONTROL_SUBJECTS,
-    DATA_DIR,
-    PHASE_CONDITIONS,
-    RETENTION_TMAX,
-    RETENTION_TMIN,
-    _modulation,
-)
+from run_haslacher_phase_omega import DATA_DIR
+from preprocessing import PHASE_CONDITIONS, _modulation
+from preprocessing import RETENTION_TMAX, RETENTION_TMIN
+from preprocessing import ACTIVE_SUBJECTS, CONTROL_SUBJECTS
 from statistics import pearson_permutation_test, permutation_pvalue, stable_seed  # noqa: E402
+from preprocessing import AUX_CHANNELS, GRAMIAN_HORIZON, NOT_OF_INTEREST, N_RANDOM_DIRS, PROTECT, SATURATION_THRESHOLD, SFREQ_ANALYSIS  # noqa: E402
+from preprocessing import _retention_trials, _sass, _stimulation_channel_weight  # noqa: E402
 
 RESULTS = ROOT / "results"
-SFREQ_ANALYSIS = 200.0
-SATURATION_THRESHOLD = 0.418  # dataset README's own hardware-rail indicator, volts
 BROADBAND_HZ = (1.0, 40.0)  # standard EEG passband: removes slow drift and muscle/
                             # line-adjacent noise without restricting to one oscillatory
                             # sub-band (contrast run_haslacher_phase_omega.py's ALPHA_BAND)
@@ -93,10 +84,6 @@ N_PERM_MODULATION = 200  # smaller than the 2000 used for the cheap accuracy sta
                          # in run_haslacher_phase_omega.py: this null requires only
                          # re-averaging precomputed per-trial scalars, but many
                          # participants x conditions makes 2000 unnecessarily slow
-GRAMIAN_HORIZON = 20
-N_RANDOM_DIRS = 20
-AUX_CHANNELS = ["envelope", "stim"]
-PROTECT = ["Pz", "PO7", "PO8", "P3", "P4"]  # the source paper's own analysis target;
                                             # never dropped by saturated-channel rejection
 # The dataset's own documented stimulation montage (Data/README.md's
 # participant table): occipital electrodes for the active group, frontal for
@@ -104,56 +91,10 @@ PROTECT = ["Pz", "PO7", "PO8", "P3", "P4"]  # the source paper's own analysis ta
 # NOT_OF_INTEREST list drops (they are not needed for the Pz-Laplacian
 # target) -- but they are what this script needs to build the stimulation
 # input direction B, so they are kept through preprocessing here.
-STIM_ELECTRODES = {"active": ["O1", "O2"], "control": ["Fpz", "Cz"]}
-NOT_OF_INTEREST = {
-    "active": ["Fp1", "Fpz", "Fp2", "FC1", "Fz", "FC2", "C1", "Cz", "C2", "CP1",
-               "CPz", "CP2", "F9", "F10", "FT9", "FT10", "TP9", "TP10", "O1", "O2"],
-    "control": ["Fp1", "Fpz", "Fp2", "FC1", "C5", "FC2", "C1", "Cz", "C2", "CP1",
-                "CPz", "CP2", "F9", "F10", "FT9", "FT10", "TP9", "TP10", "O1", "O2"],
-}
 
 
-def _stimulation_channel_weight(group: str, ch_names: list[str]) -> dict | None:
-    """(C,) averaged indicator over this group's stimulation electrodes that
-    survived saturated-channel rejection, or None if none survived."""
-    idx = [ch_names.index(ch) for ch in STIM_ELECTRODES[group] if ch in ch_names]
-    if not idx:
-        return None
-    weight = np.zeros(len(ch_names))
-    weight[idx] = 1.0 / len(idx)
-    return {"weight": weight, "n_electrodes_found": len(idx),
-            "n_electrodes_expected": len(STIM_ELECTRODES[group])}
 
 
-def _sass(no_stim: "mne.io.Raw", stim: "mne.io.Raw") -> int:
-    """Project the tACS artifact out of `stim` in place, using `no_stim` as
-    the artifact-free reference (Haslacher et al., NeuroImage 2021,
-    228:117571). Reused directly from the dataset's own Data/README.md
-    section 6, with attribution."""
-    picks = [ch for ch in stim.ch_names if ch not in AUX_CHANNELS]
-    ix = [stim.ch_names.index(ch) for ch in picks]
-
-    c_stim = np.cov(stim.get_data(picks))
-    c_nostim = np.cov(no_stim.get_data(picks))
-
-    eigvals, eigvecs = linalg.eig(c_stim, c_nostim)
-    order = np.argsort(eigvals.real)[::-1]
-    d = eigvecs.real[:, order].T
-    m = linalg.pinv(d)
-
-    dists = []
-    for k in range(len(picks)):
-        keep = np.ones(m.shape[0])
-        keep[:k] = 0
-        p = m @ np.diag(keep) @ d
-        dists.append(np.linalg.norm(c_nostim - p @ c_stim @ p.T, ord="nuc"))
-    k = int(np.argmin(dists))
-
-    keep = np.ones(m.shape[0])
-    keep[:k] = 0
-    p = m @ np.diag(keep) @ d
-    stim._data[ix] = p @ stim._data[ix]
-    return k
 
 
 def _preprocess(subject: str, group: str) -> tuple["mne.io.Raw", "mne.io.Raw", int]:
@@ -280,19 +221,6 @@ def _preprocess_author_native(subject: str, group: str) -> tuple["mne.io.Raw", "
     return no_stim, stim, metadata
 
 
-def _retention_trials(raw: "mne.io.Raw", codes: list[int] | None = None) -> dict[int, np.ndarray]:
-    """Per-phase-condition (N, C, T) retention-window trials. `codes=None`
-    pools all six conditions (used for the no_stim baseline, where the
-    phase-condition label is not behaviorally meaningful)."""
-    events, _ = mne.events_from_annotations(raw, verbose="ERROR")
-    event_id = list(PHASE_CONDITIONS) if codes is None else codes
-    epochs = mne.Epochs(raw, events, event_id=event_id, tmin=RETENTION_TMIN, tmax=RETENTION_TMAX,
-                        baseline=None, preload=True, on_missing="ignore", verbose="ERROR")
-    data = epochs.get_data(copy=True)  # (N, C, T)
-    trial_codes = epochs.events[:, 2]
-    if codes is None:
-        return {0: data}
-    return {c: data[trial_codes == c] for c in codes}
 
 
 def _geometry_vs_baseline(baseline_pooled: np.ndarray, condition_pooled: np.ndarray,
@@ -384,7 +312,7 @@ def run_participant(subject: str, group: str) -> dict:
     # persisted after switching from alpha-only to broadband filtering), so
     # the magnitude-weighted participation-ratio statistic still rounds to
     # k=1 -- trivializing subspace_overlap and v*/alignment (a 1-D subspace
-    # trivially "overlaps" and "aligns" with anything). Alagapan's iEEG does
+    # trivially "overlaps" and "aligns" with anything). The phase-locked intracranial stimulation corpus's iEEG does
     # not show this (contacts are close to sources, cv_pr there gives
     # k=16-21) -- this is a property of the scalp-EEG modality, not of any
     # one preprocessing choice. parallel_analysis (how many components clear
@@ -475,7 +403,7 @@ def _modifier_value(geom: dict, key: str) -> float | None:
 def _brain_behavior_link(geometry_by_subject: dict, phase_omega_path: Path) -> dict:
     """Correlate each participant's own geometry/DMD/LQR quantities against
     their own behavioral-modulation depth (results/haslacher_phase_omega.json),
-    properly powered here (n up to 46) unlike the Alagapan n=3 case:
+    properly powered here (n up to 46) unlike the phase-locked intracranial stimulation corpus n=3 case:
       geometric_modulation_depth -- per-trial dispersion-along-v* modulation
       alignment_to_vstar         -- does this participant's fixed stimulation
                                      site align with their own dynamics' v*
@@ -526,8 +454,8 @@ def main():
         print(f"\n{modifier_key} vs. behavioral-modulation-depth: {result}")
 
     out = {"active": active, "control": control, "brain_behavior_link": link,
-          "_meta": {"citation": "Haslacher et al. 2024, Brain Stimulation, "
-                    "doi:10.1016/j.brs.2024.07.007",
+          "_meta": {"citation": "Brain Stimulation, "
+                    "doi 10.1016/j.brs.2024.07.007",
                     "broadband_hz": list(BROADBAND_HZ),
                     "retention_window_s": [RETENTION_TMIN, RETENTION_TMAX],
                     "preprocessing": "saturated-channel rejection + SASS, per the dataset's "

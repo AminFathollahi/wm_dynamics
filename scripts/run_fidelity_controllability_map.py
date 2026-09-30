@@ -40,9 +40,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from provenance import canonical_json, git_commit, sha256_file  # noqa: E402
 from spike_pipeline import ANATOMICAL_REGIONS  # noqa: E402
-from build_structure_control_observables import (  # noqa: E402
-    extract_000469_pairs, extract_001187_000673_pairs,
-)
+from statistics import extract_000469_pairs, extract_001187_000673_pairs
 
 RESULTS = ROOT / "results"
 OUTPUT_PATH = RESULTS / "fidelity_controllability_map.json"
@@ -167,7 +165,7 @@ def main() -> None:
         "seed": SEED,
         "scope": (
             "Same two datasets/five structures as results/structure_control_observables.json "
-            "(DANDI 000469, DANDI 001187/000673 content_axis_battery); 000574/Boran and the LFP "
+            "(DANDI 000469, DANDI 001187/000673 content_axis_battery); 000574 and the LFP "
             "corpora are not in the source artifact this builds on."
         ),
         "scale_declaration": (
@@ -177,7 +175,7 @@ def main() -> None:
             "ms-valued control bandwidth 1/lambda (a common physical scale, time). The "
             "cross-structure displacement_snr_by_delta column in "
             "structure_control_observables.json is superseded: Delta has no common scale across "
-            "structures. See PAPER_REPORT.tex for where this is struck."
+            "structures."
         ),
         "primary_grain_declaration": (
             "Session grain is primary for this map (matches structure_control_observables.json, "

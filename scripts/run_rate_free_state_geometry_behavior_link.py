@@ -11,9 +11,8 @@ measure. This module asks the same question about the trial state's
 DIRECTION rather than its length: a per-trial per-unit activity vector,
 normalised to unit L2 norm so only which units are relatively more or less
 active survives, is this project's own distance-to-attractor observable
-(Daume et al. 2025, following Kaminski et al. 2017 -- a trial's distance from
-a reference state) built in a rate-free form rather than invented fresh for
-this test. The per-trial deviation from the session's own mean direction is
+(a trial's distance from a reference state) built in a rate-free form
+rather than invented fresh for this test. The per-trial deviation from the session's own mean direction is
 computed leave-one-out (a trial never contributes to its own reference, and
 the reference is not conditioned on trial outcome in any way), so a
 direction-based correlate of accuracy, if one exists, cannot be explained by
@@ -28,7 +27,7 @@ to replace.
 
 Scope matches results/state_behavior_link.json and
 results/behavior_amplitude_rate_controls.json exactly: macaque lPFC only
-(Panichello et al. 2024), the same 11 sessions reaching the >=60-error
+(doi 10.1038/s41586-024-08139-9), the same 11 sessions reaching the >=60-error
 reachability floor, no trial pooled across sessions or animals -- every
 correlation is computed within one session and only the resulting per-
 session coefficients are pooled across sessions, by the paired sign-flip
@@ -57,13 +56,17 @@ if _scripts_dir not in sys.path:
     sys.path.insert(0, _scripts_dir)
 
 from corpus_sessions import data_root  # noqa: E402
-from run_behavior_amplitude_rate_controls import _reachable_sessions  # noqa: E402
-from run_state_behavior_link import MIN_ERROR_TRIALS_FOR_REACHABILITY, _counts_from_spikes  # noqa: E402
+from corpus_sessions import _reachable_sessions
+from statistics import MIN_ERROR_TRIALS_FOR_REACHABILITY
+from spike_pipeline import _counts_from_spikes
 from state_persistence import slope_across_sessions_test  # noqa: E402
 from statistics import (  # noqa: E402
     minimum_detectable_paired_difference, partial_correlation_permutation_test, stable_seed,
 )
 from stimulation_response_estimator import rate_free_state_deviation  # noqa: E402
+from state_persistence import _pool  # noqa: E402
+from statistics import MEANINGFUL_EFFECT_THRESHOLD_R_UNITS  # noqa: E402
+from corpus_sessions import _session_arrays  # noqa: E402
 
 OUTPUT_PATH = Path(__file__).resolve().parents[1] / "results" / "rate_free_state_geometry_behavior_link.json"
 N_PERM = 10000
@@ -72,7 +75,6 @@ N_PERM = 10000
 # "~0.14 r units") is already on, fixed here BEFORE any fit runs so the two nulls are commensurable --
 # a reader comparing this project's behavioural bounds is comparing the same units, not two different
 # implicit scales.
-MEANINGFUL_EFFECT_THRESHOLD_R_UNITS = 0.14
 
 ORTHOGONALITY_GATE_DECISION_RULE_DECLARED_BEFORE_FITTING = (
     "Per session, correlate the rate-free deviation observable (see rate_free_state_deviation) with the "
@@ -116,34 +118,11 @@ BEHAVIOURAL_DECISION_RULE_DECLARED_BEFORE_FITTING = (
     "happens when it occurs): this is a genuine gap in the pre-declared rule, not a case to force onto "
     "either named branch. If it occurs, the branch is "
     "'raw_correlation_significant_but_does_not_survive_joint_control_of_spike_count_and_trial_index', "
-    "implemented and tested as its own outcome, reported in the implementation report as a rule gap for "
-    "the next round to close in writing rather than silently resolved here."
+    "implemented and tested as its own outcome, reported as a rule gap to be closed in writing "
+    "rather than silently resolved here."
 )
 
 
-def _session_arrays(path: Path) -> dict | None:
-    raw = loadmat(str(path), simplify_cells=True)
-    spikes = np.asarray(raw["spks"], dtype=float)
-    time_ms = np.asarray(raw["tc"], dtype=float).reshape(-1)
-    is_corr = np.asarray(raw["isCorr"]).astype(bool).reshape(-1)
-    counts_all = _counts_from_spikes(spikes, time_ms)  # (trials, units, bins), whole delay epoch
-    if counts_all.shape[0] < 16:
-        return None
-    activity_by_unit = counts_all.sum(axis=2)  # (trials, units) -- per-unit total spike count, delay epoch
-    deviation = rate_free_state_deviation(activity_by_unit)
-    total_spike_count = activity_by_unit.sum(axis=1)
-    trial_index = np.arange(counts_all.shape[0], dtype=float)
-    finite = np.isfinite(deviation)
-    if finite.sum() < 16:
-        return None
-    return {
-        "is_corr": is_corr[finite].astype(float),
-        "deviation": deviation[finite],
-        "spike_count": total_spike_count[finite],
-        "trial_index": trial_index[finite],
-        "n_trials_total": int(counts_all.shape[0]),
-        "n_trials_with_defined_direction": int(finite.sum()),
-    }
 
 
 def _corr(y: np.ndarray, x: np.ndarray, controls: list[np.ndarray], seed_tag: str) -> dict:
@@ -167,9 +146,6 @@ def _analyze_session(session_id: str, arrays: dict) -> dict:
     }
 
 
-def _pool(sessions: list[dict], key: str) -> dict:
-    values = [s["analysis"][key]["r"] for s in sessions if s["analysis"][key].get("status") == "computed"]
-    return slope_across_sessions_test(values, alternative="two-sided") if values else {"status": "not_computed"}
 
 
 def _classify(gate: dict, raw: dict, joint: dict, mdd: float | None) -> str:
@@ -258,7 +234,7 @@ def main() -> None:
     output = {
         "version": "2026-08-31",
         "scope": (
-            "Macaque lPFC only (Panichello et al. 2024): human trial-level accuracy is at ceiling and the "
+            "Macaque lPFC only (doi 10.1038/s41586-024-08139-9): human trial-level accuracy is at ceiling and the "
             "mouse ALM corpus has no comparable per-trial accuracy. The 11 sessions reaching the "
             f"pre-declared reachability floor (at least {MIN_ERROR_TRIALS_FOR_REACHABILITY} error trials), "
             "the same sessions results/state_behavior_link.json and "
@@ -267,14 +243,14 @@ def main() -> None:
             "within one session, and only the resulting per-session correlation coefficients are pooled "
             "across sessions, by the paired sign-flip test. The rate-free deviation observable "
             "(rate_free_state_deviation) is this project's own distance-to-attractor observable "
-            "(Daume et al. 2025, following Kaminski et al. 2017) built in a rate-free form: each trial's "
+            "built in a rate-free form: each trial's "
             "per-unit activity vector is L2-normalised to unit length before comparison, so only its "
             "direction across units, not its total magnitude, enters the leave-one-out reference or the "
             "cosine deviation -- it is not a new construct invented for this test."
         ),
         "construction_operationalisation": (
             "'Per-unit activity vector' is operationalised as each unit's total spike count summed over "
-            "every bin of the delay epoch (Panichello delay window, 100 ms bins) -- a single (n_units,) "
+            "every bin of the delay epoch (macaque spatial working-memory corpus delay window, 100 ms bins) -- a single (n_units,) "
             "vector per trial, before L2 normalisation. This specific choice (full-epoch sum rather than, "
             "e.g., a per-window-then-averaged vector at the deciding window width) is a disclosed reading "
             "of a genuinely underspecified instruction, made once here rather than left implicit; any total-"

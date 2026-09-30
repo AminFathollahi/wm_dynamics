@@ -81,21 +81,22 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from corpus_sessions import data_root, iter_watters  # noqa: E402
 from provenance import _json_safe, checkpoint_safe, restore_checkpoint  # noqa: E402
-from run_dissociation_cross_preparation_test import MIN_TRIALS_WITH_DEFINED_DIRECTION  # noqa: E402
-from run_deviation_serial_dependence_and_temporal_locus import (  # noqa: E402
-    CONTENT_LABEL_K_CLASSES, CONTENT_SPECIFIC_SERIAL_PULL_OPERATIONALISATION, DETREND_WINDOWS_TRIALS,
-    MIN_TRIALS_FOR_LAG_PROFILE, SHARP_TEST_MIN_CLASSES, SHARP_TEST_MIN_PER_CLASS, SIGN_TO_WORSE_BEHAVIOUR,
-    _cosine_at_lag, _detrend, _macaque_session_bundle, full_reproduction_gate, unit_direction_vectors,
-)
+from statistics import MIN_TRIALS_WITH_DEFINED_DIRECTION
+from run_deviation_serial_dependence_and_temporal_locus import full_reproduction_gate
+from corpus_sessions import _macaque_session_bundle
+from statistics import CONTENT_SPECIFIC_SERIAL_PULL_OPERATIONALISATION, DETREND_WINDOWS_TRIALS, MIN_TRIALS_FOR_LAG_PROFILE, SHARP_TEST_MIN_CLASSES, SHARP_TEST_MIN_PER_CLASS, SIGN_TO_WORSE_BEHAVIOUR, _cosine_at_lag, _detrend, unit_direction_vectors
+from statistics import CONTENT_LABEL_K_CLASSES
 from run_multi_object_interference_and_locus_within_item_count import _trial_count_weighted  # noqa: E402
-from run_behavior_amplitude_rate_controls import _reachable_sessions  # noqa: E402
-from run_state_behavior_link import _panichello_directory  # noqa: E402
+from corpus_sessions import _reachable_sessions
+from corpus_sessions import _panichello_directory
 from run_state_content_link import usable_label  # noqa: E402
-from run_watters_state_geometry import MIN_TRIALS_FOR_BEHAVIOURAL_CORRELATION  # noqa: E402
+from corpus_sessions import MIN_TRIALS_FOR_BEHAVIOURAL_CORRELATION
 from statistics import (  # noqa: E402
     minimum_detectable_paired_difference, partial_correlation_permutation_test, permutation_pvalue, stable_seed,
 )
 from state_persistence import slope_across_sessions_test  # noqa: E402
+from corpus_sessions import _watters_bundle_with_label  # noqa: E402
+from statistics import _bias_only_reproduces  # noqa: E402
 
 OUTPUT_PATH = ROOT / "results" / "component_and_content_specific_serial_pull.json"
 CHECKPOINT_PATH = ROOT / "results" / ".checkpoints" / "component_and_content_specific_serial_pull_checkpoint.json"
@@ -334,25 +335,12 @@ def _partial_r(outcome: np.ndarray, covariate: np.ndarray, controls: list[np.nda
 
 
 # =======================================================================================================
-# Session bundles. Macaque reuses _macaque_session_bundle unchanged. Watters combines the two fields no
+# Session bundles. Macaque reuses _macaque_session_bundle unchanged. The macaque multi-object corpus combines the two fields no
 # single delivered bundle carries together: _observable_arrays' within-item-count fields (item_count,
 # deviation, report_error, spike_count, trial_index) from the reproduction gate's own arrays, and the
 # memorandum-class discretisation of cued_theta the delivered module's _watters_session_bundle computes
 # -- read live off the reproduction gate's own CONTENT_LABEL_K_CLASSES-width bins, not re-derived here.
 # =======================================================================================================
-
-def _watters_bundle_with_label(entry: dict, content_label_k_classes: int) -> dict:
-    session, arrays, usable = entry["session"], entry["arrays"], entry["usable"]
-    counts = session["counts"]
-    activity_by_unit = counts.sum(axis=2)[usable]
-    theta = np.mod(np.asarray(session["cued_theta"], dtype=float)[usable], 2.0 * np.pi)
-    label = (np.floor(theta / (2.0 * np.pi / content_label_k_classes)).astype(int)) % content_label_k_classes
-    return {
-        "session": session["session"], "activity_by_unit": activity_by_unit, "deviation": arrays["deviation"],
-        "outcome_raw": arrays["report_error"], "spike_count": arrays["spike_count"],
-        "trial_index": arrays["trial_index"], "memorandum_label": label.astype(float),
-        "item_count": arrays["item_count"],
-    }
 
 
 # =======================================================================================================
@@ -488,16 +476,6 @@ def _paired_test(per_session: list[dict], key_a: str, key_b: str) -> dict:
         pooled["minimum_detectable_paired_difference_at_80pct_power"] = minimum_detectable_paired_difference(diffs)
     pooled["n_sessions_paired"] = len(diffs)
     return pooled
-
-
-def _bias_only_reproduces(real: dict, bias: dict) -> bool:
-    if real.get("status") != "tested" or bias.get("status") != "tested":
-        return False
-    if real["significant"] != bias["significant"]:
-        return False
-    if real["significant"] and (real["mean_value"] > 0.0) != (bias["mean_value"] > 0.0):
-        return False
-    return True
 
 
 def _bias_only_branch(reproduces: bool) -> str:

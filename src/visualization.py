@@ -9,7 +9,6 @@ All figures follow Nature Neuroscience formatting conventions:
 References
 ----------
 Nature Neuroscience Guide to Authors (2024): figure specifications.
-Rougier NP et al. (2014) Ten Simple Rules for Better Figures. PLoS Comput Biol.
 """
 
 from __future__ import annotations

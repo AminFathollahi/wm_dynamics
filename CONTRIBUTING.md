@@ -21,19 +21,12 @@
 ## Long analyses
 
 - Write atomic incremental results and resumable checkpoints.
-- Run long jobs as persistent user services.
-- Estimate runtime before launch and check jobs at the expected completion time instead of polling.
+- Run long analyses as persistent user services, from a frozen copy of the code.
+- Estimate runtime before launch.
 - Record the exact command, environment, input identity, implementation identity, and output path.
-- Queue GPU analyses when the shared device is occupied.
-
-## Delegation
-
-- Give each worker a bounded objective and non-overlapping file ownership.
-- Save useful progress in small patches before starting expensive validation.
-- Request one ETA, then review work at completion or a hard blocker.
 
 ## Documentation
 
-- Update user documentation, task status, tests, provenance, and ignore rules with the implementation.
+- Update documentation, tests, provenance and ignore rules with the implementation.
 - Keep generated outputs and runtime state out of version control.
 - State the biological inference unit and the boundary of every scientific interpretation.

@@ -60,12 +60,13 @@ if _scripts_dir not in sys.path:
 from corpus_sessions import (  # noqa: E402
     EPOCH_WINDOWS_S, alm_data_directory, data_root, iter_all_corpora, load_alm_raw_session,
 )
-from run_state_persistence import (  # noqa: E402
-    HUMAN_DATASETS, LAG_BIN_MS, LAG_N_NULL_REPLICATES, LAG_N_SPLITS, LAG_NULL_SPLITS_PER_REPLICATE,
-    PANICHELLO_DELAY_WINDOW_MS, PANICHELLO_LAG_N_NULL_REPLICATES, PANICHELLO_LAG_N_SPLITS,
-    _lag_run_row, _panichello_directory, _seed,
-)
-from run_state_persistence_shape import _lag_lists, _to_int_keyed  # noqa: E402
+from corpus_sessions import _panichello_directory
+from state_persistence import LAG_N_SPLITS, _lag_run_row
+from info_decoding import PANICHELLO_DELAY_WINDOW_MS, PANICHELLO_LAG_N_NULL_REPLICATES, PANICHELLO_LAG_N_SPLITS
+from statistics import _seed
+from info_decoding import HUMAN_DATASETS
+from state_persistence import LAG_BIN_MS, LAG_N_NULL_REPLICATES, LAG_NULL_SPLITS_PER_REPLICATE
+from info_decoding import _lag_lists, _to_int_keyed
 from state_persistence import (  # noqa: E402
     _d_series, component_series, per_session_slopes_in_range, segmented_slope_test,
 )
@@ -463,8 +464,8 @@ def _add_settings_table_pointer_to_common_range_artifact() -> None:
     this module's four_arm_estimator_settings_table (1.5's "explicit
     pointer both ways"), added directly rather than by regenerating that
     artifact's full multi-stage pipeline (cohort bootstrap, breakpoint
-    fits, cross-arm null-explains-it test) for a metadata addition -- see
-    the implementation report for why that judgment call was made. Not
+    fits, cross-arm null-explains-it test) for a metadata addition -- a
+    judgment call. Not
     called if the artifact does not exist; never overwrites any existing
     field but its own."""
     if not COMMON_RANGE_PATH.exists():
@@ -492,7 +493,7 @@ def _apply_resume_state(output: dict, prior_output: dict) -> tuple[dict, bool]:
     human/ALM keys but not this one, so a resumed run started
     panichello_session_rows from an empty dict and OVERWROTE the full
     on-disk cache, session by session, with only the sessions it refit in
-    the new run -- a real defect that cost 8 already-cached sessions' worth
+    the new run -- a real error that cost 8 already-cached sessions' worth
     of refitting before it was caught mid-run (see the implementation
     report). Returns the updated output and whether the human/ALM arms
     were reused."""
@@ -527,7 +528,7 @@ def main() -> None:
         "scope": (
             "Human intracranial delay-epoch state (DANDI 000469, 001187, 000574; structure=='pooled'; "
             "n=72 sessions), mouse ALM delay-epoch state at the human-matched window and rate-matched "
-            "thinning (n=23 sessions), and macaque lPFC delay-epoch state (Panichello et al. 2024; "
+            "thinning (n=23 sessions), and macaque lPFC delay-epoch state (doi 10.1038/s41586-024-08139-9; "
             "n=25 sessions), every session refit at the fixed deciding window width (3 bins, 300 ms) "
             "at two estimator settings: the human/ALM module default (n_splits=12, n_null_replicates=20) "
             "and the macaque arm's lighter setting (n_splits=10, n_null_replicates=10). "
@@ -638,8 +639,8 @@ def main() -> None:
     # output["panichello_session_rows"], keyed by session ID, and flushed after every session. A prior
     # run of this module flushed only the session-ID progress list here, not the row data itself, which
     # made a genuine resume-without-refit impossible -- the 14 sessions it reported "completed" left no
-    # row data on disk to aggregate from, only their IDs. That is a defect in this module as previously
-    # written (see the implementation report), and per this arm's own resume-first instruction, the fix
+    # row data on disk to aggregate from, only their IDs. That was an error in this module as previously
+    # written, and the fix
     # is to check for row-level data before refitting -- which is what the cache lookup below does -- and
     # only refit a session when no cached row is found for it, exactly the situation those 14 sessions
     # are in.
@@ -649,7 +650,7 @@ def main() -> None:
     output["panichello_paired_change_sign_convention"] = PANICHELLO_PAIRED_CHANGE_SIGN_CONVENTION
     _flush(output)
 
-    print("Panichello macaque lPFC (confirmatory up-run): fitting both settings per session (resumable "
+    print("macaque prefrontal spatial working-memory corpus (Dryad doi:10.5061/dryad.kkwh70sct) (confirmatory up-run): fitting both settings per session (resumable "
           "from any cached per-session row already on disk)...", file=sys.stderr, flush=True)
     t_arm = time.time()
     panichello_sessions = _panichello_sessions(root)
@@ -719,8 +720,8 @@ def main() -> None:
         "minimum_detectable_paired_difference_80pct_power")
     # paired_change_mdd_field is the FULL dict minimum_detectable_paired_difference returns (status, n,
     # sd, alpha, power, z_factor, mdd), not the scalar itself -- .get("mdd") below pulls the number out;
-    # confusing the dict for the scalar is exactly the kind of bug this project's own standing rule about
-    # reporting an MDD beside every weighted null exists to make someone actually look at, and it crashed
+    # confusing the dict for the scalar is exactly the kind of bug that reporting an MDD beside every weighted null
+    # exists to make someone actually look at, and it crashed
     # this module on its first real run once it reached the aggregation step, after all 25 sessions had
     # already been fit and flushed -- caught and fixed here, not silently patched around.
     paired_change_mdd = (
@@ -821,8 +822,7 @@ def main() -> None:
     # not on the read-only list, but it is a large, multi-stage artifact (cohort bootstrap, breakpoint
     # fits, cross-arm null-explains-it test) that a settings-metadata addition does not justify
     # regenerating in full; the table is written here instead, with a lightweight one-field pointer added
-    # directly to that artifact (not a full regeneration) so the cross-reference resolves both ways. See
-    # the implementation report for this judgment call.
+    # directly to that artifact (not a full regeneration) so the cross-reference resolves both ways.
     output["four_arm_estimator_settings_table"] = {
         "note": (
             "results/state_shape_common_range.json's four-row headline table (human_delay, alm, "

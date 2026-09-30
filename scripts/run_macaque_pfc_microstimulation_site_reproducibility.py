@@ -36,7 +36,7 @@ machinery). The only new logic is the site-identity label-shuffle test
 itself, which does not exist elsewhere in the project.
 
 Run:
-    /home/amin/miniconda3/envs/wm_dynamics/bin/python \
+    python \
         scripts/run_macaque_pfc_microstimulation_site_reproducibility.py
 """
 from __future__ import annotations
@@ -59,9 +59,9 @@ from statistics import stable_seed, permutation_pvalue, minimum_detectable_paire
 from io_utils import locked_json_update
 from provenance import _json_safe, git_commit
 
-from run_macaque_pfc_microstimulation_pipeline import (
-    load_macaque_pfc_microstimulation_session, crop_trial, SESSIONS, N_PC,
-)
+from run_macaque_pfc_microstimulation_pipeline import load_macaque_pfc_microstimulation_session, SESSIONS
+from spike_pipeline import crop_trial
+from dynamics import N_PC
 
 RESULTS = ROOT / "results"
 

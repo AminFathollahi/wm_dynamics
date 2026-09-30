@@ -48,7 +48,7 @@ on either module's own (heavier) data-loading chain during a long detached
 run. Neither function's arithmetic is touched.
 
 Run:
-    /home/amin/miniconda3/envs/wm_dynamics/bin/python \
+    python \
         scripts/run_recording_tier_component_transfer.py
 """
 from __future__ import annotations
@@ -75,7 +75,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from corpus_sessions import data_root  # noqa: E402
 from preprocessing import band_power, high_gamma_power, line_noise_notch, load_boran_nwb  # noqa: E402
-from provenance import canonical_json, git_commit  # noqa: E402
+from provenance import canonical_json, checkpoint_store, git_commit  # noqa: E402
 from spike_pipeline import load_spike_times, normalize_region_label  # noqa: E402
 from state_persistence import slope_across_sessions_test  # noqa: E402
 from statistics import (  # noqa: E402
@@ -83,6 +83,10 @@ from statistics import (  # noqa: E402
     partial_correlation_permutation_test, permutation_pvalue, stable_seed,
 )
 from scipy.stats import spearmanr  # noqa: E402
+from statistics import MEANINGFUL_EFFECT_THRESHOLD_R_UNITS, MTL_STRUCTURES, N_ROTATION_NULL_DRAWS, UNLABELLED_STRUCTURES, _bias_only_values  # noqa: E402
+from corpus_sessions import discover_000574_sessions  # noqa: E402
+from state_persistence import MIN_PATIENTS_FOR_TEST, _patient_clustered_test, existence_tier  # noqa: E402
+from statistics import rate_free_state_deviation, rotation_null_variance_test  # noqa: E402
 
 OUTPUT_PATH = ROOT / "results" / "recording_tier_component_transfer.json"
 CHECKPOINT_DIR = ROOT / "results" / ".checkpoints" / "run_recording_tier_component_transfer"
@@ -90,8 +94,6 @@ CHECKPOINT_DIR = ROOT / "results" / ".checkpoints" / "run_recording_tier_compone
 TIERS = ("single_unit", "depth_mtl", "depth_cortical", "scalp_eeg", "beamformed_cortical")
 IN_FILE_TIERS = ("single_unit", "depth_mtl", "depth_cortical", "scalp_eeg")
 
-MTL_STRUCTURES = {"hippocampus", "amygdala", "entorhinal_parahippocampal"}
-UNLABELLED_STRUCTURES = {"unspecific", "unlabelled", "scalp"}
 LABEL_CONVENTION = "nwb_boran_brainnetome_hybrid"
 
 MAINS_HZ = 50.0  # Zurich site, both releases -- not 60 Hz.
@@ -108,14 +110,11 @@ BEAMFORMED_SOURCES = ["DLPFC", "OFC", "PPC", "AC", "V1"]
 # reference (a variance-difference, not a correlation) has no r-unit equivalent and is instead
 # established from the single_unit tier's own observed effect, disclosed in EXISTENCE_DECISION_RULE
 # above.
-MEANINGFUL_EFFECT_THRESHOLD_R_UNITS = 0.14
 
-N_ROTATION_NULL_DRAWS = 1000
 N_TRIAL_SHUFFLE_DRAWS = 1000
 N_BOOT_EXISTENCE_AND_BEHAVIOUR_LINK = 5000
 MIN_TRIALS_PER_SESSION_TIER = 10
 MIN_TRIALS_PER_SET_SIZE_CELL = 6
-MIN_PATIENTS_FOR_TEST = 5  # slope_across_sessions_test's own attainable-p floor: min_attainable_p =
 # 1/2**n exceeds 0.05 for n<5 regardless of the data (n=4 -> 0.0625, still short), so 5 is the exact,
 # data-independent minimum, not 4 -- verified against that function's own internal check, not assumed.
 SET_SIZES = (4, 6, 8)
@@ -207,61 +206,8 @@ CROSS_TIER_TRANSFER_DECISION_RULE = (
 
 # ── Reused unchanged (copied, not imported -- see module docstring) ─────────────────────────────────────
 
-def rate_free_state_deviation(activity_by_unit: np.ndarray) -> np.ndarray:
-    """Per trial, deviation_i = 1 - cosine(unit_vector_i, renormalised
-    leave-one-out mean of every OTHER trial's own unit-normalised
-    direction), from a (n_trials, n_features) array. Reused unchanged from
-    scripts/run_rate_free_state_geometry_behavior_link.py."""
-    activity = np.asarray(activity_by_unit, dtype=float)
-    n_trials = activity.shape[0]
-    norms = np.linalg.norm(activity, axis=1, keepdims=True)
-    with np.errstate(invalid="ignore", divide="ignore"):
-        unit_vectors = np.where(norms > 0, activity / np.where(norms > 0, norms, 1.0), np.nan)
-    valid = ~np.isnan(unit_vectors).any(axis=1)
-    total = np.nansum(unit_vectors, axis=0)
-    n_valid = int(valid.sum())
-
-    deviation = np.full(n_trials, np.nan)
-    for i in range(n_trials):
-        if not valid[i]:
-            continue
-        n_other = n_valid - 1
-        if n_other < 1:
-            continue
-        loo_mean = (total - unit_vectors[i]) / n_other
-        loo_norm = np.linalg.norm(loo_mean)
-        if loo_norm == 0.0:
-            continue
-        cosine = float(np.dot(unit_vectors[i], loo_mean / loo_norm))
-        deviation[i] = 1.0 - cosine
-    return deviation
 
 
-def rotation_null_variance_test(activity_by_unit: np.ndarray, n_draws: int, rng: np.random.Generator) -> dict:
-    """Reused unchanged from scripts/run_human_stimulation_component_response.py."""
-    activity = np.asarray(activity_by_unit, dtype=float)
-    n_trials, n_channels = activity.shape
-    magnitudes = np.linalg.norm(activity, axis=1, keepdims=True)
-    observed = rate_free_state_deviation(activity)
-    observed_var = float(np.nanvar(observed)) if np.isfinite(observed).sum() >= 2 else float("nan")
-    null_vars = np.empty(n_draws)
-    for i in range(n_draws):
-        random_dirs = rng.normal(size=(n_trials, n_channels))
-        random_dirs /= np.linalg.norm(random_dirs, axis=1, keepdims=True)
-        fake_activity = random_dirs * magnitudes
-        fake_dev = rate_free_state_deviation(fake_activity)
-        null_vars[i] = np.nanvar(fake_dev) if np.isfinite(fake_dev).sum() >= 2 else np.nan
-    finite_null = null_vars[np.isfinite(null_vars)]
-    if not np.isfinite(observed_var) or len(finite_null) < n_draws // 2:
-        return {"status": "not_computable", "n_trials": int(n_trials)}
-    center = float(np.mean(finite_null))
-    p = permutation_pvalue(np.abs(finite_null - center) >= np.abs(observed_var - center))
-    return {
-        "status": "computed", "n_trials": int(n_trials), "n_draws": int(len(finite_null)),
-        "observed_variance": observed_var, "null_mean_variance": center,
-        "null_std_variance": float(np.std(finite_null)), "p_value": p,
-        "signed_effect": observed_var - center,
-    }
 
 
 # ── Checkpointing (atomic, per session-per-tier; pattern shared with run_human_stimulation_component_response.py) ──
@@ -286,17 +232,8 @@ def load_checkpoint(unit: str) -> dict | None:
 
 
 def save_checkpoint(unit: str, record: dict) -> None:
-    CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
     path = _checkpoint_path(unit)
-    payload = {"_complete": True, "record": record}
-    fd, tmp_name = tempfile.mkstemp(dir=str(CHECKPOINT_DIR), prefix="._tmp_")
-    try:
-        with os.fdopen(fd, "w") as f:
-            f.write(canonical_json(payload))
-        os.replace(tmp_name, path)
-    finally:
-        if os.path.exists(tmp_name):
-            os.remove(tmp_name)
+    checkpoint_store(path, {"_complete": True, "record": record})
 
 
 def run_checkpointed(unit: str, fit_fn) -> dict:
@@ -332,7 +269,7 @@ def _band_power_2d(sig_tc: np.ndarray, srate: float, band_name: str) -> np.ndarr
 
 def classify_depth_channels(electrode_locs: list[str]) -> dict[str, list[int]]:
     """Returns {'depth_mtl': [channel indices], 'depth_cortical': [channel indices]}, using the same
-    Brainnetome-hybrid label parser both Sarnthein-lab releases in this project share."""
+    Brainnetome-hybrid label parser both Zurich releases in this project share."""
     mtl_idx, cortical_idx = [], []
     for i, raw in enumerate(electrode_locs):
         structure, _ = normalize_region_label(raw, LABEL_CONVENTION)
@@ -479,7 +416,7 @@ def beamformed_trial_identity_audit(mat_keys_top: list[str], epoch_keys: list[st
     """Records exactly what was and was not found when searching the derivative for any retrievable
     per-trial identity (session index, set size, accuracy, sample/trial number) -- the evidence backing
     this module's claim that cross-release trial-level pairing is never licensed for this tier. Verified
-    directly against the .mat file with a recursive key search (see the implementation report): no key
+    directly against the .mat file with a recursive key search: no key
     anywhere in the epoch structure or its nested cfg contains 'trial', 'sample', 'sess' or 'info' beyond
     FieldTrip bookkeeping strings ('cfg.trials'='all', 'cfg.sampleindex'), and no array of trial-matching
     length (matching the session count, the per-session trial count, or any subset thereof under an
@@ -532,18 +469,11 @@ def build_beamformed_session(mat_path: Path) -> dict:
 
 # ── Session discovery ─────────────────────────────────────────────────────────────────────────────────────
 
-def discover_000574_sessions(root: Path) -> list[tuple[str, str, Path]]:
-    """Returns (patient, session_key, nwb_path) triples, sorted."""
-    out = []
-    for subject_dir in sorted((root / "000574").glob("sub-*")):
-        for path in sorted(subject_dir.glob("*.nwb")):
-            out.append((subject_dir.name, path.stem, path))
-    return out
 
 
 def discover_beamformed_sessions(root: Path, overlapping_patients: set[str]) -> list[tuple[str, str, Path]]:
     """ds004752's derivatives directory carries all 15 of its own patients, but only the ones this
-    module's mandate names -- those also present in the 000574 discovery -- have any tiers 1-4 to bridge
+    module scopes -- those also present in the 000574 discovery -- have any tiers 1-4 to bridge
     against; the other 6 (sub-10..sub-15) are ds004752-only and are excluded by name here, not silently
     dropped by a floor (config/datasets.json's own documented view_relationship for ds004752)."""
     out = []
@@ -566,76 +496,12 @@ def _session_deviation_and_gate(activity: np.ndarray, seed_tag: str) -> dict:
     return {"deviation": deviation, "gate": gate}
 
 
-def _patient_clustered_test(per_patient_values: dict[str, float]) -> dict:
-    """The shared 'per-patient effect, sign-flip test across patients, with the bootstrap interval'
-    primitive the existence test, the behaviour-link test and the trial-wise regime of the
-    cross-tier-transfer test all use, built once here."""
-    values = [v for v in per_patient_values.values() if np.isfinite(v)]
-    if len(values) < MIN_PATIENTS_FOR_TEST:
-        return {"status": "underpowered_by_construction", "n_patients": len(values)}
-    result = slope_across_sessions_test(values, alternative="two-sided")
-    if result.get("status") != "tested":
-        return {"status": "underpowered_by_construction", "n_patients": len(values)}
-    mdd = minimum_detectable_paired_difference(values)
-    return {
-        "status": "tested", "n_patients": len(values), "mean_value": result["mean_value"],
-        "p_value": result["two_sided_p_value"], "ci_lower": result["ci_lower"], "ci_upper": result["ci_upper"],
-        "significant": result["significant"], "mdd": mdd.get("mdd") if mdd.get("status") == "computed" else None,
-    }
 
 
-def existence_tier(sessions: list[dict], reference_effect: float | None) -> dict:
-    """sessions: list of {patient, session_effect (signed observed-null variance), gate p_value, ...}."""
-    per_patient: dict[str, list[float]] = {}
-    for s in sessions:
-        if s["gate"].get("status") != "computed":
-            continue
-        per_patient.setdefault(s["patient"], []).append(s["gate"]["signed_effect"])
-    per_patient_mean = {p: float(np.mean(v)) for p, v in per_patient.items()}
-    pooled = _patient_clustered_test(per_patient_mean)
-
-    n_sessions_computed = sum(1 for s in sessions if s["gate"].get("status") == "computed")
-    n_sessions_refused = len(sessions) - n_sessions_computed
-    all_values = np.concatenate([s["deviation"][np.isfinite(s["deviation"])] for s in sessions
-                                  if s["gate"].get("status") == "computed"]) if n_sessions_computed else np.array([])
-
-    if pooled["status"] == "underpowered_by_construction":
-        branch = "underpowered_to_ask_at_this_tier"
-    elif pooled["significant"]:
-        branch = "component_is_present_at_this_recording_tier"
-    elif reference_effect is not None and pooled["mdd"] is not None and pooled["mdd"] < reference_effect:
-        branch = "component_is_not_distinguishable_from_a_magnitude_matched_rotation_null"
-    else:
-        branch = "underpowered_to_ask_at_this_tier"
-
-    return {
-        "branch": branch, "pooled_patient_test": pooled, "reference_effect_used": reference_effect,
-        "n_sessions_computed": n_sessions_computed, "n_sessions_refused": n_sessions_refused,
-        "n_patients_contributing": len(per_patient_mean),
-        "per_patient_effect": per_patient_mean,
-        "median_per_trial_value": float(np.median(all_values)) if all_values.size else None,
-        "iqr_per_trial_value": ([float(np.percentile(all_values, 25)), float(np.percentile(all_values, 75))]
-                                 if all_values.size else None),
-        "n_trials_pooled": int(all_values.size),
-    }
 
 
 # ── Behaviour-link test ──────────────────────────────────────────────────────────────────────────────
 
-def _bias_only_values(values: np.ndarray) -> np.ndarray:
-    """Each trial's value replaced by the leave-one-out mean of every OTHER trial in the same cell."""
-    n = len(values)
-    total = np.nansum(values)
-    n_valid = np.sum(np.isfinite(values))
-    out = np.full(n, np.nan)
-    for i in range(n):
-        if not np.isfinite(values[i]):
-            continue
-        n_other = n_valid - 1
-        if n_other < 1:
-            continue
-        out[i] = (total - values[i]) / n_other
-    return out
 
 
 def _concat_tier_trials(sessions: list[dict]) -> dict:

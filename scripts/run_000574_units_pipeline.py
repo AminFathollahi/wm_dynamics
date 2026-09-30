@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
-"""Boran (DANDI 000574) single-unit CTG — within-subject cross-modality comparison.
+"""DANDI 000574 single-unit CTG — within-subject cross-modality comparison.
 
-Boran's NWB files carry co-located microwire single units (hippocampus,
+DANDI 000574's NWB files carry co-located microwire single units (hippocampus,
 amygdala) alongside the macro iEEG contacts already used in
 run_boran_pipeline.py, from the SAME subjects and SAME Sternberg trials.
 This is the one dataset in the project where band-power (HGP, run via the
 iEEG pipeline) and single-unit spiking geometry can be compared within
 subject rather than across independent cohorts, directly addressing the
-limitation, noted in the Methods, that the Rutishauser-lineage single-unit
-datasets are a different task/cohort from Miller/Boran.
+limitation, noted in the Methods, that the human single-unit DANDI
+datasets are a different task/cohort from ECoG n-back corpus/DANDI 000574.
 
 Each session (subjects have 1-4 sessions, not necessarily unit-matched across
 sessions) is treated as its own analysis unit, exactly as for 000469/001187.
 Set-size (4 vs 8) CTG is the same load/context contrast as the iEEG analysis;
-content-CTG is not run here (Boran's set_letters/item identity is "not
+content-CTG is not run here (DANDI 000574's set_letters/item identity is "not
 available" in the public NWB release — see run_boran_pipeline.py).
 
 Outputs: results/dandi000574_units_geometry_{key}.npz,
@@ -42,7 +42,6 @@ from spike_pipeline import (load_spike_times, build_psth, fit_pca_psth,
 from statistics import linear_mixed_effects_test, fdr_bh, stable_seed
 from provenance import _json_safe
 
-DATA_DIR = dataset_path("dandi_000574")
 RESULTS = ROOT / "results"
 SUBJECTS = [f"sub-0{i}" for i in range(1, 10)]
 N_PC = 8
@@ -50,15 +49,15 @@ BIN_MS = 100
 SMOOTH_MS = 200
 MAINT_ONSET_S = 3.0   # trial start -> maintenance onset (same convention as run_boran_pipeline.py)
 MAINT_WIN = 3.0
-MIN_UNITS = 8          # microwire yield is lower than Rutishauser's dedicated bundles
+MIN_UNITS = 8          # microwire yield is lower than the dedicated human single-unit DANDI bundles
 CTG_STEP = 3
 CTG_N_SPLITS = 4
 # 50 -> 5000: at 50, the label-shuffle p-floor (c+1)/(n+1) ~= 0.0196 can never
 # survive BH-FDR across ~26 sessions (needs ~(1/26)*0.05 ~= 0.0019 for even the
 # top-ranked session) regardless of true effect size -- the same
-# p-floor/N_PERM interaction audit item 1b flags for run_dpca_analysis.py.
+# p-floor/N_PERM interaction that affects run_dpca_analysis.py.
 CTG_N_PERM = 5000
-N_JOBS = -1
+N_WORKERS = -1
 
 
 def _process_session(subj: str, fp: Path):
@@ -82,7 +81,7 @@ def _process_session(subj: str, fp: Path):
         if n_trials < 20:
             return None
 
-        # Boran's NWB units table carries no isolation/SNR quality column, so
+        # DANDI 000574's NWB units table carries no isolation/SNR quality column, so
         # apply the same firing-rate QC floor used for the other three
         # single-unit cohorts sharing this pipeline (spike_pipeline.MIN_UNIT_FIRING_RATE_HZ).
         rate_mask = low_rate_unit_mask(spike_lists, maint_onsets, MAINT_WIN)
@@ -99,16 +98,16 @@ def _process_session(subj: str, fp: Path):
         psth = build_psth(spike_lists, maint_onsets, bin_ms=BIN_MS, smooth_ms=SMOOTH_MS,
                           window_s=MAINT_WIN)
         psth_z = FrozenPSTHTransform().fit_transform(psth)
-        # Rutishauser cohorts (000469/001187/000673, MIN_UNITS=15) fit a fixed
-        # N_PC=8 from >=15 units (reduction ratio >=1.875x); Boran's lower
+        # human single-unit DANDI cohorts (000469/001187/000673, MIN_UNITS=15) fit a fixed
+        # N_PC=8 from >=15 units (reduction ratio >=1.875x); DANDI 000574's lower
         # microwire yield (MIN_UNITS=8) means n_comp is capped below n_units
         # (never true full rank) but can still be a much weaker reduction
         # (e.g. 8 units -> 7 PCs, ratio 1.14x). Both are recorded so downstream
         # aggregation does not silently pool a near-unreduced estimate with a
-        # genuinely-reduced one (audit item 1c-iii).
+        # genuinely-reduced one.
         n_pc_used = min(N_PC, n_units - 1)
         reduction_ratio = n_units / n_pc_used
-        low_reduction = bool(reduction_ratio < 1.5)   # < Rutishauser's 15/8 = 1.875x
+        low_reduction = bool(reduction_ratio < 1.5)   # < the human single-unit DANDI 15/8 = 1.875x
         Z, V, var_ratio = fit_pca_psth(psth_z, n_comp=n_pc_used)
 
         pr_per_set = pr_by_load(psth_z, set_size, load_values=(4, 6, 8), min_trials=5,
@@ -152,8 +151,9 @@ def _process_session(subj: str, fp: Path):
 
 
 def main():
-    tasks = [(subj, fp) for subj in SUBJECTS for fp in sorted((DATA_DIR / subj).glob("*.nwb"))]
-    results = Parallel(n_jobs=N_JOBS)(delayed(_process_session)(subj, fp) for subj, fp in tasks)
+    data_dir = dataset_path("dandi_000574")
+    tasks = [(subj, fp) for subj in SUBJECTS for fp in sorted((data_dir / subj).glob("*.nwb"))]
+    results = Parallel(n_jobs=N_WORKERS)(delayed(_process_session)(subj, fp) for subj, fp in tasks)
 
     summary = {}
     pooled_drift, pooled_correct, pooled_key = [], [], []
@@ -172,12 +172,12 @@ def main():
     p_vals = np.array([v["p_offdiag_vs_chance"] for v in summary.values()
                         if np.isfinite(v["p_offdiag_vs_chance"])])
     fdr = fdr_bh(p_vals, alpha=0.05) if len(p_vals) else {"n_reject": 0}
-    print(f"\nFDR (BH), Boran single-unit set4v8 CTG: {fdr['n_reject']}/{len(p_vals)} sessions survive q<0.05")
+    print(f"\nFDR (BH), DANDI 000574 single-unit set4v8 CTG: {fdr['n_reject']}/{len(p_vals)} sessions survive q<0.05")
 
     n_low_reduction = sum(1 for v in summary.values() if v.get("low_reduction"))
     print(f"Dimensionality-reduction caveat: {n_low_reduction}/{len(summary)} sessions have "
-          f"reduction ratio < 1.5x (vs Rutishauser's 15units/8PC=1.875x) — weakly reduced, "
-          "not on the same comparability footing (audit item 1c-iii)")
+          f"reduction ratio < 1.5x (vs the source study's 15units/8PC=1.875x) — weakly reduced, "
+          "not on the same comparability footing")
 
     if pooled_drift:
         drift_arr = np.array(pooled_drift)
@@ -185,7 +185,7 @@ def main():
         key_arr = np.array(pooled_key)
         lme_drift = linear_mixed_effects_test(drift_arr, correct_arr, key_arr, n_perm=5000,
                                                rng=np.random.default_rng(0))
-        print(f"Correct-vs-error drift (Boran units, pooled N={len(drift_arr)}): "
+        print(f"Correct-vs-error drift (DANDI 000574 units, pooled N={len(drift_arr)}): "
               f"beta={lme_drift['beta']:.4f}, p={lme_drift['p_value']:.4f}")
     else:
         lme_drift = {"beta": float("nan"), "p_value": float("nan")}

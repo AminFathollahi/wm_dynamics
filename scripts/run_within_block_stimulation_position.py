@@ -44,7 +44,7 @@ Outputs:
   results/within_block_stimulation_position.json
 
 Run:
-    /home/amin/miniconda3/envs/wm_dynamics/bin/python \
+    python \
         scripts/run_within_block_stimulation_position.py
 """
 from __future__ import annotations
@@ -64,17 +64,16 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from provenance import canonical_json, git_commit  # noqa: E402
 from stimulation_response_estimator import cluster_bootstrap_pooled_effect  # noqa: E402
 
-from run_human_stimulation_component_response import (  # noqa: E402
-    OPENLOOP_DATA, channel_condition_masks, load_corpus as load_human_corpus,
-)
+from run_human_stimulation_component_response import load_corpus as load_human_corpus
+from stimulation_events import channel_condition_masks
+from corpus_sessions import DATA as OPENLOOP_DATA
 from run_ram_openloop_pipeline import BIN_S as HUMAN_BIN_S, PRE_S as HUMAN_PRE_S  # noqa: E402
-from run_stimulation_response_gate_and_panel import (  # noqa: E402
-    _human_session_windows, _pool_arm, _read_census_row, _specificity_check,
-)
-from run_stimulation_timing_and_parameter_structure import (  # noqa: E402
-    build_trains_openloop, overlaps, read_events,
-)
-from run_train_overlap_decontamination import _annotate_effect_vs_mdd  # noqa: E402
+from run_stimulation_response_gate_and_panel import _read_census_row
+from stimulation_events import _human_session_windows, _specificity_check
+from stimulation_response_estimator import _pool_arm
+from run_stimulation_timing_and_parameter_structure import build_trains_openloop, read_events
+from stimulation_events import overlaps
+from statistics import _annotate_effect_vs_mdd
 
 RESULTS = ROOT / "results"
 OUTPUT_PATH = RESULTS / "within_block_stimulation_position.json"
@@ -84,7 +83,7 @@ SEED = 20260911  # arbitrary fixed seed; every stochastic step is separately see
 CORPUS_ID = "ram_ds005489_openloop"
 
 # This project's own internal comparison reference (control-trial SD units), not a
-# biological or clinical threshold -- see docs/mandates/STANDING_CONSTRAINTS.md.
+# biological or clinical threshold.
 INTERNAL_REFERENCE_SD = 1.0
 
 COUNTERFACTUAL_LABEL = (

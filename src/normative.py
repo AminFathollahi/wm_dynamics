@@ -10,7 +10,7 @@ self-overlap (near a stationary point). A memorandum that must not interfere
 with itself (or a second item loaded into the same subspace later in the
 trial) should keep LOW self-overlap over the delay, which for a norm-
 preserving 2D block is minimized away from the identity, i.e. by rotating
-(Libby & Buschman 2021; interference-reducing rotational coding).
+(interference-reducing rotational coding).
 
 Two public functions:
   optimize_maintenance_operator — abstract (theta, lambda_c) optimum for a
