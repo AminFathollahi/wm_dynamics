@@ -5,3 +5,11 @@
 `c9505c80aed6b6c82494e472991a519c46a60a00bd8bfab7e6375f0706dc0ecd`
 
 Governed result artifacts must record both this content hash and the base commit `33a3dc73065fe2cf3aa1355a6ba9728e91ee0aba`.
+
+# Analysis freeze
+
+`analysis_freeze.json` fixes the test, outcome, unit set, state spaces and cluster count of each hypothesis x corpus x link cell before the chain analyses run. Its SHA-256 is:
+
+`aa648012922723084ac833f7dbebdcd892a5daf81b244225b3def99bb651863e`
+
+Chain artifacts record this content hash.

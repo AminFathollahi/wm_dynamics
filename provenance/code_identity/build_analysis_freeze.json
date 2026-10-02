@@ -1,0 +1,14 @@
+{
+  "code_commit": "867402e0cf1d87638c779c476ee80e560ad8759a",
+  "imported_module_hashes": {
+    "src/effect_size.py": "99015461e7bec93cb8947488a490a7c1c293af19648ef4e88c5e5bcd3903ff55",
+    "src/provenance.py": "829085ad5dc7cf070827ff22b7504672287cabc9b290b87b28ef9d496b2b25e1",
+    "src/statistics.py": "90393ef68b8a42659bd1735f6f297a226e5e81087764626d4ea27a9be96e19d4"
+  },
+  "outputs": [
+    "preregistration/analysis_freeze.json",
+    "preregistration/analysis_freeze.md"
+  ],
+  "producer": "scripts/build_analysis_freeze.py",
+  "source_hash": "46cf61fcb1798245fecf30568924bec62d474bfe5cf94772d89e0db4487af899"
+}
