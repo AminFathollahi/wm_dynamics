@@ -552,6 +552,39 @@ def maintenance_window_geometry(
     return results
 
 
+def nback_geometry_arrays(
+    epochs: NDArray,
+    times: NDArray,
+    task_id: NDArray,
+    tgt_id: NDArray,
+    maint_window: tuple[float, float] = (0.3, 1.4),
+    n_components: int = 8,
+    n_angle_dims: int = 4,
+) -> dict:
+    """Latent trajectories and maintenance-window geometry for one ECoG n-back subject.
+
+    Returns pr_per_trial, var_ratio, Z (float32), task_id, tgt_id, times and, when the
+    2-back target and non-target groups each have at least five trials,
+    theta_tgt_vs_ntgt.
+    """
+    geo = maintenance_window_geometry(
+        epochs, times, task_id, tgt_id,
+        maint_window=maint_window, n_components=n_components, n_angle_dims=n_angle_dims,
+    )
+    Z, _, _ = latent_trajectories(epochs, n_components)
+    arrays = {
+        "pr_per_trial": geo["pr_per_trial"],
+        "var_ratio": geo["var_ratio"],
+        "Z": Z.astype(np.float32),
+        "task_id": task_id,
+        "tgt_id": tgt_id,
+        "times": times,
+    }
+    if "theta_tgt_vs_ntgt" in geo:
+        arrays["theta_tgt_vs_ntgt"] = geo["theta_tgt_vs_ntgt"]
+    return arrays
+
+
 # ── Electrode capacity analysis ────────────────────────────────────────────────
 
 def electrode_capacity_curve(
@@ -2092,9 +2125,12 @@ def cross_condition_decoding_test(
     return {"auc_per_t": auc_obs, "p_per_t": p_per_t, "t_idx": t_idx}
 
 
+TAU_MIN_DIAGONAL_AUC = 0.55
+
+
 def temporal_stability_tau(
     auc_mat: NDArray,
-    min_diag_auc: float = 0.55,
+    min_diag_auc: float = TAU_MIN_DIAGONAL_AUC,
 ) -> dict:
     """Temporal stability index τ, defined on effect size and gated on decodability.
 
@@ -2110,7 +2146,8 @@ def temporal_stability_tau(
     Returns
     -------
     dict: tau, mean_diag_auc, mean_offdiag_auc, diag_effect, offdiag_effect,
-          interpretable (bool)
+          interpretable (bool), diagonal_auc_reference (min_diag_auc; the value
+          mean_diag_auc was compared with to give interpretable)
     """
     T = auc_mat.shape[0]
     off_mask = ~np.eye(T, dtype=bool)
@@ -2126,6 +2163,7 @@ def temporal_stability_tau(
         "diag_effect": diag_effect,
         "offdiag_effect": offdiag_effect,
         "interpretable": bool(mean_diag_auc >= min_diag_auc),
+        "diagonal_auc_reference": float(min_diag_auc),
     }
 
 

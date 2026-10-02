@@ -12,6 +12,7 @@ for _name in (
     _os.environ[_name] = "1"
 
 import argparse
+import functools
 import hashlib
 import importlib.metadata
 import importlib.util
@@ -186,6 +187,17 @@ def _lfads_identity(executable: str | None) -> dict | None:
     return identity
 
 
+@functools.lru_cache(maxsize=1)
+def _accelerator_name() -> str | None:
+    # Read in a short-lived process: initialising the accelerator here would make every
+    # accelerator fit in a forked worker fail.
+    result = subprocess.run(
+        [sys.executable, "-c", "import torch; print(torch.cuda.get_device_name(0))"],
+        capture_output=True, text=True, timeout=60, check=True,
+    )
+    return result.stdout.strip()
+
+
 def _accelerator_identity() -> dict:
     torch = estimation.torch
     available = bool(torch.cuda.is_available())
@@ -193,7 +205,7 @@ def _accelerator_identity() -> dict:
         "device": str(estimation.DEVICE),
         "cuda": torch.version.cuda,
         "available": available,
-        "name": torch.cuda.get_device_name(0) if available else None,
+        "name": _accelerator_name() if available else None,
     }
 
 

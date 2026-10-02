@@ -8,6 +8,7 @@ those directories.
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import math
@@ -16,6 +17,7 @@ import platform
 import subprocess
 import sys
 import tempfile
+import warnings
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -247,6 +249,69 @@ def git_commit(repo_root: str | Path, script_path: str | Path | None = None) -> 
     }
 
 
+def _imported_repo_modules(path: Path, search_dirs: list[Path]) -> set[Path]:
+    tree = ast.parse(path.read_text())
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names.update(alias.name.split(".")[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            if node.module:
+                names.add(node.module.split(".")[0])
+            elif node.level:
+                names.update(alias.name for alias in node.names)
+    return {
+        directory / f"{name}.py"
+        for name in names for directory in search_dirs if (directory / f"{name}.py").exists()
+    }
+
+
+def code_identity(repo_root: str | Path, script_path: str | Path) -> dict[str, Any]:
+    """Commit, producer hash and hashes of every repository module the producer imports.
+
+    Modules under ``src/`` and ``scripts/`` are followed transitively (including imports
+    inside functions and ``try`` blocks), so editing any module that can influence the
+    output changes the recorded identity.
+    """
+    root = Path(repo_root)
+    script_path = Path(script_path)
+    search_dirs = [root / "src", root / "scripts"]
+    pending = _imported_repo_modules(script_path, search_dirs)
+    seen: set[Path] = set()
+    while pending:
+        module = pending.pop()
+        seen.add(module)
+        pending |= _imported_repo_modules(module, search_dirs) - seen
+    return {
+        "code_commit": git_commit(repo_root),
+        "source_hash": sha256_file(script_path),
+        "imported_module_hashes": {
+            str(module.relative_to(root)): sha256_file(module)
+            for module in sorted(seen) if module.resolve() != script_path.resolve()
+        },
+    }
+
+
+def write_code_identity_record(
+    repo_root: str | Path, script_path: str | Path, outputs: Iterable[str]
+) -> Path:
+    """Write provenance/code_identity/<producer>.json naming the code behind ``outputs``.
+
+    For producers whose artifacts are per-subject maps or arrays with fixed keys, where
+    an extra field would be read as data.
+    """
+    script_path = Path(script_path)
+    record = {
+        "producer": f"scripts/{script_path.name}",
+        "outputs": sorted(outputs),
+        **code_identity(repo_root, script_path),
+    }
+    path = Path(repo_root) / "provenance" / "code_identity" / f"{script_path.stem}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(canonical_json(record))
+    return path
+
+
 @dataclass(frozen=True)
 class ArtifactMetadata:
     analysis_id: str
@@ -331,6 +396,28 @@ def linked_duplicate_000673_session_keys(overlap_report: dict[str, Any]) -> set[
             if row["release"] == "000673":
                 stems.add(Path(row["path"]).stem)
     return stems
+
+
+def linked_duplicate_000673_sessions(
+    provenance_dir: str | Path, required: bool = True
+) -> set[str]:
+    """000673 session keys that repeat a canonical 001187 recording, read from the overlap report.
+
+    Every producer that pools or compares 000673 sessions beside 001187 drops these
+    keys. With ``required=False`` a missing report warns and returns an empty set;
+    otherwise it raises, so a missing report cannot silently count a patient twice.
+    """
+    report = load_overlap_report(provenance_dir)
+    if report is None:
+        message = (
+            f"{Path(provenance_dir) / 'dataset_overlap_report.json'} not found; cannot exclude "
+            "001187-linked duplicate 000673 sessions"
+        )
+        if required:
+            raise FileNotFoundError(message)
+        warnings.warn(message)
+        return set()
+    return linked_duplicate_000673_session_keys(report)
 
 
 def canonical_patient_by_relative_path(provenance_dir: str | Path) -> dict[str, str]:

@@ -9,10 +9,12 @@ from provenance import (
     ArtifactMetadata,
     canonical_json,
     checkpoint_safe,
+    code_identity,
     git_commit,
     restore_checkpoint,
     sha256_file,
     validate_ledger,
+    write_code_identity_record,
     write_immutable_artifact,
 )
 
@@ -180,3 +182,37 @@ def test_checkpoint_round_trip_legacy_unescaped_digit_string_file_restores_to_in
     # int (unchanged legacy behaviour), the same as an int key written fresh.
     legacy = json.loads(json.dumps({"2": "a", "10": "b"}))
     assert restore_checkpoint(legacy) == {2: "a", 10: "b"}
+
+
+def test_code_identity_hashes_producer_and_transitively_imported_src_modules(tmp_path):
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "first.py").write_text("from .second import f\n")
+    (tmp_path / "src" / "second.py").write_text("def f():\n    import third\n")
+    (tmp_path / "src" / "third.py").write_text("X = 1\n")
+    (tmp_path / "src" / "unrelated.py").write_text("Y = 2\n")
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "sibling.py").write_text("W = 4\n")
+    script = tmp_path / "scripts" / "producer.py"
+    script.write_text("import numpy\nfrom first import f\nimport sibling\n")
+    identity = code_identity(tmp_path, script)
+    assert set(identity["imported_module_hashes"]) == {
+        "src/first.py", "src/second.py", "src/third.py", "scripts/sibling.py",
+    }
+    assert identity["source_hash"] == sha256_file(script)
+    before = identity["imported_module_hashes"]["src/third.py"]
+    (tmp_path / "src" / "third.py").write_text("X = 3\n")
+    assert code_identity(tmp_path, script)["imported_module_hashes"]["src/third.py"] != before
+
+
+def test_code_identity_record_lists_outputs_and_is_written_under_provenance(tmp_path):
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "helper.py").write_text("Z = 0\n")
+    (tmp_path / "scripts").mkdir()
+    script = tmp_path / "scripts" / "run_example.py"
+    script.write_text("import helper\n")
+    path = write_code_identity_record(tmp_path, script, ["results/b.json", "results/a_*.npz"])
+    assert path == tmp_path / "provenance" / "code_identity" / "run_example.json"
+    record = json.loads(path.read_text())
+    assert record["producer"] == "scripts/run_example.py"
+    assert record["outputs"] == ["results/a_*.npz", "results/b.json"]
+    assert record["imported_module_hashes"] == {"src/helper.py": sha256_file(tmp_path / "src" / "helper.py")}

@@ -27,7 +27,7 @@ from geometry import (ctg_label_permutation_null, temporal_stability_tau,
                       spatiotemporal_participation_ratio, geometric_drift)
 from statistics import linear_mixed_effects_test, fdr_bh, stable_seed, paired_sign_flip_test
 from causal import dml_partial_linear, e_value
-from provenance import _json_safe
+from provenance import _json_safe, write_code_identity_record
 
 RESULTS   = ROOT / "results"
 SUBJECTS  = [f"sub-0{i}" for i in range(1, 10)]
@@ -478,7 +478,7 @@ def main():
                 "var_ratio":   float(var_ratio),
                 "pr_per_set":  {int(k): v for k, v in pr_per_set.items()},
                 "tau":         tau_info["tau"],
-                "tau_interpretable":  tau_info["interpretable"],
+                "tau_diagonal_auc_reference": tau_info["diagonal_auc_reference"],
                 "mean_diag_auc":      tau_info["mean_diag_auc"],
                 "mean_offdiag_auc":   tau_info["mean_offdiag_auc"],
                 "offdiag_effect":     ctg_res["mean_offdiag_auc_minus_chance"],
@@ -556,7 +556,7 @@ def main():
     stats["boran_ctg"] = {
         sub: {
             "tau":                 v["tau"],
-            "tau_interpretable":   v["tau_interpretable"],
+            "tau_diagonal_auc_reference": v["tau_diagonal_auc_reference"],
             "mean_offdiag_auc":    v["mean_offdiag_auc"],
             "mean_diag_auc":       v["mean_diag_auc"],
             "offdiag_effect":      v["offdiag_effect"],
@@ -612,6 +612,9 @@ def main():
     with open(RESULTS / "all_statistics.json", "w") as f:
         json.dump(_json_safe(stats), f, indent=2, allow_nan=False)
 
+    write_code_identity_record(ROOT, Path(__file__), [
+        "results/boran_geometry_*.npz", "results/boran_ctg_*.npz",
+        "results/boran_summary.json", "results/all_statistics.json"])
     print("\n" + "="*55)
     print("DANDI 000574 PIPELINE COMPLETE")
     print("="*55)

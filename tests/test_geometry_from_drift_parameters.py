@@ -9,7 +9,9 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-from run_geometry_from_drift_parameters_000469 import calibration
+from run_geometry_from_drift_parameters_000469 import (
+    _diagonal_auc_reaches_reference, calibration,
+)
 
 
 def test_calibration_reports_identity_for_parameter_free_match():
@@ -21,3 +23,10 @@ def test_calibration_reports_identity_for_parameter_free_match():
     assert result["status"] == "estimable"
     assert result["pearson_correlation"] == 1.0
     assert np.isclose(result["calibration_slope"], 1.0)
+
+
+def test_diagonal_reference_read_from_numbers_or_from_older_stored_flag():
+    assert _diagonal_auc_reaches_reference({"mean_diag_auc": 0.6, "diagonal_auc_reference": 0.55})
+    assert not _diagonal_auc_reaches_reference({"mean_diag_auc": 0.52, "diagonal_auc_reference": 0.55})
+    assert _diagonal_auc_reaches_reference({"interpretable": True})
+    assert not _diagonal_auc_reaches_reference({})

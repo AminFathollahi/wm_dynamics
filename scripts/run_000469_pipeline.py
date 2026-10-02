@@ -35,9 +35,9 @@ from spike_pipeline import (load_spike_times, build_psth, fit_pca_psth,
                             load_vs_load_ctg, item_identity_ctg, correct_error_drift,
                             pr_by_load, low_rate_unit_mask, MIN_SESSION_ACCURACY,
                             FrozenPSTHTransform)
-from geometry import temporal_stability_tau
+from geometry import temporal_stability_tau, TAU_MIN_DIAGONAL_AUC
 from statistics import linear_mixed_effects_test, fdr_bh, stable_seed, paired_sign_flip_test
-from provenance import _json_safe
+from provenance import _json_safe, code_identity, write_code_identity_record
 
 RESULTS = ROOT / "results"
 N_PC = 8
@@ -137,6 +137,7 @@ def main():
         if ctg_res is None:
             print("  SKIP CTG — too few trials")
             tau_info = {"tau": float("nan"), "interpretable": False,
+                        "diagonal_auc_reference": TAU_MIN_DIAGONAL_AUC,
                         "mean_diag_auc": float("nan"), "mean_offdiag_auc": float("nan")}
             enc_res = {"auc_mat": None, "mean_offdiag_auc_minus_chance": float("nan"), "p_value": float("nan")}
             enc_tau_info = dict(tau_info)
@@ -209,7 +210,8 @@ def main():
             "n_trials": int(n_trials), "n_units": int(n_units),
             "accuracy": float(response_acc.mean()), "var_ratio": float(var_ratio),
             "pr_per_load": pr_per_load,
-            "tau": tau_info["tau"], "tau_interpretable": tau_info["interpretable"],
+            "tau": tau_info["tau"],
+            "tau_diagonal_auc_reference": tau_info["diagonal_auc_reference"],
             "mean_diag_auc": tau_info["mean_diag_auc"], "mean_offdiag_auc": tau_info["mean_offdiag_auc"],
             "offdiag_effect": ctg_res["mean_offdiag_auc_minus_chance"] if ctg_res else float("nan"),
             "p_offdiag_vs_chance": ctg_res["p_value"] if ctg_res else float("nan"),
@@ -221,7 +223,8 @@ def main():
             "content_ctg": (
                 {"offdiag_effect": content_res["mean_offdiag_auc_minus_chance"],
                  "p_value": content_res["p_value"], "n_classes": content_res["n_classes"],
-                 "tau": content_tau_info["tau"], "interpretable": content_tau_info["interpretable"],
+                 "tau": content_tau_info["tau"],
+                 "diagonal_auc_reference": content_tau_info["diagonal_auc_reference"],
                  "mean_diag_auc": content_tau_info["mean_diag_auc"],
                  "mean_offdiag_auc": content_tau_info["mean_offdiag_auc"]}
                 if content_res is not None else None
@@ -268,14 +271,14 @@ def main():
     # dataset. Primary comparison is on the off-diagonal effect size
     # (AUC-0.5), not the tau ratio: per the paper's stated statistical
     # methodology, tau is an unstable ratio near a near-zero diagonal effect
-    # and is only "interpretable" when diag AUC>=0.55 — a compound gate on
-    # BOTH context and content tau leaves only 1/18 sessions (content
-    # decoding, 5-way with ~9 trials/class after CV, rarely clears 0.55
-    # individually), too few for a paired test. Off-diagonal effect size
-    # needs no such gate (chance is 0.5 AUC regardless of n_classes for
-    # macro-OVR AUC) and is well-defined for all 18 sessions, so it is the
-    # primary paired statistic; tau is reported descriptively for the
-    # smaller subset where both are individually interpretable.
+    # reported beside the diagonal AUC it is a ratio of: gating the pair on
+    # diag AUC>=0.55 for BOTH context and content tau leaves only 1/18
+    # sessions (content decoding, 5-way with ~9 trials/class after CV, rarely
+    # reaches 0.55 individually), too few for a paired test. Off-diagonal
+    # effect size needs no such gate (chance is 0.5 AUC regardless of
+    # n_classes for macro-OVR AUC) and is well-defined for all 18 sessions,
+    # so it is the primary paired statistic; tau and both diagonal AUCs are
+    # stored per session.
     from scipy.stats import wilcoxon
 
     paired = {
@@ -283,16 +286,12 @@ def main():
             "context_offdiag_effect": v["offdiag_effect"],
             "content_offdiag_effect": v["content_ctg"]["offdiag_effect"],
             "context_tau": v["tau"], "content_tau": v["content_ctg"]["tau"],
-            "context_tau_interpretable": v["tau_interpretable"],
-            "content_tau_interpretable": v["content_ctg"]["interpretable"],
             "context_diag_auc": v["mean_diag_auc"], "content_diag_auc": v["content_ctg"]["mean_diag_auc"],
             "p_context": v["p_offdiag_vs_chance"], "p_content": v["content_ctg"]["p_value"],
         }
         for subj, v in summary.items()
         if v.get("content_ctg") is not None
     }
-    tau_both_interpretable = {s: v for s, v in paired.items()
-                              if v["context_tau_interpretable"] and v["content_tau_interpretable"]}
 
     if len(paired) >= 4:
         context_arr = np.array([v["context_offdiag_effect"] for v in paired.values()])
@@ -307,20 +306,19 @@ def main():
             "wilcoxon_statistic": float(wstat), "wilcoxon_p": float(wp),
             "paired_gap_mean": sign_flip["mean_diff"], "paired_gap_ci": [sign_flip["ci_lower"], sign_flip["ci_upper"]],
             "paired_gap_permutation_p": sign_flip["p_value"],
-            "n_tau_both_interpretable": len(tau_both_interpretable),
-            "tau_both_interpretable_sessions": tau_both_interpretable,
+            "tau_diagonal_auc_reference": TAU_MIN_DIAGONAL_AUC,
         }
         print(f"\n  Within-subject content vs context, off-diag effect (N={len(paired)} sessions): "
               f"mean gap={sign_flip['mean_diff']:.4f} [{sign_flip['ci_lower']:.4f}, {sign_flip['ci_upper']:.4f}], "
               f"Wilcoxon p={wp:.4f}, sign-flip p={sign_flip['p_value']:.4f}")
-        print(f"  (tau interpretable in both context and content: {len(tau_both_interpretable)}/{len(paired)} sessions)")
     else:
         content_context = {"per_subject": paired, "n_paired_subjects": len(paired),
                             "note": "fewer than 4 sessions with a content CTG result at all"}
         print(f"\n  Within-subject content vs context: only {len(paired)} qualifying sessions, skipping paired test")
 
     with open(RESULTS / "rutishauser_000469_content_context.json", "w") as f:
-        json.dump(_json_safe(content_context), f, indent=2, allow_nan=False)
+        json.dump(_json_safe({**content_context, "code_identity": code_identity(ROOT, Path(__file__))}),
+                  f, indent=2, allow_nan=False)
 
     stats_path = RESULTS / "all_statistics.json"
     with open(stats_path) as f:
@@ -341,6 +339,10 @@ def main():
     with open(stats_path, "w") as f:
         json.dump(_json_safe(stats), f, indent=2, allow_nan=False)
 
+    write_code_identity_record(ROOT, Path(__file__), [
+        "results/dandi000469_geometry_*.npz", "results/dandi000469_ctg_*.npz",
+        "results/dandi000469_summary.json", "results/rutishauser_000469_content_context.json",
+        "results/all_statistics.json"])
     print("\n" + "="*55 + "\nDANDI 000469 PIPELINE COMPLETE\n" + "="*55)
     for sub, v in summary.items():
         print(f"  {sub}: N={v['n_trials']}, U={v['n_units']}, τ={v['tau']:.4f}, "

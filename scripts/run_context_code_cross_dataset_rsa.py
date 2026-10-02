@@ -31,9 +31,10 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from geometry import representational_dissimilarity_matrix
 from statistics import mantel_test, fdr_bh
-from provenance import _json_safe
+from provenance import _json_safe, code_identity, linked_duplicate_000673_sessions
 
 RESULTS = ROOT / "results"
+PROVENANCE = ROOT / "provenance"
 CONDITION_LABELS = ["low-early", "low-late", "high-early", "high-late"]
 
 # Seconds after delay/maintenance-window onset (times[0] of the array passed
@@ -122,9 +123,15 @@ def boran_units_rdms() -> list[np.ndarray]:
     return rdms
 
 
-def dandi_rdms(glob_pattern: str) -> list[np.ndarray]:
+def _session_key(path: Path) -> str:
+    return path.stem.split("_geometry_", 1)[1]
+
+
+def dandi_rdms(glob_pattern: str, exclude_keys: frozenset[str] | set[str] = frozenset()) -> list[np.ndarray]:
     rdms = []
     for path in sorted(RESULTS.glob(glob_pattern)):
+        if _session_key(path) in exclude_keys:
+            continue
         d = np.load(path, allow_pickle=True)
         Z, loads, times = d["Z"], d["loads"], d["times"]
         mask = (loads == 1) | (loads == 3)
@@ -140,6 +147,8 @@ def dandi_rdms(glob_pattern: str) -> list[np.ndarray]:
 
 def main():
     rng = np.random.default_rng(0)
+    linked_0673 = linked_duplicate_000673_sessions(PROVENANCE)
+    pattern_0673 = "dandi000673_geometry_sub-*.npz"
 
     datasets = {
         "miller_ecog": miller_rdms(),
@@ -147,7 +156,7 @@ def main():
         "boran_units": boran_units_rdms(),
         "dandi000469": dandi_rdms("dandi000469_geometry_sub-*.npz"),
         "dandi001187": dandi_rdms("dandi001187_geometry_sub-*.npz"),
-        "dandi000673": dandi_rdms("dandi000673_geometry_sub-*.npz"),
+        "dandi000673": dandi_rdms(pattern_0673, exclude_keys=linked_0673),
     }
 
     group_rdms = {}
@@ -164,25 +173,25 @@ def main():
 
     pair_names = list(pairwise.keys())
     fdr = fdr_bh(np.array([pairwise[k]["p_value"] for k in pair_names]))
-    for k, q, rej in zip(pair_names, fdr["q_values"], fdr["reject"]):
+    for k, q in zip(pair_names, fdr["q_values"]):
         pairwise[k]["q_value"] = float(q)
-        pairwise[k]["significant_fdr"] = bool(rej)
-
-    n_significant = sum(1 for v in pairwise.values() if v["p_value"] < 0.05)
-    n_significant_fdr = int(fdr["n_reject"])
-    print(f"\n{n_significant}/{len(pairwise)} dataset pairs significant at uncorrected p<0.05; "
-          f"{n_significant_fdr}/{len(pairwise)} survive FDR (BH) q<0.05")
+    for k in pair_names:
+        print(f"  {k}: r={pairwise[k]['r']:.3f}, p={pairwise[k]['p_value']:.4f}, "
+              f"q={pairwise[k]['q_value']:.4f}")
 
     out = {
         "condition_labels": CONDITION_LABELS,
         "group_rdms": {k: v.tolist() for k, v in group_rdms.items()},
         "n_subject_rdms": {k: len(v) for k, v in datasets.items()},
         "pairwise_mantel": pairwise,
-        "n_significant_pairs": n_significant, "n_pairs": len(pairwise),
-        "n_significant_pairs_fdr": n_significant_fdr,
+        "n_pairs": len(pairwise),
+        "excluded_linked_duplicate_sessions": {
+            "dandi000673": sorted(linked_0673 & {_session_key(p) for p in RESULTS.glob(pattern_0673)}),
+        },
     }
     with open(RESULTS / "context_code_cross_dataset_rsa.json", "w") as f:
-        json.dump(_json_safe(out), f, indent=2, allow_nan=False)
+        json.dump(_json_safe({**out, "code_identity": code_identity(ROOT, Path(__file__))}),
+                  f, indent=2, allow_nan=False)
 
     with open(RESULTS / "all_statistics.json") as f:
         stats = json.load(f)

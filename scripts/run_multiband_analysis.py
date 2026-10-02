@@ -66,6 +66,7 @@ from preprocessing import (
     line_noise_notch, bipolar_reference_by_shank,
 )
 from statistics import linear_mixed_effects_test, rayleigh_test
+from provenance import canonical_json, code_identity
 from dynamics import dmd_reconstruction_error
 from geometry import ctg_label_permutation_null
 
@@ -563,7 +564,8 @@ def main():
               f"{R.mean():.3f}±{R.std():.3f}   "
               f"{div.mean():7.2f}±{div.std():.2f}")
 
-    np.savez(RESULTS / "multiband_ctg.npz", **out)
+    np.savez(RESULTS / "multiband_ctg.npz", **out,
+             code_identity=np.array(canonical_json(code_identity(ROOT, Path(__file__)))))
     print("\n  Saved: results/multiband_ctg.npz")
 
     boran_done = [s for s in BORAN_SUBJECTS if f"{s}_hgp_tau" in out]

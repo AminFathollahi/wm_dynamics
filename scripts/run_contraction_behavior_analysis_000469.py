@@ -25,7 +25,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from dynamics import ensemble_dmd, divergence_rank_sweep, rank_robustness_sign
 from statistics import spearman_permutation_test
-from provenance import _json_safe
+from provenance import _json_safe, code_identity
 
 RESULTS = ROOT / "results"
 DMD_RANK = 8
@@ -162,7 +162,8 @@ def main():
                          for k, v in tests.items()}
     out = {"per_subject": per_subject, "tests": tests_serializable}
     with open(RESULTS / "contraction_behavior_analysis_000469.json", "w") as f:
-        json.dump(_json_safe(out), f, indent=2, allow_nan=False)
+        json.dump(_json_safe({**out, "code_identity": code_identity(ROOT, Path(__file__))}),
+                  f, indent=2, allow_nan=False)
 
     stats["contraction_behavior_analysis_000469"] = out
     with open(RESULTS / "all_statistics.json", "w") as f:

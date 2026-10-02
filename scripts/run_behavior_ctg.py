@@ -60,8 +60,10 @@ from geometry import ctg_label_permutation_null, temporal_stability_tau
 from preprocessing import bandpass_filter, line_noise_notch, bipolar_reference_by_shank
 from statistics import stable_seed
 from io_utils import locked_json_update
+from provenance import linked_duplicate_000673_sessions, write_code_identity_record
 
 RESULTS = ROOT / "results"
+PROVENANCE = ROOT / "provenance"
 
 MIN_ERROR_TRIALS = 15    # spec B2: dataset-level POOLED (across sessions) error-trial floor
 MIN_ERROR_PER_SESSION = 4   # per-session floor to even attempt a fit: sessions differ in
@@ -106,7 +108,8 @@ def _outcome_ctg(psth_z: np.ndarray, correct: np.ndarray, times: np.ndarray, rng
         "peak_time_s": float(times[t_idx[peak_i]]) if peak_i < len(t_idx) else float("nan"),
         "offdiag_auc": tau_info["mean_offdiag_auc"],
         "tau": tau_info["tau"],
-        "tau_interpretable": tau_info["interpretable"],
+        "tau_diagonal_auc_reference": tau_info["diagonal_auc_reference"],
+        "mean_diag_auc": tau_info["mean_diag_auc"],
         "p_perm": res["p_value"],
         "n_trials": int(len(correct)), "n_correct": n_correct, "n_error": n_error,
         "ctg_matrix": auc_mat.tolist(),
@@ -143,12 +146,16 @@ def _spike_session_outcome_ctg(f, trials_group: str, loads_field: str, maint_win
 
 
 def run_rutishauser_lineage(dataset_key: str, glob_pattern: str, trials_group: str,
-                            maint_win: float, min_units: int, data_root_dir: Path) -> dict:
+                            maint_win: float, min_units: int, data_root_dir: Path,
+                            exclude_keys: frozenset[str] | set[str] = frozenset()) -> dict:
     data_dir = data_root_dir / dataset_key.replace("dandi", "")
     out = {}
     files = sorted(data_dir.glob(glob_pattern))
     for fp in files:
         key = fp.stem
+        if key in exclude_keys:
+            print(f"    SKIP {key}: recording is also in the canonical 001187 release")
+            continue
         with h5py.File(str(fp), "r") as f:
             try:
                 row = _spike_session_outcome_ctg(f, trials_group, "loads", maint_win, min_units,
@@ -314,7 +321,8 @@ def _outcome_ctg_native(hgp_ds: np.ndarray, correct: np.ndarray, times_ds: np.nd
         "peak_time_s": float(times_ds[peak_i]),
         "offdiag_auc": tau_info["mean_offdiag_auc"],
         "tau": tau_info["tau"],
-        "tau_interpretable": tau_info["interpretable"],
+        "tau_diagonal_auc_reference": tau_info["diagonal_auc_reference"],
+        "mean_diag_auc": tau_info["mean_diag_auc"],
         "p_perm": res["p_value"],
         "n_trials": int(len(correct)), "n_correct": n_correct, "n_error": n_error,
         "ctg_matrix": auc_mat.tolist(),
@@ -407,9 +415,14 @@ def main():
     out["dandi001187"] = _pool_dataset(d1187, "DANDI 001187")
 
     print("DANDI 000673...")
-    d0673 = run_rutishauser_lineage("dandi000673", "sub-*/*_ecephys*.nwb", "trials", 2.3, 15, data_root_dir)
+    glob_0673 = "sub-*/*_ecephys*.nwb"
+    linked_0673 = linked_duplicate_000673_sessions(PROVENANCE)
+    d0673 = run_rutishauser_lineage("dandi000673", glob_0673, "trials", 2.3, 15, data_root_dir,
+                                    exclude_keys=linked_0673)
     out_per_session["dandi000673"] = d0673
     out["dandi000673"] = _pool_dataset(d0673, "DANDI 000673")
+    out["dandi000673"]["excluded_linked_duplicate_sessions"] = sorted(
+        linked_0673 & {fp.stem for fp in (data_root_dir / "000673").glob(glob_0673)})
 
     print("\nECoG n-back: EXCLUDED -- no hit/miss/FA/CR field in the raw MAT "
           "files (stim/task/target encode task condition, not response accuracy); "
@@ -437,6 +450,8 @@ def main():
 
     with locked_json_update(RESULTS / "all_statistics.json") as stats:
         stats["behavior_ctg"] = out
+    write_code_identity_record(ROOT, Path(__file__), [
+        "results/behavior_ctg.json", "results/behavior_ctg_per_session.json", "results/all_statistics.json"])
     print("\nSaved results/behavior_ctg.json, results/behavior_ctg_per_session.json, "
           "updated all_statistics.json")
 

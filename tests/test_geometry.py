@@ -302,6 +302,13 @@ class TestTemporalStabilityTau:
         assert info["tau"] == pytest.approx(1.0)
         assert info["interpretable"]
 
+    def test_reports_the_diagonal_reference_beside_the_diagonal_auc(self):
+        auc_mat = np.full((5, 5), 0.58)
+        info = temporal_stability_tau(auc_mat, min_diag_auc=0.6)
+        assert info["diagonal_auc_reference"] == 0.6
+        assert info["mean_diag_auc"] == pytest.approx(0.58)
+        assert temporal_stability_tau(auc_mat)["diagonal_auc_reference"] == 0.55
+
     def test_near_chance_diagonal_flagged_uninterpretable(self):
         auc_mat = np.full((5, 5), 0.51)
         info = temporal_stability_tau(auc_mat, min_diag_auc=0.55)

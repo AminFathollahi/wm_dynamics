@@ -49,11 +49,13 @@ from spike_pipeline import (  # noqa: E402
 )
 from geometry import (  # noqa: E402
     select_latent_dim, coding_direction_stability, temporal_stability_tau,
+    TAU_MIN_DIAGONAL_AUC,
 )
 from statistics import paired_sign_flip_test, forest_meta, stable_seed  # noqa: E402
-from provenance import _json_safe
+from provenance import _json_safe, linked_duplicate_000673_sessions, write_code_identity_record
 
 RESULTS = ROOT / "results"
+PROVENANCE = ROOT / "provenance"
 
 BIN_MS = 100
 SMOOTH_MS = 200
@@ -92,7 +94,10 @@ def load_sternberg_sessions(dataset: str):
     """Yield (key, psth_z (N,C,T), loads, pic_ids) per QC-passing session, using
     the shared spike_pipeline exactly as the per-dataset scripts do."""
     cfg = STERNBERG[dataset]
+    linked = linked_duplicate_000673_sessions(PROVENANCE) if dataset == "dandi000673" else set()
     for key, path in _iter_nwb_paths(cfg):
+        if key in linked:
+            continue
         try:
             with h5py.File(str(path), "r") as f:
                 if cfg["trials"].split("/")[-1] not in f.get("intervals", {}):
@@ -149,6 +154,10 @@ def latent_dim_selection() -> dict:
             "var_explained_at_8_mean": float(np.mean(var8s)),
             "k_used": 8,
         }
+        if dataset == "dandi000673":
+            table[dataset]["excluded_linked_duplicate_sessions"] = sorted(
+                linked_duplicate_000673_sessions(PROVENANCE)
+                & {key for key, _ in _iter_nwb_paths(STERNBERG[dataset])})
         print(f"  {dataset:14s} n={table[dataset]['n_sessions']:2d}  "
               f"cv_PR={table[dataset]['cv_PR_mean']:.1f}±{table[dataset]['cv_PR_std']:.1f}  "
               f"k_PA(med)={table[dataset]['k_parallel_analysis_median']:.0f}  "
@@ -204,8 +213,9 @@ def _headline_3_tau(sessions_469: list, k: int) -> dict:
     return {
         "tau_context": float(np.mean(ctx_taus)) if ctx_taus else float("nan"),
         "tau_content": float(np.mean(cont_taus)) if cont_taus else float("nan"),
-        "n_context_interpretable": len(ctx_taus),
-        "n_content_interpretable": len(cont_taus),
+        "n_context_sessions_in_tau_mean": len(ctx_taus),
+        "n_content_sessions_in_tau_mean": len(cont_taus),
+        "tau_diagonal_auc_reference": TAU_MIN_DIAGONAL_AUC,
     }
 
 
@@ -248,8 +258,9 @@ def dim_robustness(sessions_469: list) -> dict:
             "axis_rot_ci": h1["axis_rot_ci"], "n_subjects": h1["n_subjects"],
             "pr_slope": pr["pr_slope"], "pr_ci": pr["pr_ci"], "pr_p": pr["pr_p"],
             "tau_context": h3["tau_context"], "tau_content": h3["tau_content"],
-            "n_context_interpretable": h3["n_context_interpretable"],
-            "n_content_interpretable": h3["n_content_interpretable"],
+            "n_context_sessions_in_tau_mean": h3["n_context_sessions_in_tau_mean"],
+            "n_content_sessions_in_tau_mean": h3["n_content_sessions_in_tau_mean"],
+            "tau_diagonal_auc_reference": h3["tau_diagonal_auc_reference"],
             "benchmark_slope": bslope, "benchmark_p": bp,
         }
         print(f"    axis_rot_diff={h1['axis_rot_diff']:+.4f} p={h1['axis_rot_p']:.4f} (N={h1['n_subjects']}); "
@@ -275,6 +286,8 @@ def main():
     stats["latent_dim_selection"] = table
     stats["dim_robustness"] = out
     json.dump(_json_safe(stats), open(RESULTS / "all_statistics.json", "w"), indent=2, allow_nan=False)
+    write_code_identity_record(ROOT, Path(__file__), [
+        "results/latent_dim_selection.json", "results/dim_robustness.json", "results/all_statistics.json"])
     print("  updated all_statistics.json")
 
 

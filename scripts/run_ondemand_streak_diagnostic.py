@@ -30,7 +30,8 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from control import lqr_design, dominant_eigenmode
 from closed_loop import _b_hat_at_angle
-from provenance import _json_safe
+from provenance import _json_safe, code_identity
+from statistics import stable_seed
 
 RESULTS = ROOT / "results"
 B_HAT_MISMATCH_DEG = 20.0
@@ -101,6 +102,10 @@ def _streak_stats(A, B_true, B_hat, x0, target, decoder, horizon, obs_noise, pro
             "mean_duty_cycle_diag": float(np.mean(engaged_fracs))}
 
 
+def _cohort_rng(key: str) -> np.random.Generator:
+    return np.random.default_rng(stable_seed(key))
+
+
 def main():
     cl = json.load(open(RESULTS / "closed_loop.json"))
     tes1_miller = np.load(RESULTS / "tes1_comprehensive.npz", allow_pickle=True)
@@ -124,7 +129,7 @@ def main():
         row = cl[key]
         decoder, w_axis = _decoder_and_axis(subj, dataset)
         v_star = dominant_eigenmode(A).v_star
-        rng = np.random.default_rng(hash(key) % (2**31 - 1))
+        rng = _cohort_rng(key)
         B_hat = _b_hat_at_angle(B_true, B_HAT_MISMATCH_DEG, rng)
         diag = _streak_stats(A, B_true, B_hat, x0, target, decoder, row["horizon"],
                              row["obs_noise"], row["proc_noise"], rng)
@@ -141,7 +146,9 @@ def main():
     print(f"\nWorst on-demand cohort (auto-identified): {worst}")
 
     with open(RESULTS / "ondemand_streak_diagnostic.json", "w") as f:
-        json.dump(_json_safe({"per_cohort": out, "worst_cohort": worst}), f, indent=2, allow_nan=False)
+        json.dump(_json_safe({"per_cohort": out, "worst_cohort": worst,
+                              "code_identity": code_identity(ROOT, Path(__file__))}),
+                  f, indent=2, allow_nan=False)
 
     stats_path = RESULTS / "all_statistics.json"
     with open(stats_path) as f:

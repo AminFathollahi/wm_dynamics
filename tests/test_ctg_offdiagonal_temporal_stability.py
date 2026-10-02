@@ -1,8 +1,8 @@
 """Tests for scripts/run_ctg_offdiagonal_temporal_stability.py -- the pieces
 that could silently break this analysis without erroring: subject-id
 extraction (session suffixes must not merge into the cluster key), the
-cluster-bootstrap CI/p-value/mdd arithmetic, and the clear/inconclusive
-decision rule."""
+cluster-bootstrap CI/p-value/mdd arithmetic, and the numbers reported for
+each cell."""
 
 from __future__ import annotations
 
@@ -10,12 +10,14 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from run_ctg_offdiagonal_temporal_stability import (  # noqa: E402
-    _subject_id, _cluster_bootstrap, _verdict, DIAG_INTERPRETABLE_MIN,
+    _subject_id, _cluster_bootstrap, _apply_fdr, _independent_group_summary,
+    INDEPENDENT_PATIENT_GROUPS, DIAG_INTERPRETABLE_MIN,
 )
 
 
@@ -46,24 +48,44 @@ def test_cluster_bootstrap_ci_straddles_zero_for_null_data():
     assert out["ci95_lower"] < 0 < out["ci95_upper"]
 
 
-def test_verdict_requires_both_fdr_and_ci():
-    interpretable_stats = {
-        "status": "computed", "diag_interpretable": True,
-        "ci95_lower": 0.02, "ci95_upper": 0.08, "q_value_fdr": 0.01,
+def _computed_cell(offdiag, p, diag_auc):
+    stats = {
+        "status": "computed", "mean_offdiag_effect": offdiag, "ci95_lower": offdiag - 0.02,
+        "ci95_upper": offdiag + 0.02, "p_value_bootstrap": p, "mdd": 0.03,
+        "mean_diag_auc": diag_auc, "n_subjects": 9,
+        "diagonal_auc_minus_reference": diag_auc - DIAG_INTERPRETABLE_MIN,
     }
-    assert _verdict(interpretable_stats) == "clear_stable"
+    return {"stats": stats}
 
-    ci_only = dict(interpretable_stats, q_value_fdr=0.2)
-    assert _verdict(ci_only) == "inconclusive"
 
-    q_only = dict(interpretable_stats, ci95_lower=-0.01)
-    assert _verdict(q_only) == "inconclusive"
+def test_cells_carry_numbers_and_no_threshold_label():
+    cells = {
+        "a": _computed_cell(0.05, 0.001, 0.70),
+        "b": _computed_cell(0.01, 0.40, 0.52),
+        "c": {"stats": {"status": "infeasible"}},
+    }
+    _apply_fdr(cells)
+    assert "verdict" not in cells["a"] and "verdict" not in cells["c"]
+    reading = cells["b"]["reading"]
+    assert reading["q_value_fdr"] >= reading["p_value_bootstrap"]
+    assert reading["diagonal_auc_minus_reference"] == 0.52 - DIAG_INTERPRETABLE_MIN
+    assert set(reading) >= {"offdiag_effect", "ci95_lower", "ci95_upper", "p_value_bootstrap",
+                            "q_value_fdr", "mdd", "mean_diag_auc", "n_subjects"}
+    assert "reading" not in cells["c"]
 
-    undecodable = dict(interpretable_stats, diag_interpretable=False)
-    assert _verdict(undecodable) == "inconclusive_undecodable_diagonal"
 
-    infeasible = {"status": "infeasible"}
-    assert _verdict(infeasible) == "infeasible"
+def test_group_summary_reports_estimate_difference_between_views():
+    primary = {}
+    for group in INDEPENDENT_PATIENT_GROUPS.values():
+        for i, cell in enumerate(group["cells"]):
+            primary[cell] = {"reading": {"offdiag_effect": 0.1 * (i + 1)}}
+    summary = {row["group"]: row for row in _independent_group_summary(primary)}
+    two_views = summary["dandi_000574"]["offdiag_effect_difference_between_views"]
+    assert two_views["first_minus_second"] == pytest.approx(
+        primary[two_views["first_view"]]["reading"]["offdiag_effect"]
+        - primary[two_views["second_view"]]["reading"]["offdiag_effect"])
+    assert "offdiag_effect_difference_between_views" not in summary["dandi000469"]
+    assert summary["dandi000673_dandi001187"]["canonical_view"] == "dandi001187"
 
 
 def test_diag_interpretable_min_matches_project_default():

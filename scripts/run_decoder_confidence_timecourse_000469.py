@@ -36,8 +36,9 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import h5py
 from spike_pipeline import load_spike_times, build_psth, low_rate_unit_mask, FrozenPSTHTransform
 from geometry import out_of_fold_class_confidence
-from statistics import gated_outcome_cluster_test
+from statistics import gated_outcome_cluster_test, smallest_cluster_p_value
 from io_utils import locked_json_update
+from provenance import write_code_identity_record
 
 import run_full_trial_content_decoding_000469 as single_item
 import run_multiitem_recall_decoding_000469 as multi_item
@@ -185,8 +186,9 @@ def main():
             out["load1"][subj] = r1
             for win in ["fixation_aligned", "response_aligned"]:
                 t = r1[f"outcome_test_{win}"]
-                if t and t["significant"]:
-                    print(f"  {win}: {len(t['significant'])} significant cluster(s)")
+                if t and t["clusters"]:
+                    print(f"  {win}: {len(t['clusters'])} cluster(s), "
+                          f"smallest cluster p={smallest_cluster_p_value(t):.4f}")
 
     for sub_n in range(1, 22):
         subj = f"sub-{sub_n}"
@@ -197,14 +199,17 @@ def main():
             for name in multi_item.ITEM_FIELDS:
                 for win in ["fixation_aligned", "response_aligned"]:
                     t = r3[name][f"outcome_test_{win}"]
-                    if t and t["significant"]:
-                        print(f"  {name} {win}: {len(t['significant'])} significant cluster(s)")
+                    if t and t["clusters"]:
+                        print(f"  {name} {win}: {len(t['clusters'])} cluster(s), "
+                              f"smallest cluster p={smallest_cluster_p_value(t):.4f}")
 
     with open(RESULTS / "decoder_confidence_timecourse_000469.json", "w") as f:
         json.dump(out, f, indent=2)
 
     with locked_json_update(RESULTS / "all_statistics.json") as stats:
         stats["decoder_confidence_timecourse_000469"] = out
+    write_code_identity_record(ROOT, Path(__file__), [
+        "results/decoder_confidence_timecourse_000469.json", "results/all_statistics.json"])
     print("\nSaved results/decoder_confidence_timecourse_000469.json, updated all_statistics.json")
 
 

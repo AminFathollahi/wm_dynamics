@@ -32,9 +32,10 @@ sys.path.insert(0, str(ROOT / "src"))
 from dynamics import (dmd_reconstruction_error, ensemble_dmd, divergence_rank_sweep,
                       mean_trajectory_divergence_rank_sweep, rank_robustness_sign,
                       trajectory_tangling)
-from provenance import _json_safe
+from provenance import _json_safe, canonical_json, code_identity, linked_duplicate_000673_sessions
 
 RESULTS = ROOT / "results"
+PROVENANCE = ROOT / "provenance"
 
 MILLER_SUBJECTS   = ["al", "ca", "cc", "ug"]
 BORAN_SUBJECTS    = [f"sub-{i:02d}" for i in range(1, 10)]
@@ -376,12 +377,19 @@ def process_boran_units(out: dict, all_rows: dict):
                                             n_trials=int(Z_trials_ss8.shape[0]))
 
 
-def _process_load1v3_dynamics(out: dict, all_rows: dict, group: str, geom_prefix: str):
+def _process_load1v3_dynamics(out: dict, all_rows: dict, group: str, geom_prefix: str,
+                              exclude_keys: frozenset[str] | set[str] = frozenset()) -> list[str]:
     """Shared loader for DANDI 001187 / 000673: load-1-vs-load-3 (context)
     high-load-trajectory dynamics, mirroring process_rutishauser's load-3-only
-    convention for the sibling human single-unit DANDI cohort (DANDI 000469)."""
+    convention for the sibling human single-unit DANDI cohort (DANDI 000469).
+
+    Returns the session keys skipped because they are in ``exclude_keys``."""
+    excluded = []
     for path in sorted(RESULTS.glob(f"{geom_prefix}_sub-*.npz")):
         key = path.stem.replace(f"{geom_prefix}_", "")
+        if key in exclude_keys:
+            excluded.append(key)
+            continue
         geo = np.load(path, allow_pickle=True)
         Z, loads, times = geo["Z"], geo["loads"], geo["times"]
 
@@ -407,6 +415,7 @@ def _process_load1v3_dynamics(out: dict, all_rows: dict, group: str, geom_prefix
         all_rows[group][key].update(ens_row)
         all_rows[group][key].update(rotation_freq_hz=rot_hz, tangling_mean=tangling_mean,
                                     n_trials=int(Z_trials_l3.shape[0]))
+    return excluded
 
 
 def process_dandi001187(out: dict, all_rows: dict):
@@ -414,9 +423,10 @@ def process_dandi001187(out: dict, all_rows: dict):
     _process_load1v3_dynamics(out, all_rows, "dandi001187", "dandi001187_geometry")
 
 
-def process_dandi000673(out: dict, all_rows: dict):
+def process_dandi000673(out: dict, all_rows: dict) -> list[str]:
     print("  DANDI 000673 (single-unit + LFP):")
-    _process_load1v3_dynamics(out, all_rows, "dandi000673", "dandi000673_geometry")
+    return _process_load1v3_dynamics(out, all_rows, "dandi000673", "dandi000673_geometry",
+                                     exclude_keys=linked_duplicate_000673_sessions(PROVENANCE))
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -505,9 +515,10 @@ def main():
     process_rutishauser(out, all_rows)
     process_boran_units(out, all_rows)
     process_dandi001187(out, all_rows)
-    process_dandi000673(out, all_rows)
+    excluded_linked_0673 = process_dandi000673(out, all_rows)
 
-    np.savez(RESULTS / "divergence_analysis.npz", **out)
+    np.savez(RESULTS / "divergence_analysis.npz", **out,
+             code_identity=np.array(canonical_json(code_identity(ROOT, Path(__file__)))))
     print("\n  Saved: results/divergence_analysis.npz")
 
     # Cross-dataset summary
@@ -600,6 +611,7 @@ def main():
     }
 
     all_stats["divergence"] = all_rows
+    all_stats["divergence_excluded_linked_duplicate_sessions"] = {"dandi000673": excluded_linked_0673}
     with open(stats_path, "w") as f:
         json.dump(_json_safe(all_stats), f, indent=2, allow_nan=False)
     print("  Updated all_statistics.json")

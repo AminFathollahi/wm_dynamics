@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 import tempfile
@@ -15,6 +16,12 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import preprocessing as pp  # noqa: E402
 import run_human_field_potential_benchmark as mod  # noqa: E402
 from project_config import executable  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def field_representation_fits(monkeypatch):
+    monkeypatch.setattr(mod.benchmark_core, "REPRESENTATION_FITS", mod.benchmark_core.REPRESENTATION_FITS)
+    mod.use_field_representation_fits()
 
 
 # ---------------------------------------------------------------------------
@@ -230,6 +237,90 @@ def test_calibrated_k_never_fits_on_b_trials_beyond_k(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# Cross-session calibration restricts to the contacts both sessions share.
+# ---------------------------------------------------------------------------
+
+def _labelled_entry(rng, labels, n_trials=40, n_bands=2, n_bins=3):
+    entry = _synthetic_entry(rng, n_trials, len(labels), n_bins, n_bands)
+    entry.update({"status": "loaded", "channel_labels": list(labels), "n_channels": len(labels)})
+    return entry
+
+
+def test_shared_channel_entries_keep_the_first_sessions_order_and_matching_columns():
+    rng = np.random.default_rng(1)
+    entry_a = _labelled_entry(rng, ["a", "b", "c", "d"], n_trials=6)
+    entry_b = _labelled_entry(rng, ["d", "c", "x"], n_trials=6)
+    shared_a, shared_b = mod.shared_channel_entries(entry_a, entry_b)
+    assert shared_a["channel_labels"] == shared_b["channel_labels"] == ["c", "d"]
+    assert shared_a["n_channels"] == shared_b["n_channels"] == 2
+    n_bands = entry_a["n_bands"]
+    np.testing.assert_array_equal(shared_a["activity"], entry_a["activity"][:, :, 2 * n_bands:4 * n_bands])
+    np.testing.assert_array_equal(shared_b["activity"][:, :, :n_bands], entry_b["activity"][:, :, n_bands:2 * n_bands])
+    np.testing.assert_array_equal(shared_b["activity"][:, :, n_bands:], entry_b["activity"][:, :, :n_bands])
+
+
+def _calibration_records(monkeypatch, tmp_path, labels_by_session):
+    rng = np.random.default_rng(2)
+    entries = {s: _labelled_entry(rng, labels) for s, labels in labels_by_session.items()}
+    monkeypatch.setattr(mod, "load_000574_entries",
+                        lambda row: {"status": "loaded", "entries": {"pooled": entries[row["session"]]}})
+    rows = [{"session": s} for s in labels_by_session]
+    result = mod.process_000574_calibration("sub-cal", rows, ("principal_components",), "linear", 1, 0, tmp_path)
+    return result["calibration_records"]
+
+
+def test_partly_overlapping_sessions_are_calibrated_on_the_shared_contacts(monkeypatch, tmp_path):
+    records = _calibration_records(monkeypatch, tmp_path, {
+        "sub-cal_ses-01": list("abcdef"), "sub-cal_ses-02": list("bcdefg"), "sub-cal_ses-03": list("bcdefg")})
+    first = [r for r in records if r["session_b"] == "sub-cal_ses-02"]
+    second = [r for r in records if r["session_b"] == "sub-cal_ses-03"]
+    assert any(r["status"] == "computed" for r in first)
+    assert {(r["n_shared_channels"], r["contact_sets_identical"]) for r in first} == {(5, False)}
+    assert any(r["status"] == "computed" for r in second)
+    assert {(r["n_shared_channels"], r["contact_sets_identical"]) for r in second} == {(6, True)}
+
+
+def test_pair_below_the_channel_floor_on_shared_contacts_is_excluded(monkeypatch, tmp_path):
+    records = _calibration_records(monkeypatch, tmp_path, {
+        "sub-cal_ses-01": list("abcdef"), "sub-cal_ses-02": list("efghij")})
+    assert len(records) == 1
+    assert records[0]["status"] == "excluded"
+    assert (records[0]["n_shared_channels"], records[0]["contact_sets_identical"]) == (2, False)
+    assert str(mod.MIN_BIPOLAR_CHANNELS) in records[0]["reason"]
+
+
+def test_calibration_only_writes_only_calibration_records_and_summary(monkeypatch, tmp_path):
+    rng = np.random.default_rng(3)
+    entries = {s: _labelled_entry(rng, labels) for s, labels in
+               {"sub-cal_ses-01": list("abcdef"), "sub-cal_ses-02": list("bcdefg")}.items()}
+    monkeypatch.setattr(mod, "registry_sessions", lambda root: [
+        {"patient": "sub-cal", "session": s, "path": s} for s in entries])
+    monkeypatch.setattr(mod, "load_000574_entries",
+                        lambda row: {"status": "loaded", "entries": {"pooled": entries[row["session"]]}})
+    output = tmp_path / "calibration.json"
+    monkeypatch.setattr(sys, "argv", ["prog", "--calibration-only", "--workers", "1", "--candidates",
+                                      "principal_components", "--output", str(output),
+                                      "--checkpoint-dir", str(tmp_path / "checkpoints")])
+    mod.main()
+    import json
+    artifact = json.loads(output.read_text())
+    assert artifact["status"] == "complete" and artifact["scope"]["calibration_only"] is True
+    assert {"cross_session_calibration", "calibration_summary"} <= set(artifact)
+    assert not {"content_records", "reconstruction_records", "sessions", "co_primary_summary"} & set(artifact)
+    assert artifact["cross_session_calibration"]
+    assert not output.with_suffix(".md").exists()
+
+
+def test_patient_estimate_needs_three_patients_not_three_sessions():
+    rng = np.random.default_rng(0)
+    one_patient = mod.patient_estimate([0.1, 0.2, 0.3, 0.4], ["p", "p", "p", "p"], rng)
+    assert one_patient["status"] == "not_estimable" and one_patient["n_patients"] == 1
+    assert "ci_95_patient_cluster_bootstrap" not in one_patient
+    three = mod.patient_estimate([0.1, 0.2, 0.3], ["p", "q", "r"], np.random.default_rng(0))
+    assert three["status"] == "estimable" and three["n_patients"] == 3
+
+
+# ---------------------------------------------------------------------------
 # Records carry the inference mode and the label; failures carry full exception detail.
 # ---------------------------------------------------------------------------
 
@@ -334,3 +425,42 @@ def test_lfads_worker_poisson_path_matches_the_committed_worker(tmp_path):
     assert current.keys() == original.keys()
     for key in current:
         np.testing.assert_array_equal(current[key], original[key])
+
+
+def test_patient_estimate_adds_a_robust_median_without_moving_the_mean_or_p_value():
+    from statistics import bootstrap_ci, paired_sign_flip_test
+
+    patients = [f"p{i}" for i in range(10)]
+    diffs = [0.1] * 9 + [10.0]
+    out = mod.patient_estimate(diffs, patients, np.random.default_rng(0))
+    rng = np.random.default_rng(0)
+    mean, lo, hi = bootstrap_ci(np.asarray(diffs), np.mean, n_boot=5000, rng=rng)
+    flip = paired_sign_flip_test(np.asarray(diffs), np.zeros(10), alternative="two-sided", rng=rng)
+    assert (out["mean_improvement"], *out["ci_95_patient_cluster_bootstrap"]) == (mean, lo, hi)
+    assert out["sign_flip_p"] == flip["p_value"]
+    assert out["median_improvement"] == 0.1
+    assert out["median_ci_95_patient_cluster_bootstrap"][1] < 1.0 < out["mean_improvement"]
+
+
+def test_summaries_only_recomputes_calibration_summary_from_stored_records(tmp_path):
+    def record(patient, mode, score):
+        return {"status": "computed", "candidate": "principal_components", "metric": "auc", "patient": patient,
+                "session_a": "a", "session_b": "b", "mode": mode, "score": score}
+
+    records = []
+    for i, gain in enumerate([0.1, 0.1, 0.1, 0.1, 3.0]):
+        records += [record(f"p{i}", "within_session", 0.9), record(f"p{i}", "zero_shot", 0.9 - gain)]
+    existing = tmp_path / "calibration.json"
+    existing.write_text(json.dumps({"status": "complete", "cross_session_calibration": records,
+                                    "calibration_summary": []}))
+    output = tmp_path / "recomputed.json"
+    mod.recompute_calibration_summary(existing, output)
+    stored = json.loads(output.read_text())
+    expected = mod.calibration_summary(records, np.random.default_rng(1))
+    assert stored["calibration_summary"] == json.loads(json.dumps(expected))
+    row = stored["calibration_summary"][0]
+    assert row["median_improvement"] == pytest.approx(-0.1) and row["mean_improvement"] < -0.5
+    assert stored["summaries_recomputed"]["source_file"] == "calibration.json"
+    assert json.loads(existing.read_text())["calibration_summary"] == []
+    with pytest.raises(SystemExit):
+        mod.recompute_calibration_summary(existing, existing)

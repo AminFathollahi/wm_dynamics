@@ -112,6 +112,7 @@ FIELD_673_PAD_S = 0.5  # context on each side of the maintenance window, filtere
 # so band-pass edge effects sit outside the scored window (matches lfp_maintenance_tensor's own
 # full-epoch-then-slice convention for the depth-contact corpus)
 N_SPLITS = 5
+MEDIAN_BOOTSTRAP_SEED = 0
 CALIBRATION_KS = (10, 20)
 CALIBRATION_MIN_EXTRA_TRIALS = 15
 CALIBRATION_MODES = ("within_session", "zero_shot") + tuple(f"calibrated_{k}" for k in CALIBRATION_KS)
@@ -248,9 +249,13 @@ _FIELD_FITS[GPFA_CANDIDATE] = _continuous_candidate(fit_gaussian_process_factor_
 _FIELD_FITS[LFADS_CANDIDATE] = _continuous_candidate(fit_sequential_autoencoder_gaussian)
 _FIELD_FITS[SSM_CANDIDATE] = _continuous_candidate(fit_recurrent_switching_linear_dynamics_gaussian)
 _FIELD_FITS[NDT_CANDIDATE] = fit_neural_data_transformer_not_applicable
-# Rebind the shared dict (a new dict, never mutated in place) so run_info_benchmark.fit_candidate
-# dispatches every continuous candidate name to the wiring above.
-benchmark_core.REPRESENTATION_FITS = {**benchmark_core.REPRESENTATION_FITS, **_FIELD_FITS}
+
+
+def use_field_representation_fits() -> None:
+    """Rebinds the shared dict (a new dict, never mutated in place) so run_info_benchmark.fit_candidate
+    dispatches every continuous candidate name to the wiring above. Called from main rather than at
+    import so that importing this module leaves the single-unit benchmark's dispatch unchanged."""
+    benchmark_core.REPRESENTATION_FITS = {**benchmark_core.REPRESENTATION_FITS, **_FIELD_FITS}
 
 
 def fit_demixed_principal_components_field(train_activity, train_labels, test_activity, rank, rng) -> dict:
@@ -869,7 +874,8 @@ def frozen_transfer(candidate, activity_a, labels_a, activity_b, features, ks, s
     return fit, {mode: latent_b[i * n_b:(i + 1) * n_b] for i, mode in enumerate(variants)}
 
 
-def calibration_pair(patient, region, entry_a, entry_b, candidates, decoder, time_step, seed, checkpoint_dir) -> list[dict]:
+def calibration_pair(patient, region, entry_a, entry_b, candidates, decoder, time_step, seed, checkpoint_dir,
+                     pair_channels: dict | None = None) -> list[dict]:
     """Records for one ordered pair of sessions (A earlier, B later), per candidate and mode
     (within_session, zero_shot, calibrated_k), for both scores."""
     activity_a, labels_a = entry_a["activity"], entry_a["labels"]
@@ -881,7 +887,7 @@ def calibration_pair(patient, region, entry_a, entry_b, candidates, decoder, tim
     ks = [k for k in CALIBRATION_KS if n_b >= k + CALIBRATION_MIN_EXTRA_TRIALS]
     pair_key = f"human_field_potential_benchmark|calibration|seed{seed}|{patient}|{region}|{session_a}|{session_b}"
     common = {"patient": patient, "region": region, "session_a": session_a, "session_b": session_b,
-              "decoder": decoder, "label": FIELD_574_LEVEL, "inference_mode": INFERENCE_MODE}
+              "decoder": decoder, "label": FIELD_574_LEVEL, "inference_mode": INFERENCE_MODE, **(pair_channels or {})}
     records = [
         {**common, "status": "skipped", "mode": f"calibrated_{k}", "reason": f"n_trials_b={n_b} < k + {CALIBRATION_MIN_EXTRA_TRIALS}"}
         for k in CALIBRATION_KS if k not in ks
@@ -993,6 +999,20 @@ def calibration_pair(patient, region, entry_a, entry_b, candidates, decoder, tim
     return records
 
 
+def shared_channel_entries(entry_a: dict, entry_b: dict) -> tuple[dict, dict]:
+    """Both entries restricted to the contacts they share, in the first session's order."""
+    position_b = {label: i for i, label in enumerate(entry_b["channel_labels"])}
+    keep_a = [i for i, label in enumerate(entry_a["channel_labels"]) if label in position_b]
+    keep_b = [position_b[entry_a["channel_labels"][i]] for i in keep_a]
+
+    def restrict(entry, keep):
+        features = entry_feature_indices(np.asarray(keep, dtype=int), entry["n_bands"])
+        return {**entry, "activity": entry["activity"][:, :, features],
+                "channel_labels": [entry["channel_labels"][i] for i in keep], "n_channels": len(keep)}
+
+    return restrict(entry_a, keep_a), restrict(entry_b, keep_b)
+
+
 def process_000574_calibration(patient, rows, candidates, decoder, time_step, seed, checkpoint_dir) -> dict:
     pooled = []
     records = []
@@ -1005,12 +1025,16 @@ def process_000574_calibration(patient, rows, candidates, decoder, time_step, se
             continue
         pooled.append({**entry, "session": row["session"]})
     for entry_a, entry_b in zip(pooled, pooled[1:]):
-        if entry_a["channel_labels"] != entry_b["channel_labels"]:
+        identical = entry_a["channel_labels"] == entry_b["channel_labels"]
+        shared_a, shared_b = (entry_a, entry_b) if identical else shared_channel_entries(entry_a, entry_b)
+        pair_channels = {"n_shared_channels": int(shared_a["n_channels"]), "contact_sets_identical": identical}
+        if shared_a["n_channels"] < MIN_BIPOLAR_CHANNELS:
             records.append({"patient": patient, "session_a": entry_a["session"], "session_b": entry_b["session"],
-                             "status": "excluded", "reason": "contact sets differ between the two sessions"})
+                             "status": "excluded", **pair_channels,
+                             "reason": f"n_shared_channels={shared_a['n_channels']} < MIN_BIPOLAR_CHANNELS={MIN_BIPOLAR_CHANNELS}"})
             continue
-        records.extend(calibration_pair(patient, "pooled", entry_a, entry_b, candidates, decoder, time_step, seed,
-                                         checkpoint_dir))
+        records.extend(calibration_pair(patient, "pooled", shared_a, shared_b, candidates, decoder, time_step, seed,
+                                         checkpoint_dir, pair_channels))
     for record in records:
         if record.get("candidate") is not None and record.get("mode") is not None:
             emit_progress({**record, "corpus": "dandi_000574", "session": record.get("session_b")})
@@ -1022,15 +1046,18 @@ def process_000574_calibration(patient, rows, candidates, decoder, time_step, se
 # ---------------------------------------------------------------------------
 
 def patient_estimate(diffs: list[float], patients: list[str], rng: np.random.Generator) -> dict:
-    if len(diffs) < 3:
-        return {"status": "not_estimable", "n_sessions": len(diffs)}
     diffs_arr, patients_arr = np.asarray(diffs, dtype=float), np.asarray(patients)
     uniq = np.unique(patients_arr)
+    if len(uniq) < 3:
+        return {"status": "not_estimable", "n_sessions": len(diffs), "n_patients": int(len(uniq))}
     patient_means = np.array([diffs_arr[patients_arr == p].mean() for p in uniq])
     mean_stat, lo, hi = bootstrap_ci(patient_means, np.mean, n_boot=5000, rng=rng)
     sign_flip = paired_sign_flip_test(patient_means, np.zeros_like(patient_means), alternative="two-sided", rng=rng)
+    median_stat, median_lo, median_hi = bootstrap_ci(
+        patient_means, np.median, n_boot=5000, rng=np.random.default_rng(MEDIAN_BOOTSTRAP_SEED))
     return {
         "status": "estimable", "n_sessions": int(len(diffs)), "n_patients": int(len(uniq)), "mean_improvement": mean_stat,
+        "median_improvement": median_stat, "median_ci_95_patient_cluster_bootstrap": [median_lo, median_hi],
         "ci_95_patient_cluster_bootstrap": [lo, hi], "sign_flip_p": sign_flip["p_value"],
         "mdd": minimum_detectable_paired_difference(patient_means).get("mdd"), "improves_on_reference": int(lo > 0.0),
     }
@@ -1240,10 +1267,27 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--candidates", nargs="+", choices=CANDIDATES, default=list(CANDIDATES))
     parser.add_argument("--decoders", nargs="+", choices=DECODERS, default=list(DECODERS))
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--calibration-only", action="store_true",
+                        help="run only the cross-session calibration of dandi_000574 and write only its records and summary")
+    parser.add_argument("--summaries-only", type=Path, metavar="EXISTING",
+                        help="with --calibration-only: recompute the calibration summary from the records of an "
+                             "existing output file and write it to --output, without refitting")
     parser.add_argument("--output", type=Path, default=OUTPUT_PATH)
     parser.add_argument("--summary", type=Path, help="Markdown summary path (default: beside --output)")
     parser.add_argument("--checkpoint-dir", type=Path, default=CHECKPOINT_DIR)
     return parser
+
+
+def recompute_calibration_summary(existing: Path, output: Path) -> None:
+    """Rewrites the calibration summary of a finished calibration-only file from its stored records."""
+    if existing.resolve() == output.resolve():
+        raise SystemExit("--output must differ from the file named by --summaries-only")
+    artifact = json.loads(existing.read_text())
+    artifact["calibration_summary"] = calibration_summary(artifact["cross_session_calibration"],
+                                                          np.random.default_rng(1))
+    artifact["summaries_recomputed"] = {"source_file": existing.name, "source_sha256": sha256_file(existing),
+                                        "code_commit": git_commit(ROOT)}
+    atomic_write(output, canonical_json(artifact))
 
 
 def guarded(task: str, fn, *args) -> dict:
@@ -1255,8 +1299,15 @@ def guarded(task: str, fn, *args) -> dict:
 
 def main() -> None:
     args = _parser().parse_args()
+    use_field_representation_fits()
     if args.n_splits < 2 or args.n_perm < 1 or args.time_step < 1:
         raise SystemExit("--n-splits must be at least 2; --n-perm and --time-step must be positive")
+    if args.summaries_only is not None:
+        if not args.calibration_only:
+            raise SystemExit("--summaries-only applies to --calibration-only files")
+        recompute_calibration_summary(args.summaries_only, args.output)
+        print(f"wrote {args.output}", flush=True)
+        return
     summary_path = args.summary or args.output.with_suffix(".md")
     started = time.time()
     session_records: list[dict] = []
@@ -1271,6 +1322,19 @@ def main() -> None:
         rng = lambda: np.random.default_rng(1)
         content_summ = content_summary(content_records, patient_by_session, rng()) if complete else []
         recon_summ = reconstruction_summary(reconstruction_records, patient_by_session, rng()) if complete else []
+        calibration_summ = calibration_summary(calibration_records, rng()) if complete else []
+        if args.calibration_only:
+            artifact = {
+                "version": CHECKPOINT_SCHEMA, "code_commit": git_commit(ROOT), "implementation": implementation(),
+                "status": "complete" if complete else "running", "inference_mode": INFERENCE_MODE,
+                "scope": {"corpora": ["dandi_000574"], "calibration_only": True, "candidates": list(candidates),
+                          "decoder": "linear", "time_step": args.time_step, "seed": args.seed,
+                          "calibration_ks": list(CALIBRATION_KS), "min_bipolar_channels": MIN_BIPOLAR_CHANNELS},
+                "cross_session_calibration": calibration_records, "task_failures": failures,
+                "calibration_summary": calibration_summ, "wall_clock_s": float(time.time() - started),
+            }
+            atomic_write(args.output, canonical_json(artifact))
+            return
         artifact = {
             "version": CHECKPOINT_SCHEMA, "code_commit": git_commit(ROOT), "implementation": implementation(),
             "status": "complete" if complete else "running", "inference_mode": INFERENCE_MODE,
@@ -1285,7 +1349,7 @@ def main() -> None:
             "task_failures": failures,
             "content_summary": content_summ, "reconstruction_summary": recon_summ,
             "co_primary_summary": co_primary_summary(content_summ, recon_summ) if complete else [],
-            "calibration_summary": calibration_summary(calibration_records, rng()) if complete else [],
+            "calibration_summary": calibration_summ,
             "unit_benchmark_comparison": unit_benchmark_comparison(content_records) if complete else [],
             "wall_clock_s": float(time.time() - started),
         }
@@ -1298,7 +1362,7 @@ def main() -> None:
         rows = registry_sessions(data_root())
         if args.entries_limit is not None:
             rows = rows[: args.entries_limit]
-        for row in rows:
+        for row in ([] if args.calibration_only else rows):
             tasks.append((f"entry {row['session']}", process_000574_entry,
                           (row, candidates, decoders, args.n_splits, args.n_perm, args.time_step, args.seed,
                            args.checkpoint_dir)))
@@ -1310,7 +1374,7 @@ def main() -> None:
                 tasks.append((f"calibration {patient}", process_000574_calibration,
                               (patient, patient_rows, candidates, "linear", args.time_step, args.seed,
                                args.checkpoint_dir)))
-    if "dandi_000673" in args.corpora:
+    if "dandi_000673" in args.corpora and not args.calibration_only:
         rows = [r for r in canonical_sessions() if _000673_lfp_path(r) is not None]
         limit = args.entries_limit_000673 if args.entries_limit_000673 is not None else args.entries_limit
         if limit is not None:

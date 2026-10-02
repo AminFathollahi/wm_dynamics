@@ -43,7 +43,7 @@ from spike_pipeline import (load_spike_times, build_psth, fit_pca_psth,
                             pr_by_load, low_rate_unit_mask, MIN_SESSION_ACCURACY,
                             FrozenPSTHTransform)
 from statistics import linear_mixed_effects_test, fdr_bh, stouffer_combine, stable_seed
-from provenance import _json_safe
+from provenance import _json_safe, write_code_identity_record
 
 RESULTS = ROOT / "results"
 N_PC = 8
@@ -214,6 +214,9 @@ def main():
 
     with open(stats_path, "w") as f:
         json.dump(_json_safe(stats), f, indent=2, allow_nan=False)
+    write_code_identity_record(ROOT, Path(__file__), [
+        "results/dandi001187_geometry_*.npz", "results/dandi001187_ctg_*.npz",
+        "results/dandi001187_summary.json", "results/all_statistics.json"])
     print("\nSaved results/dandi001187_summary.json, updated all_statistics.json")
 
 

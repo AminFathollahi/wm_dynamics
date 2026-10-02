@@ -33,7 +33,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from geometry import (ctg_label_permutation_null, ctg_nested_cv, temporal_stability_tau,
                       latent_trajectories, marginalize_condition_time)
 from statistics import fdr_bh, stable_seed
-from provenance import _json_safe
+from provenance import _json_safe, code_identity, write_code_identity_record
 
 RESULTS = ROOT / "results"
 SUBJECTS = ["al", "ca", "cc", "ug"]
@@ -101,7 +101,7 @@ def _process_subject(subj: str) -> tuple[str, tuple, dict]:
         summary_row = {
             "n_trials": int(mask.sum()),
             "maintenance": {
-                "tau": maint_res["tau"], "interpretable": maint_res["interpretable"],
+                "tau": maint_res["tau"], "diagonal_auc_reference": maint_res["diagonal_auc_reference"],
                 "mean_diag_auc": maint_res["mean_diag_auc"],
                 "mean_offdiag_auc": maint_res["mean_offdiag_auc"],
                 "offdiag_effect": maint_res["mean_offdiag_auc_minus_chance"],
@@ -186,7 +186,9 @@ def main():
               f"(al full-N offdiag_effect={summary['al']['maintenance']['offdiag_effect']:.4f})")
 
     with open(RESULTS / "miller_ctg_corrected.json", "w") as f:
-        json.dump(_json_safe({"per_subject": summary, "trial_count_confound": subsample_results}), f, indent=2, allow_nan=False)
+        json.dump(_json_safe({"per_subject": summary, "trial_count_confound": subsample_results,
+                              "code_identity": code_identity(ROOT, Path(__file__))}),
+                  f, indent=2, allow_nan=False)
 
     stats_path = RESULTS / "all_statistics.json"
     with open(stats_path) as f:
@@ -205,12 +207,15 @@ def main():
             "p_offdiag_vs_chance": v["maintenance"]["p_value"],
             "q_value_fdr": v["maintenance"]["q_value_fdr"],
             "temporal_stability": v["maintenance"]["tau"],
-            "tau_interpretable": v["maintenance"]["interpretable"],
+            "tau_diagonal_auc_reference": v["maintenance"]["diagonal_auc_reference"],
         }
         for subj, v in summary.items()
     }
     with open(stats_path, "w") as f:
         json.dump(_json_safe(stats), f, indent=2, allow_nan=False)
+    write_code_identity_record(ROOT, Path(__file__), [
+        "results/miller_ctg_corrected.json", "results/miller_ctg_corrected_*.npz",
+        "results/all_statistics.json"])
     print("\nSaved results/miller_ctg_corrected.json, updated all_statistics.json")
 
 

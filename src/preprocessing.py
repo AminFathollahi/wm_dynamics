@@ -565,6 +565,44 @@ def run_pipeline(
     return ep
 
 
+def nback_epoch_arrays(
+    subject_data: dict,
+    pre_ms: float = 200.0,
+    post_ms: float = 1500.0,
+    bad_channel_threshold_mad: float = 3.0,
+) -> dict:
+    """Baseline-normalised high-gamma epochs for one ECoG n-back subject.
+
+    Channels are rejected on broadband variance only (no line-noise criterion), then
+    common-average referenced, notched, converted to high-gamma power, epoched around
+    stimulus onset and z-scored against the pre-stimulus baseline.
+
+    Parameters
+    ----------
+    subject_data : output of `load_subject`
+
+    Returns
+    -------
+    dict with epochs (N, T, C) float32, times (T,), task_id (N,), tgt_id (N,),
+    stim_id (N,) and good_channels (C,) indices into the raw channel axis.
+    """
+    good = reject_bad_channels(subject_data["data"], threshold_mad=bad_channel_threshold_mad)
+    clean = preprocess(subject_data["data"][:, good], srate=SRATE)
+    power = high_gamma_power(clean, srate=SRATE)
+    ep = epoch_data(
+        power, subject_data["stim"], subject_data["task"], subject_data["target"],
+        pre_ms=pre_ms, post_ms=post_ms,
+    )
+    return {
+        "epochs": baseline_normalize(ep["epochs"], ep["times"]),
+        "times": ep["times"],
+        "task_id": ep["task_id"],
+        "tgt_id": ep["tgt_id"],
+        "stim_id": ep["stim_id"],
+        "good_channels": np.where(good)[0],
+    }
+
+
 # ── ECoG n-back corpus convenience wrappers (used by notebooks 07/08) ─────────────────────
 
 def load_miller_nback(

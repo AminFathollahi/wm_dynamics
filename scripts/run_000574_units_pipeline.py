@@ -40,7 +40,7 @@ from spike_pipeline import (load_spike_times, build_psth, fit_pca_psth,
                             low_rate_unit_mask, MIN_UNIT_FIRING_RATE_HZ,
                             FrozenPSTHTransform)
 from statistics import linear_mixed_effects_test, fdr_bh, stable_seed
-from provenance import _json_safe
+from provenance import _json_safe, write_code_identity_record
 
 RESULTS = ROOT / "results"
 SUBJECTS = [f"sub-0{i}" for i in range(1, 10)]
@@ -199,6 +199,9 @@ def main():
     }
     with open(stats_path, "w") as f:
         json.dump(_json_safe(stats), f, indent=2, allow_nan=False)
+    write_code_identity_record(ROOT, Path(__file__), [
+        "results/dandi000574_units_geometry_*.npz", "results/dandi000574_units_ctg_*.npz",
+        "results/dandi000574_units_summary.json", "results/all_statistics.json"])
     print("\nSaved results/dandi000574_units_summary.json, updated all_statistics.json")
 
 

@@ -1049,9 +1049,9 @@ def _binomial_sig_rate(d: dict, keys: tuple) -> tuple[int, int]:
         nonlocal n_tests, n_sig
         if not isinstance(node, dict):
             return
-        if "significant" in node and "clusters" in node:
+        if "clusters" in node and "auc_stat" in node:
             n_tests += 1
-            if len(node["significant"]) > 0:
+            if any(c["p_value"] < 0.05 for c in node["clusters"]):
                 n_sig += 1
             return
         for k, v in node.items():

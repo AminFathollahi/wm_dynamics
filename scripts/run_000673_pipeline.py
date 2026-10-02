@@ -44,7 +44,7 @@ from spike_pipeline import (load_spike_times, build_psth, fit_pca_psth,
                             pr_by_load, low_rate_unit_mask, MIN_SESSION_ACCURACY,
                             FrozenPSTHTransform)
 from statistics import linear_mixed_effects_test, fdr_bh, stouffer_combine, stable_seed
-from provenance import load_overlap_report, linked_duplicate_000673_session_keys, _json_safe
+from provenance import linked_duplicate_000673_sessions, _json_safe, write_code_identity_record
 
 RESULTS = ROOT / "results"
 PROVENANCE = ROOT / "provenance"
@@ -165,12 +165,7 @@ def main():
 
     results = Parallel(n_jobs=N_WORKERS)(delayed(_process_session)(fp) for fp in files)
 
-    overlap_report = load_overlap_report(PROVENANCE)
-    linked_keys = (linked_duplicate_000673_session_keys(overlap_report)
-                   if overlap_report is not None else set())
-    if overlap_report is None:
-        print("  WARNING: provenance/dataset_overlap_report.json not found -- "
-              "cannot exclude 001187-linked duplicate sessions from pooling", flush=True)
+    linked_keys = linked_duplicate_000673_sessions(PROVENANCE, required=False)
 
     summary = {}
     pooled_drift, pooled_correct, pooled_key = [], [], []
@@ -228,6 +223,9 @@ def main():
 
     with open(stats_path, "w") as f:
         json.dump(_json_safe(stats), f, indent=2, allow_nan=False)
+    write_code_identity_record(ROOT, Path(__file__), [
+        "results/dandi000673_geometry_*.npz", "results/dandi000673_ctg_*.npz",
+        "results/dandi000673_summary.json", "results/all_statistics.json"])
     print("\nSaved results/dandi000673_summary.json, updated all_statistics.json")
 
 

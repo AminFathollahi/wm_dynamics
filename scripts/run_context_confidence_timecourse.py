@@ -28,19 +28,27 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from geometry import out_of_fold_class_confidence
-from statistics import stable_seed, gated_outcome_cluster_test
+from statistics import stable_seed, gated_outcome_cluster_test, smallest_cluster_p_value
 from io_utils import locked_json_update
+from provenance import linked_duplicate_000673_sessions, write_code_identity_record
 
 RESULTS = ROOT / "results"
+PROVENANCE = ROOT / "provenance"
 N_PC = 8
 MIN_TRIALS_PER_OUTCOME = 8
 
 
 def _run_dataset(glob_pattern: str, load_field: str, outcome_field: str, low_val, high_val,
-                 name_prefix_len: int) -> dict:
+                 name_prefix_len: int, exclude_keys: frozenset[str] | set[str] = frozenset()) -> dict:
     per_session = {}
     for path in sorted(RESULTS.glob(glob_pattern)):
         key = path.stem[name_prefix_len:]
+        if key in exclude_keys:
+            per_session[key] = {
+                "outcome_test": None,
+                "exclusion_reason": "recording is also in the canonical dandi001187 release",
+            }
+            continue
         d = np.load(path, allow_pickle=True)
         if load_field not in d or outcome_field not in d:
             continue
@@ -63,8 +71,9 @@ def _run_dataset(glob_pattern: str, load_field: str, outcome_field: str, low_val
             "mean_confidence": np.nanmean(confidence, axis=0).tolist(),
             "outcome_test": test,
         }
-        if test and test["significant"]:
-            print(f"  {key}: {len(test['significant'])} significant cluster(s)")
+        if test and test["clusters"]:
+            print(f"  {key}: {len(test['clusters'])} cluster(s), "
+                  f"smallest cluster p={smallest_cluster_p_value(test):.4f}")
     return per_session
 
 
@@ -83,22 +92,24 @@ def main():
                          len("dandi001187_geometry_"))
     print("DANDI 000673...")
     d673 = _run_dataset("dandi000673_geometry_sub-*.npz", "loads", "response_accuracy", 1, 3,
-                        len("dandi000673_geometry_"))
+                        len("dandi000673_geometry_"),
+                        exclude_keys=linked_duplicate_000673_sessions(PROVENANCE))
 
     out = {"boran_ieeg": boran_ieeg, "boran_units": boran_units,
            "dandi000469": d469, "dandi001187": d1187, "dandi000673": d673}
 
     n_tests = sum(1 for ds in out.values() for v in ds.values() if v["outcome_test"] is not None)
-    n_sig = sum(1 for ds in out.values() for v in ds.values()
-               if v["outcome_test"] is not None and v["outcome_test"]["significant"])
-    print(f"\nTotal: {n_tests} session-level tests, {n_sig} with a significant cluster "
-          f"(chance expectation at alpha=0.05: {0.05 * n_tests:.1f})")
+    n_with_clusters = sum(1 for ds in out.values() for v in ds.values()
+                          if v["outcome_test"] is not None and v["outcome_test"]["clusters"])
+    print(f"\nTotal: {n_tests} session-level tests, {n_with_clusters} formed at least one cluster")
 
     with open(RESULTS / "context_confidence_timecourse.json", "w") as f:
         json.dump(out, f, indent=2)
 
     with locked_json_update(RESULTS / "all_statistics.json") as stats:
         stats["context_confidence_timecourse"] = out
+    write_code_identity_record(ROOT, Path(__file__), [
+        "results/context_confidence_timecourse.json", "results/all_statistics.json"])
     print("\nSaved results/context_confidence_timecourse.json, updated all_statistics.json")
 
 

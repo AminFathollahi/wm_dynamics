@@ -16,6 +16,7 @@ from statistics import (
     temporal_cluster_permutation,
     temporal_cluster_permutation_auroc,
     gated_outcome_cluster_test,
+    smallest_cluster_p_value,
     auroc,
     permutation_test_auroc,
     cohens_d,
@@ -204,14 +205,16 @@ class TestTemporalClusterPermutation:
 
 
 class TestTemporalClusterPermutationAuroc:
-    def test_finds_significant_cluster(self, rng):
+    def test_planted_window_gives_a_cluster_with_a_small_p_value(self, rng):
         N, T = 80, 50
         outcome = (rng.random(N) < 0.5).astype(int)
         scores = rng.standard_normal((N, T))
         scores[:, 15:35] += 2.0 * outcome[:, None]   # signal only in this window
         times = np.linspace(0, 1, T)
         result = temporal_cluster_permutation_auroc(scores, outcome, times, n_perm=300, rng=rng)
-        assert len(result["significant"]) > 0
+        assert min(c["p_value"] for c in result["clusters"]) < 0.05
+        assert "significant" not in result
+        assert result["cluster_forming_quantile"] == pytest.approx(0.95)
 
     def test_no_cluster_under_null(self, rng):
         N, T = 60, 40
@@ -219,8 +222,7 @@ class TestTemporalClusterPermutationAuroc:
         scores = rng.standard_normal((N, T))   # no relationship to outcome
         times = np.linspace(0, 1, T)
         result = temporal_cluster_permutation_auroc(scores, outcome, times, n_perm=300, rng=rng)
-        sig = result["significant"]
-        assert len(sig) == 0 or all(c["p_value"] > 0.001 for c in sig)
+        assert all(c["p_value"] > 0.001 for c in result["clusters"])
 
     def test_auc_stat_shape_and_range(self, rng):
         N, T = 50, 20
@@ -273,7 +275,9 @@ class TestGatedOutcomeClusterTest:
                                             rng=np.random.default_rng(0))
         assert result is not None
         assert result["n_trials"] == N
-        assert len(result["significant"]) > 0
+        assert min(c["p_value"] for c in result["clusters"]) < 0.05
+        assert "significant" not in result
+        assert 0.0 < result["auc_threshold"] <= 0.5
 
 
 class TestAUROC:
@@ -838,3 +842,9 @@ class TestPartialCorrelationPermutationTest:
         assert result["r"] > 0.5
         assert result["p_value"] < 0.05
         assert result["n_controls"] == 1
+
+
+def test_smallest_cluster_p_value_is_the_minimum_or_nan_without_clusters():
+    assert smallest_cluster_p_value({"clusters": [{"p_value": 0.2}, {"p_value": 0.03}]}) == 0.03
+    assert np.isnan(smallest_cluster_p_value({"clusters": []}))
+    assert np.isnan(smallest_cluster_p_value(None))

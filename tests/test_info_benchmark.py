@@ -799,3 +799,11 @@ def test_loader_exception_is_written_before_exit(monkeypatch, tmp_path):
     assert artifact["status"] == "failed"
     assert artifact["records"][0]["status"] == "source_failed"
     assert "Status: failed" in summary.read_text()
+
+
+def test_accelerator_identity_does_not_initialise_the_accelerator_in_the_calling_process():
+    import torch
+
+    identity = mod._accelerator_identity()
+    assert set(identity) == {"device", "cuda", "available", "name"}
+    assert not torch.cuda.is_initialized()

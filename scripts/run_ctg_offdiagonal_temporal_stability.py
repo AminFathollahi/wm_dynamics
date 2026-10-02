@@ -3,8 +3,8 @@
 generalisation matrix -- previously unread by any analysis in this project,
 which consumed only the diagonal -- and asks whether a decoder fit at one
 timepoint within its matrix's own epoch generalises to other timepoints in
-that same epoch, gated on that epoch's diagonal being itself decodable so a
-weak-decodability epoch cannot be misread as a rotating one.
+that same epoch, reported beside that epoch's own diagonal decodability so a
+weak-decodability epoch is not read as a rotating one.
 
 No on-disk matrix in this project trains at an encoding-epoch timepoint and
 tests at a maintenance-epoch timepoint (or vice versa) in the same matrix:
@@ -39,7 +39,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from geometry import temporal_stability_tau  # noqa: E402
 from statistics import Z_80_POWER, fdr_bh, stable_seed  # noqa: E402
-from provenance import _json_safe  # noqa: E402
+from provenance import _json_safe, code_identity  # noqa: E402
 from subject_independence import count_independent_groups, resolve_group  # noqa: E402
 
 RESULTS = ROOT / "results"
@@ -160,38 +160,21 @@ def _independent_group_summary(primary: dict) -> list:
     summary = []
     for group, spec in INDEPENDENT_PATIENT_GROUPS.items():
         cells = spec["cells"]
-        verdicts = {c: primary[c]["verdict"] for c in cells}
-        if len(cells) == 1:
-            note = f"only view of this group, verdict {verdicts[cells[0]]}"
-        elif all(v == "clear_stable" for v in verdicts.values()):
-            note = "both views clear"
-        elif not any(v == "clear_stable" for v in verdicts.values()):
-            note = "neither view clears"
-        else:
-            clearing = [c for c, v in verdicts.items() if v == "clear_stable"]
-            gated = [c for c, v in verdicts.items() if v != "clear_stable"]
-            note = (
-                f"one view clears ({', '.join(clearing)}) and the other "
-                f"view of the same patients ({', '.join(gated)}) gates "
-                "inconclusive on its own diagonal decodability; different "
-                "recording views of the same patients disagreeing is not "
-                "a contradiction, the diagonal gate is measuring exactly "
-                "that decodability difference"
-            )
-            if group == "dandi000673_dandi001187":
-                note += (
-                    ". This project's canonical view of these patients is "
-                    "dandi001187, which is the view that gates "
-                    "inconclusive here; this tension between the clearing "
-                    "view and the canonical view is recorded, not "
-                    "resolved, and is left for a human to adjudicate"
-                )
-        summary.append({
-            "group": group,
-            "cells": cells,
-            "verdicts": verdicts,
-            "note": note,
-        })
+        readings = {c: primary[c].get("reading") for c in cells}
+        entry = {"group": group, "cells": cells, "readings": readings}
+        computed = [c for c in cells if readings[c] is not None]
+        if len(computed) == 2:
+            first, second = computed
+            entry["offdiag_effect_difference_between_views"] = {
+                "first_view": first,
+                "second_view": second,
+                "first_minus_second": (
+                    readings[first]["offdiag_effect"] - readings[second]["offdiag_effect"]
+                ),
+            }
+        if group == "dandi000673_dandi001187":
+            entry["canonical_view"] = "dandi001187"
+        summary.append(entry)
     return summary
 
 
@@ -268,19 +251,11 @@ def _window_analysis(pattern: str, field: str, seed_key: str) -> dict:
         **boot,
         "mean_diag_auc": mean_diag_auc,
         "mean_tau": float(np.nanmean(tau_vals)),
-        "diag_interpretable": bool(mean_diag_auc >= DIAG_INTERPRETABLE_MIN),
-        "diagonal_below_chance": bool(mean_diag_auc < 0.5),
+        "diagonal_auc_reference": DIAG_INTERPRETABLE_MIN,
+        "diagonal_auc_minus_reference": mean_diag_auc - DIAG_INTERPRETABLE_MIN,
+        "diagonal_auc_minus_chance": mean_diag_auc - 0.5,
     })
     return result
-
-
-def _verdict(stats: dict) -> str:
-    if stats.get("status") != "computed":
-        return "infeasible"
-    if not stats["diag_interpretable"]:
-        return "inconclusive_undecodable_diagonal"
-    clears = stats.get("q_value_fdr", 1.0) < 0.05 and stats["ci95_lower"] > 0.0
-    return "clear_stable" if clears else "inconclusive"
 
 
 def _reading(stats: dict) -> dict:
@@ -288,8 +263,11 @@ def _reading(stats: dict) -> dict:
         "offdiag_effect": stats["mean_offdiag_effect"],
         "ci95_lower": stats["ci95_lower"],
         "ci95_upper": stats["ci95_upper"],
+        "p_value_bootstrap": stats["p_value_bootstrap"],
         "q_value_fdr": stats["q_value_fdr"],
+        "mdd": stats["mdd"],
         "mean_diag_auc": stats["mean_diag_auc"],
+        "diagonal_auc_minus_reference": stats["diagonal_auc_minus_reference"],
         "n_subjects": stats["n_subjects"],
     }
 
@@ -303,11 +281,7 @@ def _apply_fdr(cells: dict) -> None:
     for k, q in zip(keys, fdr["q_values"]):
         cells[k]["stats"]["q_value_fdr"] = float(q)
     for k in keys:
-        cells[k]["verdict"] = _verdict(cells[k]["stats"])
         cells[k]["reading"] = _reading(cells[k]["stats"])
-    for k, v in cells.items():
-        if k not in keys:
-            v["verdict"] = _verdict(v["stats"])
 
 
 def main():
@@ -338,21 +312,15 @@ def main():
     _apply_fdr(primary)
     _apply_fdr(secondary)
 
-    n_clear = sum(1 for v in primary.values() if v["verdict"] == "clear_stable")
-    n_inconclusive = sum(1 for v in primary.values() if v["verdict"].startswith("inconclusive"))
-    n_infeasible = sum(1 for v in primary.values() if v["verdict"] == "infeasible")
-    cells_offdiag_interval_excludes_zero = sorted(
-        corpus for corpus, entry in primary.items()
-        if entry["stats"]["status"] == "computed"
-        and (entry["stats"]["ci95_lower"] > 0.0 or entry["stats"]["ci95_upper"] < 0.0)
-    )
+    n_computed = sum(1 for v in primary.values() if v["stats"]["status"] == "computed")
+    n_infeasible = len(primary) - n_computed
 
     out = {
         "description": (
             "Cluster-bootstrap and FDR analysis of off-diagonal cells in "
             "every results/*_ctg_*.npz cross-temporal generalisation matrix "
             "in this project. Statistic is offdiag(AUC-0.5) minus zero, "
-            "gated on the same matrix's diagonal decodability via "
+            "reported beside the same matrix's diagonal decodability from "
             "temporal_stability_tau (src/geometry.py); resampling unit is "
             "the subject. No matrix in this project spans an encoding-to-"
             "maintenance boundary -- see window_description per corpus and "
@@ -381,24 +349,21 @@ def main():
         ),
         "predeclared_rules": {
             "statistic": "offdiag(AUC-0.5), mean over off-diagonal cells of temporal_stability_tau(auc_mat)",
-            "decodability_gate": f"corpus-mean diagonal AUC must be >= {DIAG_INTERPRETABLE_MIN} for the corpus cell to be interpretable at all; below that, verdict is inconclusive_undecodable_diagonal regardless of the off-diagonal value",
-            "stability_criterion": "clear_stable requires FDR q < 0.05 AND the 95% cluster-bootstrap CI on mean offdiag(AUC-0.5) excludes zero, both required",
+            "reported_per_cell": "mean off-diagonal effect, 95% cluster-bootstrap interval, bootstrap p, FDR q, minimum detectable difference, corpus-mean diagonal AUC and its difference from diagonal_auc_reference, number of subjects",
+            "diagonal_auc_reference": f"{DIAG_INTERPRETABLE_MIN}, the default min_diag_auc of temporal_stability_tau in src/geometry.py, an internal comparison reference; no cell is excluded or labelled by it",
             "resampling_unit": "subject (sessions of the same subject averaged first, never resampled independently)",
             "multiple_comparison_family": "two families, FDR-corrected separately: primary (one cell per corpus, six corpora) and secondary (control-window cells: encoding/baseline/transient, four cells)",
             "power_z_80pct": Z_80_POWER,
             "mdd_formula": "z_80pct * sd(subject-level offdiag effects, ddof=1) / sqrt(n_subjects)",
-            "non_clearing_cells": "reported as inconclusive, never as a null -- there is no named reference on the AUC-0.5 scale on this project against which a minimum detectable difference could be judged small",
-            "rotation_claims": "this analysis never asserts rotation was detected or refuted; a non-clearing cell says the data do not distinguish stability from rotation, nothing more",
+            "rotation_claims": "this analysis reports the off-diagonal estimate with its interval and minimum detectable difference; it makes no statement about rotation",
         },
         "primary": primary,
         "secondary_controls": secondary,
-        "n_clear_stable_primary_cells": n_clear,
-        "cells_with_offdiag_interval_excluding_zero": cells_offdiag_interval_excludes_zero,
-        "n_inconclusive_primary_cells": n_inconclusive,
+        "n_computed_primary_cells": n_computed,
         "n_infeasible_primary_cells": n_infeasible,
         "primary_cell_counts_note": (
-            "n_clear_stable_primary_cells/n_inconclusive_primary_cells/"
-            "n_infeasible_primary_cells above count the six primary cells, "
+            "n_computed_primary_cells/n_infeasible_primary_cells above "
+            "count the six primary cells, "
             "not independent patient groups -- boran/dandi000574_units are "
             "two views of the same DANDI 000574 patients and "
             "dandi000673/dandi001187 are two views of the same shared "
@@ -411,19 +376,20 @@ def main():
     }
 
     with open(RESULTS / "ctg_offdiagonal_temporal_stability.json", "w") as f:
-        json.dump(_json_safe(out), f, indent=2, allow_nan=False)
+        json.dump(_json_safe({**out, "code_identity": code_identity(ROOT, Path(__file__))}),
+                  f, indent=2, allow_nan=False)
 
-    print(f"clear_stable={n_clear} inconclusive={n_inconclusive} infeasible={n_infeasible}")
+    print(f"computed={n_computed} infeasible={n_infeasible}")
     for corpus, entry in primary.items():
         s = entry["stats"]
         if s["status"] == "computed":
             print(f"  {corpus}: offdiag={s['mean_offdiag_effect']:.4f} "
                   f"ci=[{s['ci95_lower']:.4f},{s['ci95_upper']:.4f}] "
-                  f"q={s.get('q_value_fdr', float('nan')):.4f} "
-                  f"mdd={s['mdd']:.4f} n_subj={s['n_subjects']} "
-                  f"verdict={entry['verdict']}")
+                  f"p={s['p_value_bootstrap']:.4f} q={s['q_value_fdr']:.4f} "
+                  f"mdd={s['mdd']:.4f} diag_auc={s['mean_diag_auc']:.4f} "
+                  f"n_subj={s['n_subjects']}")
         else:
-            print(f"  {corpus}: {entry['verdict']} (n_files={s['n_files']})")
+            print(f"  {corpus}: infeasible (n_files={s['n_files']})")
 
 
 if __name__ == "__main__":

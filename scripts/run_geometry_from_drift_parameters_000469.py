@@ -55,6 +55,14 @@ def calibration(rows: list[dict[str, float]], rng: np.random.Generator) -> dict[
     }
 
 
+def _diagonal_auc_reaches_reference(content_ctg: dict[str, Any]) -> bool:
+    reference = content_ctg.get("diagonal_auc_reference")
+    diagonal = content_ctg.get("mean_diag_auc")
+    if reference is None or diagonal is None:
+        return bool(content_ctg.get("interpretable", False))
+    return bool(diagonal >= reference)
+
+
 def main() -> None:
     hierarchy = json.loads((ROOT / "results" / "hierarchical_confinement_000469.json").read_text())
     drift = json.loads((ROOT / "results" / "human_drift_spine_000469.json").read_text())
@@ -88,7 +96,7 @@ def main() -> None:
         content_ctg = measured.get("content_ctg", {})
         observed_tau = (
             float(content_ctg["tau"])
-            if content_ctg.get("interpretable") and content_ctg.get("tau") is not None else None
+            if _diagonal_auc_reaches_reference(content_ctg) and content_ctg.get("tau") is not None else None
         )
         if observed_tau is not None:
             ctg_rows.append({"patient": patient, "predicted": predicted_tau, "observed": observed_tau})
@@ -118,7 +126,7 @@ def main() -> None:
             "mean_fold_diffusion": diffusion,
             "predicted_ctg_timescale_seconds": predicted_tau,
             "observed_content_ctg_timescale_seconds": observed_tau,
-            "content_ctg_measurement_interpretable": bool(content_ctg.get("interpretable", False)),
+            "content_ctg_measurement_interpretable": _diagonal_auc_reaches_reference(content_ctg),
             "observed_crossnobis_timescale_seconds": observed_crossnobis_tau,
             "crossnobis_measurement_interpretable": observed_crossnobis_tau is not None,
             "predicted_stationary_variance": predicted_stationary_variance,

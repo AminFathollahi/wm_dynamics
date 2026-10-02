@@ -517,8 +517,11 @@ def temporal_cluster_permutation_auroc(
 
     Returns
     -------
-    dict: auc_stat (T,) AUC-0.5 at each timepoint, clusters, significant,
-          times, auc_threshold (the data-driven cluster-forming threshold)
+    dict: auc_stat (T,) AUC-0.5 at each timepoint, clusters (each with start_s,
+          end_s, cluster_stat, sign and its max-cluster permutation p_value),
+          times, auc_threshold (the data-driven cluster-forming threshold) and
+          cluster_forming_quantile (the quantile of the permutation |AUC-0.5|
+          distribution that auc_threshold is)
     """
     if rng is None:
         rng = np.random.default_rng(0)
@@ -565,9 +568,11 @@ def temporal_cluster_permutation_auroc(
         for p in range(n_perm)
     ])
 
+    cluster_forming_quantile = 1 - alpha_threshold
     if not obs_clusters:
-        return {"auc_stat": auc_obs, "clusters": [], "significant": [], "times": times,
-                "auc_threshold": auc_threshold}
+        return {"auc_stat": auc_obs, "clusters": [], "times": times,
+                "auc_threshold": auc_threshold,
+                "cluster_forming_quantile": cluster_forming_quantile}
 
     results_clusters = []
     for s, e, sign in obs_clusters:
@@ -580,10 +585,9 @@ def temporal_cluster_permutation_auroc(
             "p_value": p_value,
         })
 
-    significant = [c for c in results_clusters if c["p_value"] < alpha_threshold]
-
-    return {"auc_stat": auc_obs, "clusters": results_clusters, "significant": significant,
-            "times": times, "auc_threshold": auc_threshold}
+    return {"auc_stat": auc_obs, "clusters": results_clusters, "times": times,
+            "auc_threshold": auc_threshold,
+            "cluster_forming_quantile": cluster_forming_quantile}
 
 
 def gated_outcome_cluster_test(
@@ -609,7 +613,7 @@ def gated_outcome_cluster_test(
     Returns
     -------
     dict (see temporal_cluster_permutation_auroc) with a JSON-serializable
-    "clusters"/"significant" payload, or None if underpowered.
+    "clusters" payload and n_trials, or None if underpowered.
     """
     valid = np.all(np.isfinite(confidence), axis=1)
     outcome_valid = np.asarray(outcome)[valid].astype(int)
@@ -620,7 +624,16 @@ def gated_outcome_cluster_test(
     res = temporal_cluster_permutation_auroc(confidence[valid], outcome_valid, times,
                                              n_perm=n_perm, rng=rng)
     return {"auc_stat": res["auc_stat"].tolist(), "clusters": res["clusters"],
-            "significant": res["significant"], "n_trials": int(valid.sum())}
+            "auc_threshold": res["auc_threshold"],
+            "cluster_forming_quantile": res["cluster_forming_quantile"],
+            "n_trials": int(valid.sum())}
+
+
+def smallest_cluster_p_value(test: dict | None) -> float:
+    """Smallest permutation p-value among a cluster test's clusters; NaN when none formed."""
+    if not test or not test["clusters"]:
+        return float("nan")
+    return float(min(c["p_value"] for c in test["clusters"]))
 
 
 # ── AUROC and decoding accuracy ────────────────────────────────────────────────

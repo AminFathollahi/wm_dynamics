@@ -602,6 +602,59 @@ def maintenance_eigenspectra(
     return {"evals_by_condition": evals_by_cond, "stability_by_condition": stab_by_cond}
 
 
+def pooled_nback_dynamics(
+    geometry_by_subject: dict[str, dict],
+    dt: float,
+    maint_window: tuple[float, float] = (0.3, 1.4),
+    dmd_rank: int = 6,
+    tangling_epsilon: float = 1e-3,
+) -> dict:
+    """Trajectory tangling and DMD eigenvalues of 2-back target / non-target trials, pooled over subjects.
+
+    Parameters
+    ----------
+    geometry_by_subject : {subject: dict with Z (N, T, d), task_id, tgt_id, times}
+    dt                  : seconds per sample
+
+    Returns
+    -------
+    dict with Q_tgt_pool, Q_ntgt_pool (float32, trials x common time length) and
+    evals_tgt, evals_ntgt (trials x dmd_rank, complex); keys are omitted when a
+    condition has no usable trials in any subject.
+    """
+    q_tgt, q_ntgt, evals_tgt, evals_ntgt = [], [], [], []
+    for geo in geometry_by_subject.values():
+        Z, task_id, tgt_id = geo["Z"], geo["task_id"], geo["tgt_id"]
+        mask_tgt = (task_id == 2) & (tgt_id == 2)
+        mask_ntgt = (task_id == 2) & (tgt_id == 1)
+
+        Q_trials = trial_tangling(Z, epsilon=tangling_epsilon, dt=dt)
+        if mask_tgt.sum() > 3:
+            q_tgt.append(Q_trials[mask_tgt])
+        if mask_ntgt.sum() > 3:
+            q_ntgt.append(Q_trials[mask_ntgt])
+
+        conditions = {"2back_target": mask_tgt, "2back_nontarget": mask_ntgt, "0back": task_id == 0}
+        evals = maintenance_eigenspectra(
+            Z, geo["times"], conditions, maint_window=maint_window, r=dmd_rank, dt=dt
+        )["evals_by_condition"]
+        if "2back_target" in evals:
+            evals_tgt.append(evals["2back_target"])
+        if "2back_nontarget" in evals:
+            evals_ntgt.append(evals["2back_nontarget"])
+
+    arrays = {}
+    if q_tgt and q_ntgt:
+        Q_tgt, Q_ntgt = np.vstack(q_tgt), np.vstack(q_ntgt)
+        n_times = min(Q_tgt.shape[1], Q_ntgt.shape[1])
+        arrays["Q_tgt_pool"] = Q_tgt[:, :n_times].astype(np.float32)
+        arrays["Q_ntgt_pool"] = Q_ntgt[:, :n_times].astype(np.float32)
+    if evals_tgt and evals_ntgt:
+        arrays["evals_tgt"] = np.vstack(evals_tgt)
+        arrays["evals_ntgt"] = np.vstack(evals_ntgt)
+    return arrays
+
+
 # ── Extended dynamical analyses ────────────────────────────────────────────────
 
 def velocity_autocorrelation(
