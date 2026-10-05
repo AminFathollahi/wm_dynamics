@@ -1,0 +1,20 @@
+{
+  "code_commit": "53ae6734ea447e00044decbd8e298680cd9b7956",
+  "imported_module_hashes": {
+    "src/causal.py": "038ded70fe57888e56fcf319e411462e24fcabe440d1cfce9bf85d0c015502da",
+    "src/geometry.py": "0b2d29ee7dc632bdf3e882e06ed35fde4362b18741ce437ba1576da52b07707d",
+    "src/project_config.py": "257e9976551c27ca22ca6cd3667c6eea51dd1f9dc0d2d84ccb18b4e18d35589d",
+    "src/provenance.py": "829085ad5dc7cf070827ff22b7504672287cabc9b290b87b28ef9d496b2b25e1",
+    "src/spike_pipeline.py": "b7daefee238706aabf9c618b429e9733505047f7c72d802014ab5c2727c52a2e",
+    "src/statistics.py": "90393ef68b8a42659bd1735f6f297a226e5e81087764626d4ea27a9be96e19d4"
+  },
+  "outputs": [
+    "results/all_statistics.json",
+    "results/dandi000469_ctg_*.npz",
+    "results/dandi000469_geometry_*.npz",
+    "results/dandi000469_summary.json",
+    "results/rutishauser_000469_content_context.json"
+  ],
+  "producer": "scripts/run_000469_pipeline.py",
+  "source_hash": "c96341d81ed8f4552130b80fbc6a4931b6303256c59490bc0c5c575e76341b61"
+}

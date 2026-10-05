@@ -41,7 +41,7 @@ from run_info_benchmark import block_identity, evaluate_block, implementation_id
 from info_decoding import render_summary
 from info_decoding import score_null_draw, score_observed, summarize_scores
 from info_decoding import CANDIDATES as NATIVE_CANDIDATES, DECODERS, atomic_write, fold_signature, _seeded_folds
-from provenance import canonical_json, git_commit  # noqa: E402
+from provenance import canonical_json, git_commit, sha256_file  # noqa: E402
 from statistics import (  # noqa: E402
     bootstrap_ci, minimum_detectable_paired_difference, paired_sign_flip_test, stable_seed,
 )
@@ -52,8 +52,9 @@ from project_config import data_root, executable
 from run_human_drift_spine_001187_000673 import canonical_sessions
 from corpus_sessions import _trial_group
 from run_region_resolved_rate_stability_behaviour import CORPUS_SPECS as REGION_CORPUS_SPECS  # noqa: E402
-from run_selective_persistence_and_attractor_geometry import _canonical_patient, _dpca_ridge_axes, _fit_axes_arm_a
-from info_decoding import CATEGORIES_100_DIVIDED, CATEGORIES_469, DPCA_RIDGE_LAMBDA_GRID, N_CV_FOLDS_LAMBDA, _category_469, _category_divided
+from run_selective_persistence_and_attractor_geometry import _canonical_patient
+from info_decoding import CATEGORIES_100_DIVIDED, CATEGORIES_469, _category_469, _category_divided
+from memorandum_decoding import fit_demixed_axes
 from info_decoding import anscombe_counts
 from info_decoding import OPERATING_RANK
 from spike_pipeline import BIN_MS
@@ -72,6 +73,7 @@ NEURAL_DATA_TRANSFORMER_CANDIDATE = "neural_data_transformer"
 NEW_MODEL_CANDIDATES = (RECURRENT_SWITCHING_CANDIDATE, NEURAL_DATA_TRANSFORMER_CANDIDATE)
 CANDIDATES = tuple(NATIVE_CANDIDATES) + (DEMIXED_CANDIDATE,) + NEW_MODEL_CANDIDATES
 REFERENCE_CANDIDATES = ("principal_components", DEMIXED_CANDIDATE)
+DEMIXED_AXES_SOURCES = (Path(__file__), ROOT / "src" / "memorandum_decoding.py")
 LEVELS = (("load1_maintenance", 1), ("load3_first_item_maintenance", 3))
 
 SSM_WORKER_PYTHON = executable("ssm_python")
@@ -235,13 +237,11 @@ def fit_demixed_principal_components(
             return {"status": "failed_to_train", "reason": "fewer than two classes in training fold"}
         train_t = anscombe_counts(train_activity)
         test_t = anscombe_counts(test_activity)
-        fit = _fit_axes_arm_a(
-            train_t, train_labels, rng, rank, grid=DPCA_RIDGE_LAMBDA_GRID, fit_fn=_dpca_ridge_axes
-        )
-        axes = fit["V"]
+        fit = fit_demixed_axes(train_t, train_labels, rng, rank)
+        axes = fit["decoder"]
         k_used = int(axes.shape[1])
         if k_used < 1:
-            return {"status": "failed_to_train", "reason": "no ridge dpca axes recovered"}
+            return {"status": "failed_to_train", "reason": "no demixed axes recovered"}
         mu = train_t.reshape(-1, train_t.shape[-1]).mean(axis=0)
         latent_train = (train_t - mu) @ axes
         latent_test = (test_t - mu) @ axes
@@ -252,6 +252,7 @@ def fit_demixed_principal_components(
     return {
         "status": "fitted", "candidate": DEMIXED_CANDIDATE, "k_used": k_used,
         "latent_train": latent_train, "latent_test": latent_test,
+        "decoder_axes": axes, "encoder_axes": fit["encoder"],
     }
 
 
@@ -269,7 +270,8 @@ def evaluate_demixed_block(
             "candidate": DEMIXED_CANDIDATE, "reason": "fewer than two trials in one or more classes",
         }]
 
-    identity = block_identity(activity, labels, folds, implementation)
+    identity = {**block_identity(activity, labels, folds, implementation),
+                "demixed_axes_sources": {path.name: sha256_file(path) for path in DEMIXED_AXES_SOURCES}}
     identity_key = hashlib.sha256(canonical_json(identity).encode()).hexdigest()[:16]
     base = (
         f"{seed_tag}|{corpus}|{session}|{level}|{DEMIXED_CANDIDATE}|rank{OPERATING_RANK}"
@@ -379,7 +381,7 @@ def evaluate_demixed_block(
             "n_trials": int(len(labels)),
             "n_time_bins": int(np.asarray(fits[0]["latent_train"])[:, ::time_step].shape[1]),
             "n_features": int(np.asarray(fits[0]["latent_train"]).shape[2]), "k_used": int(fits[0]["k_used"]),
-            "n_splits": int(len(folds)), "fit_checkpoint_hits": int(sum(fit_hits)),
+            "operating_rank": OPERATING_RANK, "n_splits": int(len(folds)), "fit_checkpoint_hits": int(sum(fit_hits)),
             "observed_checkpoint_hit": observed_hit, "null_checkpoint_hits": null_hits, "seed": seed,
         }
         records.append(record)

@@ -10,6 +10,7 @@ Run:
 """
 from __future__ import annotations
 
+import argparse
 import sys
 import json
 from pathlib import Path
@@ -41,12 +42,20 @@ from io_utils import locked_json_update  # noqa: E402
 from response_latency import response_probe_latency_field, response_time_field  # noqa: E402
 from run_region_resolved_rate_stability_behaviour import CORPUS_SPECS as REGION_CORPUS_SPECS
 from statistics import _trial_population_spike_count
-from info_decoding import CATEGORIES_100_DIVIDED, CATEGORIES_469, DPCA_RIDGE_LAMBDA_GRID, N_CV_FOLDS_LAMBDA, _category_469, _category_divided  # noqa: E402
+from info_decoding import (  # noqa: E402
+    CATEGORIES_100_DIVIDED, CATEGORIES_469, DPCA_RIDGE_LAMBDA_GRID, N_CV_FOLDS_LAMBDA, _category_469, _category_divided,
+    anscombe_counts,
+)
+from memorandum_decoding import (  # noqa: E402
+    fit_demixed_axes, held_out_reconstruction_error, marginal_reconstruction_error, mean_finite_score,
+    memorandum_ridge_axes, subspace_overlap,
+)
 
 CANONICAL_PATIENT_BY_PATH = canonical_patient_by_relative_path(ROOT / "provenance")
 
 RESULTS = ROOT / "results"
 CHECKPOINT_DIR = RESULTS / ".checkpoints" / "run_selective_persistence_and_attractor_geometry"
+OUTPUT_PATH = RESULTS / "selective_persistence_and_attractor_geometry.json"
 
 CATEGORY_NEURON_WINDOW_OFFSET_S = 0.2
 CATEGORY_NEURON_WINDOW_DURATION_S = 1.0
@@ -60,41 +69,11 @@ OUTLIER_FIRING_RATE_SD_THRESHOLD = 3.0
 
 MIN_TRIALS_PER_CATEGORY_FOR_DA = 5
 MIN_CATEGORIES_FOR_DA = 3
-DA_SCHEMA_VERSION = 3
+DA_SCHEMA_VERSION = 4
 PART1_SCHEMA_VERSION = 4
-PSEUDOPOP_SCHEMA_VERSION = 9
+PSEUDOPOP_SCHEMA_VERSION = 10
 N_TRIAL_SPLIT_REPEATS = 5
 MIN_CORRECT_TRIALS_PER_NEURON_TRIAL_SPLIT_TEST = 2
-LAMBDA_SWEEP_FLAT_RELATIVE_RANGE_THRESHOLD = 0.15
-LAMBDA_SWEEP_MACHINE_EPSILON_RELATIVE_RANGE = 1e-6
-DPCA_RIDGE_AXES_OVERLAP_FLOOR_MARGIN = 1e-6
-MARGINALIZATION_ARM_NOT_PUBLISHED_METHOD_NOTE = (
-    "the marginalization-based arm below (arm_a/arm_b, and the per-session arm_a_lambda/arm_b_lambda "
-    "cells) is NOT the published study's demixed principal component analysis method and its shrinkage "
-    "parameter has no effect on its axes by construction -- see shrinkage_axes_isotropic_invariance_note. "
-    "dpca_ridge_arm_a/dpca_ridge_arm_b below implement the actual published method, a ridge-regularised "
-    "reduced-rank regression fit against the time-resolved category-by-time marginal; whether its "
-    "regularisation parameter moves its axes on data of this shape is measured, not assumed -- see "
-    "dpca_ridge_axes_lambda_dependence_check and dpca_ridge_time_resolved_near_invariance_note."
-)
-SHRINKAGE_AXES_ISOTROPIC_INVARIANCE_NOTE = (
-    "_shrinkage_axes shrinks the category marginal's covariance M toward an isotropic target, scale * "
-    "identity. For any symmetric M and any positive scalar a, the matrix a*M + b*identity has exactly "
-    "the same eigenvectors as M -- only its eigenvalues shift, by the same additive constant b, which "
-    "preserves their ranking whenever a > 0. Here a = (1 - lambda) and b = lambda * scale, so for every "
-    "lambda in SHRINKAGE_GRID (all strictly below 1.0) the shrunk matrix has the identical eigenvectors "
-    "as the unshrunk category marginal, in the identical order -- the selected axes cannot depend on "
-    "lambda by construction, only at the unreached lambda=1.0 boundary would the target become a bare "
-    "scalar multiple of identity with no preferred eigenvectors. This was verified directly: on real "
-    "pooled data the held-out reconstruction error's relative range across the grid was of order 1e-16, "
-    "floating-point noise on an exactly constant quantity, not a small but genuine data-driven effect. "
-    "The lambda a cross-validated selection lands on is therefore not a selection at all under this "
-    "construction; it is an arbitrary pick among numerically-tied floats, which is the mechanism behind "
-    "the flat sweep below. This same _shrinkage_axes function is also what the untouched per-session arms "
-    "(arm_a_lambda/arm_b_lambda on part1/part2 cells) select with, so the identical mathematical fact "
-    "applies there too; per-session output is left exactly as it was and this note does not change it."
-)
-
 AXIS_FIT_WINDOW_OFFSET_S = CATEGORY_NEURON_WINDOW_OFFSET_S
 AXIS_FIT_WINDOW_DURATION_S = CATEGORY_NEURON_WINDOW_DURATION_S
 SLIDING_WINDOW_DURATION_S = 0.2
@@ -109,8 +88,6 @@ SLIDING_WINDOW_STEP_REASON = (
     "rather than silently substituted."
 )
 CATEGORY_SUBSPACE_DIMENSIONALITY = 4
-SHRINKAGE_GRID = (0.0, 0.25, 0.5, 0.75, 0.9)
-N_CV_FOLDS_LAMBDA_NESTED_OUTER = 3
 
 N_PSEUDO_TRIALS_PER_CATEGORY = 20
 MIN_TRIALS_PER_CATEGORY_PSEUDOPOP = MIN_TRIALS_PER_CATEGORY_FOR_DA
@@ -331,206 +308,18 @@ def _sliding_window_rate(spike_lists: list, onsets: np.ndarray, step_s: float, w
     return uniform_filter1d(fine, size=n_window_bins, axis=2, mode="nearest")
 
 
-def _category_marginal(Z: np.ndarray, category: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    cats = np.unique(category)
-    means = np.stack([Z[category == c].mean(axis=0) for c in cats], axis=0)
-    return cats, means - means.mean(axis=0)
+def _window_counts(rate_hz: np.ndarray, window_s: float) -> np.ndarray:
+    return anscombe_counts(rate_hz * window_s)
 
 
-def _shrinkage_axes(marginal: np.ndarray, lam: float, d: int) -> tuple[np.ndarray, np.ndarray]:
-    k = marginal.shape[1]
-    M = marginal.T @ marginal
-    scale = np.trace(M) / k if k else 0.0
-    M_shrunk = (1.0 - lam) * M + lam * scale * np.eye(k)
-    eigvals, eigvecs = np.linalg.eigh(M_shrunk)
-    order = np.argsort(eigvals)[::-1]
-    d = min(d, k)
-    return eigvecs[:, order[:d]], M
-
-
-def _variance_captured(V: np.ndarray, M_unshrunk: np.ndarray) -> float:
-    total = float(np.trace(M_unshrunk))
-    if total <= 0.0:
-        return float("nan")
-    return float(np.trace(V.T @ M_unshrunk @ V) / total)
-
-
-def _dpca_axes_marginalization(Z: np.ndarray, category: np.ndarray, lam: float, d: int
-                                ) -> tuple[np.ndarray, np.ndarray]:
-    _, marginal = _category_marginal(Z, category)
-    return _shrinkage_axes(marginal, lam, d)
-
-
-def _category_time_marginal_targets(Z_time: np.ndarray, category: np.ndarray
-                                     ) -> tuple[np.ndarray, np.ndarray]:
-    n_trials, T, k = Z_time.shape
-    cats = np.unique(category)
-    time_marginal = _category_time_marginal(Z_time, category)  # (n_cats*T, k)
-    marginal_by_cat = time_marginal.reshape(len(cats), T, k)
-    lookup = {int(c): marginal_by_cat[i] for i, c in enumerate(cats)}
-    Y = np.concatenate([lookup[int(c)] for c in category], axis=0)  # (n_trials*T, k), trial-major
-    return time_marginal, Y
-
-
-def _dpca_ridge_axes(Z: np.ndarray, category: np.ndarray, lam: float, d: int) -> tuple[np.ndarray, np.ndarray]:
-    """Standard demixed principal component analysis (doi 10.7554/eLife.10989), reduced-rank ridge
-    regression formulation: fit encoder/decoder pair (E, D) minimising ||Y - X @ E @ D.T||^2 with a ridge
-    penalty on the encoding step, X = per-(trial, timepoint) full population activity, Y = the matching
-    category-by-time marginal target (category means as a function of time, via _category_time_marginal,
-    reused rather than the time-collapsed per-category mean) -- carrying time structure the way the
-    published study's own 200ms sliding-window binning does. D (returned here as the axes) is the top-d
-    eigenvectors of the second moment of the ridge-regularised regression's fitted values, B.T @ Sxx @ B
-    where B = (Sxx + lambda*I)^-1 @ Sxy -- the classic reduced-rank-ridge-regression solution. Z may be 2D (n_trials, k), treated as a single timepoint (T=1), in which case the target
-    collapses exactly to the time-collapsed per-category mean -- this is what every lambda-selection call
-    site below still passes, so selecting lambda by held-out reconstruction stays on the cheaper
-    single-timepoint pseudo-trial construction while the axes actually reported are fit on the full
-    time-resolved trajectory (3D Z). Unlike the isotropic-shrinkage marginalization arm, lambda sits inside
-    a matrix inverse that multiplies Sxx from a different side than it appears in B.T @ Sxx @ B, so it can
-    genuinely rotate the eigenvectors of that product, not merely rescale its eigenvalues -- whether it
-    actually does so on data of this shape is measured, not assumed, by
-    dpca_ridge_axes_lambda_dependence_check.
-    """
-    Z_time = Z if Z.ndim == 3 else Z[:, None, :]
-    n_trials, T, k = Z_time.shape
-    d = min(d, k)
-    cats = np.unique(category)
-    if len(cats) < 2:
-        return np.zeros((k, d)), np.zeros((k, k))
-    time_marginal, Y = _category_time_marginal_targets(Z_time, category)
-    M = time_marginal.T @ time_marginal
-    X = Z_time.reshape(n_trials * T, k)
-    Sxx = X.T @ X
-    Sxy = X.T @ Y
-    scale = np.trace(Sxx) / k if k else 0.0
-    ridge = lam * scale
-    try:
-        B = np.linalg.solve(Sxx + ridge * np.eye(k), Sxy)
-    except np.linalg.LinAlgError:
-        B = np.linalg.pinv(Sxx + ridge * np.eye(k)) @ Sxy
-    M_fit = B.T @ Sxx @ B
-    M_fit = (M_fit + M_fit.T) / 2.0
-    eigvals, eigvecs = np.linalg.eigh(M_fit)
-    order = np.argsort(eigvals)[::-1]
-    D = eigvecs[:, order[:d]]
-    return D, M
-
-
-def _subspace_overlap(V1: np.ndarray, V2: np.ndarray) -> float:
-    d = V1.shape[1]
-    if d == 0:
-        return float("nan")
-    return float(np.trace(V1 @ V1.T @ V2 @ V2.T) / d)
-
-
-def _dpca_axes_overlap_across_grid(Z: np.ndarray, category: np.ndarray, grid: tuple, d: int, fit_fn) -> dict:
-    axes = {lam: fit_fn(Z, category, lam, d)[0] for lam in grid}
-    v0 = axes[grid[0]]
-    per_grid_point_overlap_vs_first = {str(lam): _subspace_overlap(v0, axes[lam]) for lam in grid}
-    return {
-        "grid": list(grid),
-        "min_lambda_vs_max_lambda_overlap": _subspace_overlap(axes[grid[0]], axes[grid[-1]]),
-        "per_grid_point_overlap_vs_smallest_lambda": per_grid_point_overlap_vs_first,
-    }
-
-
-def _verify_dpca_ridge_lambda_changes_axes() -> dict:
-    rng = np.random.default_rng(2026)
-    n_per_cat, n_cat, k, rank = 40, 5, 8, CATEGORY_SUBSPACE_DIMENSIONALITY
-    n = n_per_cat * n_cat
-    category = np.repeat(np.arange(1, n_cat + 1), n_per_cat)
-    basis = np.linalg.qr(rng.standard_normal((k, rank)))[0]
-    cat_signal = rng.standard_normal((n_cat, rank)) * 3.0
-    Z = rng.standard_normal((n, k)) * 0.5
-    for i, c in enumerate(category):
-        Z[i] += cat_signal[c - 1] @ basis.T
-    check_at_ceiling = _dpca_axes_overlap_across_grid(Z, category, DPCA_RIDGE_LAMBDA_GRID, d=rank,
-                                                        fit_fn=_dpca_ridge_axes)
-    check_below_ceiling = _dpca_axes_overlap_across_grid(Z, category, DPCA_RIDGE_LAMBDA_GRID, d=rank - 1,
-                                                           fit_fn=_dpca_ridge_axes)
-    overlap_at_ceiling = check_at_ceiling["min_lambda_vs_max_lambda_overlap"]
-    overlap_below_ceiling = check_below_ceiling["min_lambda_vs_max_lambda_overlap"]
-    return {
-        "synthetic_construction": f"single-timepoint rank-{rank}-in-{k}-dimensions category structure, "
-                                   f"{n_cat} categories",
-        "at_component_count_equal_to_marginal_rank": {
-            "d": rank, "check": check_at_ceiling,
-            "note": f"d equals the category marginal's own rank ({n_cat} categories, rank {rank}) here, "
-                    f"exactly CATEGORY_SUBSPACE_DIMENSIONALITY's relationship to this project's own 5-"
-                    f"category schemes -- the row space of B = (Sxx + lambda*I)^-1 @ Sxy is always "
-                    f"contained in that fixed rank-{rank} subspace for any lambda, so requesting all {rank} "
-                    f"of its dimensions forces the SAME subspace at every lambda for any correct fitting "
-                    f"method, ridge included. Measured overlap here: {overlap_at_ceiling:.9f}.",
-        },
-        "at_component_count_below_marginal_rank": {
-            "d": rank - 1, "check": check_below_ceiling,
-            "note": f"one component below that ceiling (d={rank - 1}), the same mathematical argument does "
-                    "not force invariance, and on this synthetic construction the ridge axes do move with "
-                    f"lambda: overlap {overlap_below_ceiling:.6f}.",
-        },
-        "note": (
-            "this is a reported measurement, not a blocking check: the repository's actual "
-            f"CATEGORY_SUBSPACE_DIMENSIONALITY is {CATEGORY_SUBSPACE_DIMENSIONALITY}, which sits at the "
-            "ceiling for every corpus here (5 fixed categories), so per-cell dpca_ridge_axes_lambda_"
-            "dependence_check is expected to show near-total overlap by this same mathematical argument, "
-            "independently of whatever the time-resolved category-by-time marginal's own rank turns out to "
-            "be -- a run is never halted on either number."
-        ),
-    }
-
-
-def _lambda_reconstruction_error(Z_train: np.ndarray, cat_train: np.ndarray, Z_test: np.ndarray,
-                                  lam: float, d: int, fit_fn=_dpca_axes_marginalization) -> float:
-    if len(np.unique(cat_train)) < 2:
-        return float("inf")
-    V, _ = fit_fn(Z_train, cat_train, lam, d)
-    mu = Z_train.mean(axis=0)
-    recon = (Z_test - mu) @ V @ V.T + mu
-    return float(np.mean((Z_test - recon) ** 2))
-
-
-def _select_lambda_cv(Z: np.ndarray, category: np.ndarray, grid: tuple, n_folds: int,
-                       rng: np.random.Generator, d: int, fit_fn=_dpca_axes_marginalization
-                       ) -> tuple[float, dict]:
-    from sklearn.model_selection import StratifiedKFold
-    n = len(Z)
-    counts = np.unique(category, return_counts=True)[1]
-    usable_folds = max(2, min(n_folds, int(counts.min())))
-    scores = {lam: [] for lam in grid}
-    splitter = StratifiedKFold(n_splits=usable_folds, shuffle=True, random_state=int(rng.integers(0, 1_000_000)))
-    for train_idx, test_idx in splitter.split(np.zeros(n), category):
-        for lam in grid:
-            scores[lam].append(_lambda_reconstruction_error(Z[train_idx], category[train_idx],
-                                                              Z[test_idx], lam, d, fit_fn))
-    mean_scores = {lam: float(np.mean(v)) if v else float("inf") for lam, v in scores.items()}
-    best = min(mean_scores, key=mean_scores.get)
-    return best, mean_scores
-
-
-def _fit_axes_arm_a(Z: np.ndarray, category: np.ndarray, rng: np.random.Generator, d: int,
-                     grid: tuple = SHRINKAGE_GRID, fit_fn=_dpca_axes_marginalization) -> dict:
-    lam, score_table = _select_lambda_cv(Z, category, grid, N_CV_FOLDS_LAMBDA, rng, d, fit_fn)
-    V, M = fit_fn(Z, category, lam, d)
-    return {"lambda": lam, "V": V, "cats": np.unique(category).tolist(),
-            "variance_captured": _variance_captured(V, M),
-            "cv_score_table": {str(k): v for k, v in score_table.items()}}
-
-
-def _fit_axes_arm_b_nested(Z: np.ndarray, category: np.ndarray, rng: np.random.Generator, d: int,
-                            grid: tuple = SHRINKAGE_GRID, fit_fn=_dpca_axes_marginalization) -> dict:
-    from sklearn.model_selection import StratifiedKFold
-    n = len(Z)
-    counts = np.unique(category, return_counts=True)[1]
-    n_outer = max(2, min(N_CV_FOLDS_LAMBDA_NESTED_OUTER, int(counts.min())))
-    outer = StratifiedKFold(n_splits=n_outer, shuffle=True, random_state=int(rng.integers(0, 1_000_000)))
-    outer_lambdas = []
-    for train_idx, _ in outer.split(np.zeros(n), category):
-        lam, _ = _select_lambda_cv(Z[train_idx], category[train_idx], grid, N_CV_FOLDS_LAMBDA, rng, d, fit_fn)
-        outer_lambdas.append(lam)
-    lam_final = float(np.median(outer_lambdas))
-    V, M = fit_fn(Z, category, lam_final, d)
-    return {"lambda": lam_final, "V": V, "cats": np.unique(category).tolist(),
-            "variance_captured": _variance_captured(V, M),
-            "per_outer_fold_lambda": outer_lambdas, "n_outer_folds_used": n_outer}
+def _axes_overlap_across_penalties(Z: np.ndarray, category: np.ndarray, d: int) -> dict:
+    fits = {lam: memorandum_ridge_axes(Z, category, lam, d) for lam in DPCA_RIDGE_LAMBDA_GRID}
+    first = fits[DPCA_RIDGE_LAMBDA_GRID[0]]
+    return {"grid": list(DPCA_RIDGE_LAMBDA_GRID),
+            "overlap_with_smallest_penalty": {str(lam): subspace_overlap(first["decoder"], f["decoder"])
+                                              for lam, f in fits.items()},
+            "encoder_overlap_with_smallest_penalty": {str(lam): subspace_overlap(first["encoder"], f["encoder"])
+                                                      for lam, f in fits.items()}}
 
 
 def _da_trial_scores(maint_traj: np.ndarray, category_all: np.ndarray, correct_all: np.ndarray) -> dict:
@@ -920,28 +709,23 @@ def _da_session(session: dict, region: str) -> dict:
     maint_sliding = _sliding_window_rate(spike_lists, session["t_maint"], SLIDING_WINDOW_STEP_S_PRIMARY,
                                           SLIDING_WINDOW_DURATION_S, session["maint_win"])
     n_trials, T = len(category_all), maint_sliding.shape[2]
+    enc_counts = _window_counts(enc_rate, AXIS_FIT_WINDOW_DURATION_S)
+    maint_counts = _window_counts(maint_sliding, SLIDING_WINDOW_DURATION_S).transpose(0, 2, 1)
     Z_maint_pca = np.zeros((n_trials, T, n_pc))
-    Z_maint_a = np.zeros((n_trials, T, d))
-    Z_maint_b = np.zeros((n_trials, T, d))
+    Z_maint_demixed = np.zeros((n_trials, T, d))
     fold_bases = []
     for fold_i in range(n_folds):
         train_idx, test_idx = fit_idx[fold_of_fit != fold_i], fit_idx[fold_of_fit == fold_i]
         mu_std_f = enc_rate[train_idx].mean(axis=0)
         sd_std_f = enc_rate[train_idx].std(axis=0)
         sd_std_f = np.where(sd_std_f > 1e-8, sd_std_f, 1.0)
-        enc_z_train = (enc_rate[train_idx] - mu_std_f) / sd_std_f
-        mu_pca_f, V_pca_f = _fit_pca_2d(enc_z_train, n_pc)
-        Z_fit_f = _project_pca_2d(enc_z_train, mu_pca_f, V_pca_f)
-        cat_train = category_all[train_idx]
-        arm_a_f = _fit_axes_arm_a(Z_fit_f, cat_train, rng, d)
-        arm_b_f = _fit_axes_arm_b_nested(Z_fit_f, cat_train, rng, d)
+        mu_pca_f, V_pca_f = _fit_pca_2d((enc_rate[train_idx] - mu_std_f) / sd_std_f, n_pc)
+        demixed_f = fit_demixed_axes(enc_counts[train_idx], category_all[train_idx], rng, d)
         fold_bases.append({"mu_std": mu_std_f, "sd_std": sd_std_f, "mu_pca": mu_pca_f, "V_pca": V_pca_f,
-                            "arm_a": arm_a_f, "arm_b": arm_b_f})
+                            "demixed": demixed_f})
         maint_z_test = (maint_sliding[test_idx] - mu_std_f[None, :, None]) / sd_std_f[None, :, None]
-        Z_pca_test = _project_pca_3d(maint_z_test, mu_pca_f, V_pca_f)
-        Z_maint_pca[test_idx] = Z_pca_test
-        Z_maint_a[test_idx] = Z_pca_test @ arm_a_f["V"]
-        Z_maint_b[test_idx] = Z_pca_test @ arm_b_f["V"]
+        Z_maint_pca[test_idx] = _project_pca_3d(maint_z_test, mu_pca_f, V_pca_f)
+        Z_maint_demixed[test_idx] = maint_counts[test_idx] @ demixed_f["decoder"]
 
     non_fit_idx = np.where(~fit_mask)[0]
     if len(non_fit_idx):
@@ -949,17 +733,13 @@ def _da_session(session: dict, region: str) -> dict:
         sd_std_avg = np.mean([b["sd_std"] for b in fold_bases], axis=0)
         mu_pca_avg = np.mean([b["mu_pca"] for b in fold_bases], axis=0)
         V_pca_avg = np.mean([b["V_pca"] for b in fold_bases], axis=0)
-        arm_a_V_avg = np.mean([b["arm_a"]["V"] for b in fold_bases], axis=0)
-        arm_b_V_avg = np.mean([b["arm_b"]["V"] for b in fold_bases], axis=0)
+        demixed_V_avg = np.mean([b["demixed"]["decoder"] for b in fold_bases], axis=0)
         maint_z_avg = (maint_sliding[non_fit_idx] - mu_std_avg[None, :, None]) / sd_std_avg[None, :, None]
-        Z_pca_avg = _project_pca_3d(maint_z_avg, mu_pca_avg, V_pca_avg)
-        Z_maint_pca[non_fit_idx] = Z_pca_avg
-        Z_maint_a[non_fit_idx] = Z_pca_avg @ arm_a_V_avg
-        Z_maint_b[non_fit_idx] = Z_pca_avg @ arm_b_V_avg
+        Z_maint_pca[non_fit_idx] = _project_pca_3d(maint_z_avg, mu_pca_avg, V_pca_avg)
+        Z_maint_demixed[non_fit_idx] = maint_counts[non_fit_idx] @ demixed_V_avg
 
     da_pca = _da_trial_scores(Z_maint_pca[:, :, :d], category_all, correct_all)
-    da_dpca_a = _da_trial_scores(Z_maint_a, category_all, correct_all)
-    da_dpca_b = _da_trial_scores(Z_maint_b, category_all, correct_all)
+    da_demixed = _da_trial_scores(Z_maint_demixed, category_all, correct_all)
 
     spike_count = _trial_population_spike_count(spike_lists, session["t_maint"], session["maint_win"])
     raw_activity_by_unit = np.stack(
@@ -968,32 +748,27 @@ def _da_session(session: dict, region: str) -> dict:
     ).astype(float)
     rate_free_dev = rate_free_state_deviation(raw_activity_by_unit)
 
-    finite = np.isfinite(da_dpca_a["da"]) & np.isfinite(rate_free_dev)
+    finite = np.isfinite(da_demixed["da"]) & np.isfinite(rate_free_dev)
     latency_all = session["latency"]
     correct_finite_latency = finite & correct_all & np.isfinite(latency_all)
-    arm_a_lambdas = [b["arm_a"]["lambda"] for b in fold_bases]
-    arm_b_lambdas = [b["arm_b"]["lambda"] for b in fold_bases]
+    ridge_penalties = [b["demixed"]["lambda"] for b in fold_bases]
     return {
         "status": "computed", "n_units": n_units, "n_trials_total": int(len(category_all)),
         "n_categories_usable": int(len(usable_cats)), "n_pc": n_pc, "category_subspace_dimensionality": d,
         "n_axis_folds": n_folds,
-        "arm_a_lambda": float(np.median(arm_a_lambdas)), "arm_a_per_fold_lambda": arm_a_lambdas,
-        "arm_a_variance_captured": float(np.mean([b["arm_a"]["variance_captured"] for b in fold_bases])),
-        "arm_b_lambda": float(np.median(arm_b_lambdas)), "arm_b_per_fold_lambda": arm_b_lambdas,
-        "arm_b_variance_captured": float(np.mean([b["arm_b"]["variance_captured"] for b in fold_bases])),
-        "arm_b_per_outer_fold_lambda": arm_b_lambdas,
-        "arm_a_minus_arm_b_lambda": float(np.median(arm_a_lambdas) - np.median(arm_b_lambdas)),
-        "axis_fit_note": "mu_std, the PCA basis, and the demixed category axes (arm_a, arm_b) are each "
-            "fit on one cross-validation fold's correct usable-category trials and applied only to that "
-            "fold's own held-out correct trials; a trial outside the usable-category correct set is "
-            "projected with the average of the per-fold bases.",
+        "ridge_penalty": float(np.median(ridge_penalties)), "ridge_penalty_per_fold": ridge_penalties,
+        "demixed_variance_captured": float(np.mean([b["demixed"]["variance_captured"] for b in fold_bases])),
+        "axis_fit_note": "the demixed axes are fit on one cross-validation fold's correct usable-category "
+            "trials (anscombe-transformed encoding-window counts) and applied only to that fold's own "
+            "held-out correct trials; a trial outside the usable-category correct set is projected with the "
+            "average of the per-fold axes.",
         "n_trials_with_defined_da": int(finite.sum()),
-        "da": da_dpca_a["da"][finite].tolist(), "da_dpca_arm_b": da_dpca_b["da"][finite].tolist(),
+        "da": da_demixed["da"][finite].tolist(),
         "da_pca_only": da_pca["da"][finite].tolist(),
         "accuracy": correct_all[finite].astype(float).tolist(),
         "population_spike_count": spike_count[finite].tolist(),
         "rate_free_deviation": rate_free_dev[finite].tolist(),
-        "da_correct_trials": da_dpca_a["da"][correct_finite_latency].tolist(),
+        "da_correct_trials": da_demixed["da"][correct_finite_latency].tolist(),
         "rate_free_deviation_correct_trials": rate_free_dev[correct_finite_latency].tolist(),
         "latency_correct_trials": latency_all[correct_finite_latency].tolist(),
         "schema_version": DA_SCHEMA_VERSION,
@@ -1070,22 +845,21 @@ def _build_pseudopopulation(neurons_enc: dict, neurons_maint: dict, n_pseudo: in
     return {"enc": enc, "maint": maint, "category": category, "n_units": n_units}, common_cats
 
 
-def _category_time_marginal(Z_time: np.ndarray, category: np.ndarray) -> np.ndarray:
-    cats = np.unique(category)
-    means = np.stack([Z_time[category == c].mean(axis=0) for c in cats], axis=0)
-    grand_mean = means.mean(axis=(0, 1))
-    return (means - grand_mean).reshape(-1, means.shape[-1])
+def _encoding_counts(pop: dict) -> np.ndarray:
+    return _window_counts(pop["enc"], AXIS_FIT_WINDOW_DURATION_S)[:, None, :]
 
 
-def _select_lambda_cv_pseudopop(collected_enc: dict, collected_maint: dict, common_cats: list,
-                                 n_pc: int, n_pseudo: int, n_folds: int,
-                                 grid: tuple, rng: np.random.Generator, d: int,
-                                 parent_pool: dict | None = None, fit_fn=_dpca_axes_marginalization
-                                 ) -> tuple[float, dict]:
-    # CV over REAL trials, not over already-resampled pseudo-trials: a pseudo-trial is not the unit of
-    # independence (the same real trial can back many pseudo-trials), so folds are built by partitioning
-    # each neuron's own real trial indices per category first, then resampling train/test pseudo-trials
-    # only from their own disjoint side -- same discipline as _pseudopopulation_decoding.
+def _maintenance_counts(pop: dict) -> np.ndarray:
+    return _window_counts(pop["maint"], SLIDING_WINDOW_DURATION_S).transpose(0, 2, 1)
+
+
+def _select_ridge_penalty_pseudopop(collected_enc: dict, collected_maint: dict, common_cats: list, n_pseudo: int,
+                                    n_folds: int, grid: tuple, rng: np.random.Generator, d: int,
+                                    parent_pool: dict | None = None, fit_fn=memorandum_ridge_axes
+                                    ) -> tuple[float, dict]:
+    # Folds partition each neuron's own real trials (not already-resampled pseudo-trials, which are not
+    # independent: one real trial can back many of them); train and test pseudo-trials are resampled only from
+    # their own disjoint side. parent_pool restricts the whole selection to a set of real trials.
     neuron_keys = sorted(collected_enc)
     pools = {key: {c: (parent_pool[key][c] if parent_pool is not None
                         else np.arange(len(collected_enc[key][c]))) for c in common_cats}
@@ -1111,90 +885,12 @@ def _select_lambda_cv_pseudopop(collected_enc: dict, collected_maint: dict, comm
         test_pop, _ = _build_pseudopopulation(collected_enc, collected_maint, n_pseudo, rng, test_pool)
         if train_pop is None or test_pop is None:
             continue
-        mu_pca_fold, V_pca_fold = _fit_pca_2d(train_pop["enc"], n_pc)
-        Z_train = _project_pca_2d(train_pop["enc"], mu_pca_fold, V_pca_fold)
-        Z_test = _project_pca_2d(test_pop["enc"], mu_pca_fold, V_pca_fold)
         for lam in grid:
-            scores[lam].append(_lambda_reconstruction_error(Z_train, train_pop["category"], Z_test, lam, d,
-                                                              fit_fn))
-    mean_scores = {lam: float(np.mean(v)) if v else float("inf") for lam, v in scores.items()}
-    best = min(mean_scores, key=mean_scores.get)
-    return best, mean_scores
-
-
-def _fit_axes_arm_b_nested_pseudopop(collected_enc: dict, collected_maint: dict, common_cats: list,
-                                      n_pc: int, n_pseudo: int,
-                                      rng: np.random.Generator, d: int, grid: tuple = SHRINKAGE_GRID,
-                                      fit_fn=_dpca_axes_marginalization) -> tuple[float, list, int]:
-    neuron_keys = sorted(collected_enc)
-    full_pool = {key: {c: np.arange(len(collected_enc[key][c])) for c in common_cats} for key in neuron_keys}
-    min_pool_size = min(len(full_pool[key][c]) for key in neuron_keys for c in common_cats)
-    n_outer = max(2, min(N_CV_FOLDS_LAMBDA_NESTED_OUTER, min_pool_size))
-    outer_groups = {key: {c: np.array_split(rng.permutation(full_pool[key][c]), n_outer) for c in common_cats}
-                    for key in neuron_keys}
-    outer_lambdas = []
-    for fold_i in range(n_outer):
-        outer_train_pool = {key: {c: np.concatenate([outer_groups[key][c][j] for j in range(n_outer)
-                                                       if j != fold_i]) for c in common_cats}
-                             for key in neuron_keys}
-        lam, _ = _select_lambda_cv_pseudopop(collected_enc, collected_maint, common_cats, n_pc,
-                                              n_pseudo, N_CV_FOLDS_LAMBDA, grid, rng, d,
-                                              parent_pool=outer_train_pool, fit_fn=fit_fn)
-        outer_lambdas.append(lam)
-    return float(np.median(outer_lambdas)), outer_lambdas, n_outer
-
-
-def _lambda_sweep(Z_fit_full: np.ndarray, category_full: np.ndarray, Z_maint_pca_full: np.ndarray,
-                   score_table: dict, grid: tuple, d: int, arm_a_lambda: float, arm_b_lambda: float,
-                   fit_fn=_dpca_axes_marginalization) -> list:
-    cat_time_marginal = _category_time_marginal(Z_maint_pca_full, category_full)
-    M_cat_time = cat_time_marginal.T @ cat_time_marginal
-    correct_all = np.ones(len(category_full), dtype=bool)
-    sweep = []
-    for lam in grid:
-        V_lam, _ = fit_fn(Z_fit_full, category_full, lam, d)
-        da = _da_trial_scores(Z_maint_pca_full @ V_lam, category_full, correct_all)["da"]
-        finite = np.isfinite(da)
-        sweep.append({
-            "lambda": lam,
-            "variance_captured_category_time_marginal": _variance_captured(V_lam, M_cat_time),
-            "mean_distance_to_attractor": float(np.mean(da[finite])) if finite.any() else float("nan"),
-            "n_trials_with_defined_distance_to_attractor": int(finite.sum()),
-            "held_out_reconstruction_error": score_table.get(lam, float("nan")),
-            "is_arm_a_cv_selected_point": lam == arm_a_lambda,
-            "is_arm_b_cv_selected_point": lam == arm_b_lambda,
-        })
-    return sweep
-
-
-def _lambda_sweep_flatness(score_table: dict) -> dict:
-    finite = [v for v in score_table.values() if np.isfinite(v)]
-    if len(finite) < 2 or min(finite) <= 0:
-        return {"status": "not_computable"}
-    lo, hi = min(finite), max(finite)
-    relative_range = (hi - lo) / lo
-    argmin_lambda = min(score_table, key=score_table.get)
-    if relative_range < LAMBDA_SWEEP_MACHINE_EPSILON_RELATIVE_RANGE:
-        note = (f"held-out reconstruction error varies by only {relative_range:.2e} across the lambda "
-                f"grid (from {lo:.6g} to {hi:.6g}) -- at floating-point precision, not merely small. "
-                "This is not a statistical property of these data: see shrinkage_axes_isotropic_"
-                "invariance_note. The axes cannot depend on lambda by construction here, so the argmin "
-                f"(lambda={argmin_lambda}) is an arbitrary pick among numerically-tied floats, not a "
-                "selection, and every quantity below should be read as constant across the sweep.")
-    elif relative_range < LAMBDA_SWEEP_FLAT_RELATIVE_RANGE_THRESHOLD:
-        note = (f"held-out reconstruction error varies by only {relative_range:.1%} across the lambda "
-                f"grid (from {lo:.4g} to {hi:.4g}) -- below the disclosed "
-                f"{LAMBDA_SWEEP_FLAT_RELATIVE_RANGE_THRESHOLD:.0%} threshold this artifact uses to "
-                "describe a selection surface as weakly determined by these data; the argmin "
-                f"(lambda={argmin_lambda}) is one point on a near-flat curve, not a confidently-selected "
-                "value, and the reported quantities should be read across the whole sweep.")
-    else:
-        note = (f"held-out reconstruction error varies by {relative_range:.1%} across the lambda grid "
-                f"(from {lo:.4g} to {hi:.4g}) -- above the disclosed "
-                f"{LAMBDA_SWEEP_FLAT_RELATIVE_RANGE_THRESHOLD:.0%} threshold; the argmin "
-                f"(lambda={argmin_lambda}) sits on a more clearly peaked surface at this cell.")
-    return {"status": "computed", "relative_range": relative_range, "min_error": lo, "max_error": hi,
-            "argmin_lambda": argmin_lambda, "note": note}
+            scores[lam].append(held_out_reconstruction_error(
+                _encoding_counts(train_pop), train_pop["category"], _encoding_counts(test_pop), test_pop["category"],
+                lam, d, fit_fn))
+    mean_scores = {lam: mean_finite_score(v) for lam, v in scores.items()}
+    return min(mean_scores, key=mean_scores.get), mean_scores
 
 
 def _selective_neuron_keys(corpus: str, region: str, field: str = "test") -> set:
@@ -1224,94 +920,27 @@ def _pseudopopulation_geometry(corpus: str, region: str, selected_keys: set | No
                 "reason": f"fewer than {MIN_CATEGORIES_FOR_DA} categories with a common pool of neurons "
                           f"reaching >={MIN_TRIALS_PER_CATEGORY_PSEUDOPOP} correct trials each",
                 "schema_version": PSEUDOPOP_SCHEMA_VERSION}
-    n_pc = max(2, min(N_PC_DEFAULT, pseudopop["n_units"] - 1))
-    d = min(CATEGORY_SUBSPACE_DIMENSIONALITY, n_pc)
-    mu_pca, V_pca = _fit_pca_2d(pseudopop["enc"], n_pc)
-    Z_enc = _project_pca_2d(pseudopop["enc"], mu_pca, V_pca)
-
+    d = min(CATEGORY_SUBSPACE_DIMENSIONALITY, pseudopop["n_units"])
     correct_all = np.ones(len(pseudopop["category"]), dtype=bool)
-    mu_std, sd_std = pseudopop["enc"].mean(axis=0), pseudopop["enc"].std(axis=0)
-    sd_std = np.where(sd_std > 1e-8, sd_std, 1.0)
-    maint_z_primary = (pseudopop["maint"] - mu_std[None, :, None]) / sd_std[None, :, None]
-    Z_maint_pca_primary = _project_pca_3d(maint_z_primary, mu_pca, V_pca)
 
-    # lambda is selected by cross-validating over disjoint real-trial pools (not over already-resampled
-    # pseudo-trials -- see _select_lambda_cv_pseudopop), then the axes at that lambda are fit on the full
-    # pooled encoding-window data, matching the per-session convention.
-    lam_a, score_table_a = _select_lambda_cv_pseudopop(collected["enc"], collected["maint"], common_cats,
-                                                         n_pc, N_PSEUDO_TRIALS_PER_CATEGORY,
-                                                         N_CV_FOLDS_LAMBDA, SHRINKAGE_GRID, rng, d)
-    _, marginal_a = _category_marginal(Z_enc, pseudopop["category"])
-    V_a, M_a = _shrinkage_axes(marginal_a, lam_a, d)
-    arm_a = {"lambda": lam_a, "V": V_a, "variance_captured": _variance_captured(V_a, M_a),
-             "cv_score_table": {str(k): v for k, v in score_table_a.items()}}
+    # Axes and penalty come from one half of each neuron's real trials; every reported distance and variance
+    # share comes from pseudo-trials resampled from the other half, so no real trial backs both.
+    train_pool, test_pool = _split_trial_pool(collected["enc"], common_cats, rng)
+    train_pop, _ = _build_pseudopopulation(collected["enc"], collected["maint"], N_PSEUDO_TRIALS_PER_CATEGORY,
+                                            rng, train_pool)
+    test_pop, _ = _build_pseudopopulation(collected["enc"], collected["maint"], N_PSEUDO_TRIALS_PER_CATEGORY,
+                                           rng, test_pool)
+    penalty, cv_scores = _select_ridge_penalty_pseudopop(
+        collected["enc"], collected["maint"], common_cats, N_PSEUDO_TRIALS_PER_CATEGORY, N_CV_FOLDS_LAMBDA,
+        DPCA_RIDGE_LAMBDA_GRID, rng, d, parent_pool=train_pool)
+    Z_enc_train = _encoding_counts(train_pop)
+    fit = memorandum_ridge_axes(Z_enc_train, train_pop["category"], penalty, d)
+    axes = fit["decoder"]
 
-    lam_b, outer_lambdas_b, n_outer_b = _fit_axes_arm_b_nested_pseudopop(
-        collected["enc"], collected["maint"], common_cats, n_pc, N_PSEUDO_TRIALS_PER_CATEGORY,
-        rng, d)
-    V_b, M_b = _shrinkage_axes(marginal_a, lam_b, d)
-    arm_b = {"lambda": lam_b, "V": V_b, "variance_captured": _variance_captured(V_b, M_b),
-             "per_outer_fold_lambda": outer_lambdas_b, "n_outer_folds_used": n_outer_b}
-
-    # dpca_arm_a/dpca_arm_b: the actual published demixed principal component analysis method (doi
-    # 10.7554/eLife.10989), ridge-regularised reduced-rank regression via _dpca_ridge_axes, sharing every
-    # CV-fold/pool/nested-outer-loop mechanism above with arm_a/arm_b -- only the axis-fitting function and
-    # lambda grid differ. See MARGINALIZATION_ARM_NOT_PUBLISHED_METHOD_NOTE.
-    # the axes actually reported are fit directly on the time-resolved maintenance trajectory (see
-    # _dpca_ridge_axes' own docstring), so fit and evaluation pseudo-trials are drawn from disjoint halves
-    # of each neuron's own real trials (_split_trial_pool) rather than the same pooled draw: dpca_train_pop
-    # backs the axis fit, dpca_test_pop backs every reported distance-to-attractor and variance-captured
-    # number for this arm. Lambda selection stays on the cheaper single-timepoint pseudo-trial construction
-    # _select_lambda_cv_pseudopop already builds from the encoding window.
-    dpca_train_pool, dpca_test_pool = _split_trial_pool(collected["enc"], common_cats, rng)
-    dpca_train_pop, _ = _build_pseudopopulation(collected["enc"], collected["maint"],
-                                                 N_PSEUDO_TRIALS_PER_CATEGORY, rng, dpca_train_pool)
-    dpca_test_pop, _ = _build_pseudopopulation(collected["enc"], collected["maint"],
-                                                N_PSEUDO_TRIALS_PER_CATEGORY, rng, dpca_test_pool)
-    maint_z_train = (dpca_train_pop["maint"] - mu_std[None, :, None]) / sd_std[None, :, None]
-    Z_maint_train = _project_pca_3d(maint_z_train, mu_pca, V_pca)
-    maint_z_test = (dpca_test_pop["maint"] - mu_std[None, :, None]) / sd_std[None, :, None]
-    Z_maint_test = _project_pca_3d(maint_z_test, mu_pca, V_pca)
-    correct_all_test = np.ones(len(dpca_test_pop["category"]), dtype=bool)
-
-    lam_dpca_a, score_table_dpca_a = _select_lambda_cv_pseudopop(
-        collected["enc"], collected["maint"], common_cats, n_pc, N_PSEUDO_TRIALS_PER_CATEGORY,
-        N_CV_FOLDS_LAMBDA, DPCA_RIDGE_LAMBDA_GRID, rng, d, fit_fn=_dpca_ridge_axes)
-    V_dpca_a, M_dpca_a = _dpca_ridge_axes(Z_maint_train, dpca_train_pop["category"], lam_dpca_a, d)
-    dpca_arm_a = {"lambda": lam_dpca_a, "V": V_dpca_a, "variance_captured": _variance_captured(V_dpca_a, M_a),
-                  "cv_score_table": {str(k): v for k, v in score_table_dpca_a.items()}}
-
-    lam_dpca_b, outer_lambdas_dpca_b, n_outer_dpca_b = _fit_axes_arm_b_nested_pseudopop(
-        collected["enc"], collected["maint"], common_cats, n_pc, N_PSEUDO_TRIALS_PER_CATEGORY,
-        rng, d, grid=DPCA_RIDGE_LAMBDA_GRID, fit_fn=_dpca_ridge_axes)
-    V_dpca_b, M_dpca_b = _dpca_ridge_axes(Z_maint_train, dpca_train_pop["category"], lam_dpca_b, d)
-    dpca_arm_b = {"lambda": lam_dpca_b, "V": V_dpca_b, "variance_captured": _variance_captured(V_dpca_b, M_a),
-                  "per_outer_fold_lambda": outer_lambdas_dpca_b, "n_outer_folds_used": n_outer_dpca_b}
-
-    dpca_ridge_axes_lambda_dependence_check = _dpca_axes_overlap_across_grid(
-        Z_maint_train, dpca_train_pop["category"], DPCA_RIDGE_LAMBDA_GRID, d, _dpca_ridge_axes)
-    dpca_ridge_arm_a_vs_arm_b_axes_overlap = _subspace_overlap(V_dpca_a, V_dpca_b)
-
-    da_primary = _da_trial_scores(Z_maint_pca_primary @ arm_a["V"], pseudopop["category"], correct_all)
-    da_dpca_ridge_primary = _da_trial_scores(Z_maint_test @ dpca_arm_a["V"], dpca_test_pop["category"],
-                                              correct_all_test)
-
-    cat_time_marginal = _category_time_marginal(Z_maint_pca_primary, pseudopop["category"])
-    M_cat_time = cat_time_marginal.T @ cat_time_marginal
-    arm_a_variance_captured_category_time_marginal = _variance_captured(arm_a["V"], M_cat_time)
-    arm_b_variance_captured_category_time_marginal = _variance_captured(arm_b["V"], M_cat_time)
-    cat_time_marginal_test = _category_time_marginal(Z_maint_test, dpca_test_pop["category"])
-    M_cat_time_test = cat_time_marginal_test.T @ cat_time_marginal_test
-    dpca_arm_a_variance_captured_category_time_marginal = _variance_captured(dpca_arm_a["V"], M_cat_time_test)
-    dpca_arm_b_variance_captured_category_time_marginal = _variance_captured(dpca_arm_b["V"], M_cat_time_test)
-
-    lambda_sweep = _lambda_sweep(Z_enc, pseudopop["category"], Z_maint_pca_primary, score_table_a,
-                                  SHRINKAGE_GRID, d, lam_a, lam_b)
-    lambda_sweep_flatness = _lambda_sweep_flatness(score_table_a)
-    dpca_ridge_lambda_sweep = _lambda_sweep(Z_maint_train, dpca_train_pop["category"], Z_maint_test,
-                                             score_table_dpca_a, DPCA_RIDGE_LAMBDA_GRID, d, lam_dpca_a,
-                                             lam_dpca_b, fit_fn=_dpca_ridge_axes)
-    dpca_ridge_lambda_sweep_flatness = _lambda_sweep_flatness(score_table_dpca_a)
+    Z_maint_test = _maintenance_counts(test_pop)
+    da_test = _da_trial_scores(Z_maint_test @ axes, test_pop["category"], np.ones(len(test_pop["category"]), dtype=bool))
+    category_marginal_variance_captured = 1.0 - marginal_reconstruction_error(
+        fit, Z_maint_test, test_pop["category"], Z_maint_test.mean(axis=(0, 1)))
 
     collected_sens = _collect_region_neurons(corpus, region, SLIDING_WINDOW_STEP_S_SENSITIVITY, selected_keys)
     rng_sens = np.random.default_rng(stable_seed(f"{tag}_pseudopop"))
@@ -1319,9 +948,9 @@ def _pseudopopulation_geometry(corpus: str, region: str, selected_keys: set | No
                                                  N_PSEUDO_TRIALS_PER_CATEGORY, rng_sens)
     step_sensitivity = {"status": "not_computable"}
     if pseudopop_sens is not None and pseudopop_sens["n_units"] == pseudopop["n_units"]:
-        maint_z_sens = (pseudopop_sens["maint"] - mu_std[None, :, None]) / sd_std[None, :, None]
-        Z_maint_pca_sens = _project_pca_3d(maint_z_sens, mu_pca, V_pca)
-        da_sens = _da_trial_scores(Z_maint_pca_sens @ arm_a["V"], pseudopop_sens["category"], correct_all)
+        da_primary = _da_trial_scores(_maintenance_counts(pseudopop) @ axes, pseudopop["category"], correct_all)
+        da_sens = _da_trial_scores(_maintenance_counts(pseudopop_sens) @ axes, pseudopop_sens["category"],
+                                   correct_all)
         both_finite = np.isfinite(da_primary["da"]) & np.isfinite(da_sens["da"])
         if both_finite.sum() >= 4:
             step_sensitivity = {
@@ -1336,104 +965,27 @@ def _pseudopopulation_geometry(corpus: str, region: str, selected_keys: set | No
         "status": "computed", "n_sessions_used": collected["n_sessions_used"],
         "n_patients": collected["n_patients"], "n_units_pooled": pseudopop["n_units"],
         "n_pseudo_trials_per_category": N_PSEUDO_TRIALS_PER_CATEGORY,
-        "categories_used": common_cats, "n_pc": n_pc, "category_subspace_dimensionality": d,
-        "arm_a_lambda": arm_a["lambda"],
-        "arm_a_variance_captured_static_category_marginal": arm_a["variance_captured"],
-        "arm_b_lambda": arm_b["lambda"],
-        "arm_b_variance_captured_static_category_marginal": arm_b["variance_captured"],
-        "arm_b_per_outer_fold_lambda": arm_b["per_outer_fold_lambda"],
-        "static_category_marginal_variance_captured_note": (
-            "the static-category-marginal ratio above is 1.0 by construction whenever "
-            f"CATEGORY_SUBSPACE_DIMENSIONALITY ({CATEGORY_SUBSPACE_DIMENSIONALITY}) is >= "
-            "n_categories_usable - 1, because the across-category-mean marginal it is measured against "
-            "has rank at most n_categories_usable - 1 regardless of the data -- it would be 1.0 for pure "
-            "noise too. It is NOT comparable to the published study's 60.26%, which is a fraction of a "
-            "category-by-time marginal of much higher rank. The comparable quantity is "
-            "arm_a/b_variance_captured_category_time_marginal below."
-        ),
-        "arm_a_variance_captured_category_time_marginal": arm_a_variance_captured_category_time_marginal,
-        "arm_b_variance_captured_category_time_marginal": arm_b_variance_captured_category_time_marginal,
-        "arm_a_minus_arm_b_variance_captured_category_time_marginal": (
-            arm_a_variance_captured_category_time_marginal - arm_b_variance_captured_category_time_marginal
-            if np.isfinite(arm_a_variance_captured_category_time_marginal)
-            and np.isfinite(arm_b_variance_captured_category_time_marginal) else None),
-        "category_time_marginal_note": (
-            "fraction of the category-by-time marginal (built from the same axes arm_a/arm_b fit on the "
-            "encoding window, applied to the full 200ms-sliding-window maintenance trajectory, averaged "
-            "per category per timepoint) that those axes explain -- the quantity genuinely comparable to "
-            "the published study's 60.26%, since both are computed over a category-by-time marginal "
-            "rather than a static per-category mean."
-        ),
-        "lambda_sweep": lambda_sweep,
-        "lambda_sweep_flatness": lambda_sweep_flatness,
-        "lambda_sweep_note": (
-            "the primary reporting mode for this cell's lambda-dependent quantities is the sweep above, "
-            "not the single cross-validated argmin: for every lambda on SHRINKAGE_GRID, "
-            "lambda_sweep reports variance_captured_category_time_marginal, mean_distance_to_attractor, "
-            "and the held-out reconstruction error that lambda scored during CV-selection (the actual "
-            "selection surface, cross-validated over disjoint real-trial pools). arm_a_lambda and "
-            "arm_b_lambda mark, via is_arm_a_cv_selected_point/is_arm_b_cv_selected_point, which sweep "
-            "entry a cross-validated selection happened to land on -- lambda_sweep_flatness measures, "
-            "not assumes, whether that argmin sits on a flat or a peaked surface; when it is flat, read "
-            "the swept quantities across the grid rather than only at the argmin."
-        ),
-        "shrinkage_axes_isotropic_invariance_note": SHRINKAGE_AXES_ISOTROPIC_INVARIANCE_NOTE,
-        "decoding_lambda_independence_note": (
-            "decoding.observed_accuracy is fit on raw per-unit mean maintenance rate, not a lambda-"
-            "dependent dPCA projection, so it does not vary with lambda in this construction and has no "
-            "entry in lambda_sweep; only variance_captured_category_time_marginal and "
-            "mean_distance_to_attractor depend on the selected axes."
-        ),
-        "marginalization_arm_not_published_method_note": MARGINALIZATION_ARM_NOT_PUBLISHED_METHOD_NOTE,
-        "dpca_ridge_arm_a_lambda": dpca_arm_a["lambda"],
-        "dpca_ridge_arm_a_variance_captured_static_category_marginal": dpca_arm_a["variance_captured"],
-        "dpca_ridge_arm_b_lambda": dpca_arm_b["lambda"],
-        "dpca_ridge_arm_b_variance_captured_static_category_marginal": dpca_arm_b["variance_captured"],
-        "dpca_ridge_arm_b_per_outer_fold_lambda": dpca_arm_b["per_outer_fold_lambda"],
-        "dpca_ridge_static_category_marginal_variance_captured_note": (
-            "unlike arm_a/b_variance_captured_static_category_marginal, this quantity is NOT 1.0 by "
-            "construction: dpca_ridge axes are the top eigenvectors of the ridge-regression's own fitted-"
-            "value second moment (B.T @ Sxx @ B), fit against the time-resolved category-by-time target, "
-            "not against the static category marginal covariance itself, so how much of the static "
-            "marginal they happen to capture is a genuine, non-tautological measurement, evaluated against "
-            "the identical unshrunk marginal covariance M used above for apples-to-apples comparison."
-        ),
-        "dpca_ridge_arm_a_variance_captured_category_time_marginal": (
-            dpca_arm_a_variance_captured_category_time_marginal),
-        "dpca_ridge_arm_b_variance_captured_category_time_marginal": (
-            dpca_arm_b_variance_captured_category_time_marginal),
-        "dpca_ridge_arm_a_vs_arm_b_axes_overlap": dpca_ridge_arm_a_vs_arm_b_axes_overlap,
-        "dpca_ridge_da": da_dpca_ridge_primary["da"].tolist(),
-        "dpca_ridge_lambda_sweep": dpca_ridge_lambda_sweep,
-        "dpca_ridge_lambda_sweep_flatness": dpca_ridge_lambda_sweep_flatness,
-        "dpca_ridge_axes_lambda_dependence_check": dpca_ridge_axes_lambda_dependence_check,
-        "dpca_ridge_time_resolved_near_invariance_note": (
-            "dpca_ridge_arm_a/b and dpca_ridge_axes_lambda_dependence_check are fit and measured on the "
-            "time-resolved category-by-time marginal (category means as a function of time, via "
-            "_category_time_marginal), the faithful reproduction of the published study's own 200ms "
-            "sliding-window binned marginalisation, independently of which lambda is selected. On this "
-            "cell's real data, dpca_ridge_axes_lambda_dependence_check's min_lambda_vs_max_lambda_overlap "
-            "reports how much DPCA_RIDGE_LAMBDA_GRID actually moves that subspace -- when it sits at or "
-            "near 1.0, the regularisation strength is not materially determining the category subspace "
-            "here, a property of the data at this component count rather than an error in the axis-fitting "
-            "code -- the top-level dpca_ridge_axes_synthetic_verification documents that the same function "
-            "does rotate genuinely with lambda on a lower-rank synthetic construction, so the near-"
-            "invariance measured here is not a bug that silently pins the axes everywhere."
-        ),
-        "dpca_ridge_method_note": (
-            "dpca_ridge_arm_a/b implement the published study's demixed principal component analysis "
-            "(doi 10.7554/eLife.10989) as a ridge-regularised reduced-rank regression (see "
-            "_dpca_ridge_axes' own docstring for the exact formulation and component ordering): encoder "
-            "and decoder are fit per marginalization by minimising the squared error of reconstructing the "
-            "time-resolved category-by-time marginal target from full population activity under a ridge "
-            "penalty inside a matrix inverse. dpca_ridge_axes_lambda_dependence_check reports the measured "
-            "subspace overlap across DPCA_RIDGE_LAMBDA_GRID at this cell rather than assuming it must sit "
-            "below 1.0 -- see dpca_ridge_time_resolved_near_invariance_note for what the measured value "
-            "means here; the run is never halted on this number."
-        ),
+        "categories_used": common_cats, "category_subspace_dimensionality": d,
+        "demixed_method_note": (
+            "ridge regression B of anscombe-transformed encoding-window counts (200-1200 ms after picture "
+            "onset) of all pooled units on the category marginal (category mean minus the mean over "
+            "categories), fitted to training pseudo-trials; the encoder is the top eigenvectors of B' Sxx B, "
+            "the decoder is B times the encoder, and maintenance pseudo-trials from the other half of the "
+            "real trials are projected onto the decoder; the ridge penalty is the grid value with the "
+            "smallest held-out reconstruction error of the category marginal over folds of the training real "
+            "trials."),
+        "ridge_penalty": penalty,
+        "ridge_penalty_cv_scores": {str(k): v for k, v in cv_scores.items()},
+        "axes_overlap_across_penalties": _axes_overlap_across_penalties(Z_enc_train, train_pop["category"], d),
+        "variance_captured_category_marginal": category_marginal_variance_captured,
+        "variance_captured_category_marginal_note": (
+            "share of the squared norm of the maintenance trajectory's category marginal (category mean at "
+            "each timepoint minus the mean over categories, in anscombe-transformed 200 ms counts of all "
+            "units) reconstructed from the maintenance activity, centred on its own mean, through the decoder "
+            "and encoder of the encoding-window fit."),
+        "distance_to_attractor": da_test["da"].tolist(),
         "step_size_sensitivity": step_sensitivity,
-        "pseudopopulation": pseudopop, "mu_pca": mu_pca, "V_pca": V_pca, "mu_std": mu_std, "sd_std": sd_std,
-        "arm_a": arm_a, "dpca_arm_a": dpca_arm_a,
+        "pseudopopulation": pseudopop, "axes": axes, "encoder_axes": fit["encoder"],
         "collected_enc": collected["enc"], "collected_maint": collected["maint"],
         "schema_version": PSEUDOPOP_SCHEMA_VERSION,
     }
@@ -1519,8 +1071,7 @@ def _pseudopopulation_region_report(corpus: str, region: str, selected_keys: set
     rng = np.random.default_rng(stable_seed(f"{tag}_pseudopop_decode"))
     decoding = _pseudopopulation_decoding(geometry["collected_enc"], geometry["collected_maint"], rng)
     report = {k: v for k, v in geometry.items()
-              if k not in ("pseudopopulation", "mu_pca", "V_pca", "mu_std", "sd_std", "arm_a", "dpca_arm_a",
-                           "collected_enc", "collected_maint")}
+              if k not in ("pseudopopulation", "axes", "encoder_axes", "collected_enc", "collected_maint")}
     report["decoding"] = decoding
     return report
 
@@ -1939,75 +1490,37 @@ def build_artifact() -> dict:
             "trials) that can inflate the enrichment it finds; it is kept as the overlapping-trial "
             "comparison beside trial_split_matched_arm, not as the reported arm, so a reader can see the "
             "size of that overlap directly.",
-        "da_construction": MARGINALIZATION_ARM_NOT_PUBLISHED_METHOD_NOTE + " "
-            "activity is standardised and PCA-reduced from encoding-period rates only "
-            f"(the {AXIS_FIT_WINDOW_OFFSET_S*1000:.0f}-"
-            f"{(AXIS_FIT_WINDOW_OFFSET_S+AXIS_FIT_WINDOW_DURATION_S)*1000:.0f}ms post-encoding-onset window, "
-            "fit on load-1 correct trials in the usable categories only, never refit on maintenance data) "
-            "before being carried into three parallel geometries, all sharing that one encoding-fit PCA "
-            "basis: an unsupervised PCA-only baseline (da_pca_only, no category label used to build the "
-            "axes); and two SUPERVISED demixed-PCA arms, which build their axes directly from the category "
-            "labels (per-category mean rate vectors -- the class marginal -- eigendecomposed with "
-            "shrinkage regularisation) so a reader must not assume an unsupervised method produced them: "
-            "arm A (da / arm_a_*) selects its shrinkage lambda by ordinary cross-validation on the fitting "
-            "trials; arm B (da_dpca_arm_b / arm_b_*) is nested -- lambda is re-selected inside each outer "
-            "fold's training partition only, and the final lambda is the median across outer folds -- so "
-            "the reported variance-captured number is never evaluated on data any part of its own lambda "
-            "selection saw. Both dPCA arms keep the top "
-            f"{CATEGORY_SUBSPACE_DIMENSIONALITY} axes by eigenvalue (capped at the number of encoding "
-            "principal components available), matching the published study's own component count without "
-            "copying its component indices onto our data. All three geometries share the same maintenance-"
-            "period sliding-window trajectory (200ms windows) and the same attractor rule: attractor per "
-            "category = leave-one-out mean maintenance position (own-category attractor excludes the "
-            "trial itself; other-category attractors use every trial in that category -- a deliberate "
-            "departure from the published study's non-excluding attractor, chosen because it removes by "
-            "construction the same-trial selection bias their own permutation control was built to catch, "
-            "so this artifact needs no analogous control). DA = own-attractor distance / mean distance to "
-            "every other attractor. A separate, additional construction (part4_pseudopopulation_geometry) "
-            "pools trial-resampled pseudo-trials across every session in a (corpus, region) cell rather "
-            "than fitting per session, matching the published study's own pseudo-population procedure; it "
-            "fits the same two marginalization-based arms (arm_a/arm_b) plus, additionally, two arms "
-            "(dpca_ridge_arm_a/dpca_ridge_arm_b) that implement the published study's actual method as a "
-            "ridge-regularised reduced-rank regression -- see dpca_ridge_method_note and "
-            "marginalization_arm_not_published_method_note -- plus a logistic-regression category decoding "
-            "check on that pooled population; it is a distinct cell family from the per-session DA above "
-            "rather than a replacement for it. This whole construction is fit under several arms per cell "
-            "(selective_arm, selective_arm_holdout, all_unit_arm) -- see "
-            "part4_selective_versus_all_unit_arms. Two further properties of the underlying pseudo-population fit need explicit "
-            "disclosure so neither is misread as a substantive finding: (1) decoding.observed_accuracy is "
-            "from a construction that splits every pooled neuron's own real trials, per category, into "
-            "disjoint train and test halves before any pseudo-trial is resampled, so no real trial can "
-            "appear on both sides of a split; dpca_ridge_arm_a/b similarly fit their axes on pseudo-trials "
-            "resampled from one real-trial half and evaluate distance-to-attractor and variance-captured on "
-            "pseudo-trials resampled from the disjoint other half (_split_trial_pool), so no real trial "
-            "backs both a dpca_ridge fit and its own evaluation either. (2) "
-            "arm_a/b_variance_captured_static_category_marginal is 1.0 by mathematical necessity at this "
-            "category count and CATEGORY_SUBSPACE_DIMENSIONALITY and must never be set beside the "
-            "published study's 60.26pct; arm_a/b_variance_captured_category_time_marginal is the quantity "
-            "genuinely comparable to it, computed the same way over a category-by-time marginal built "
-            "from the full maintenance trajectory rather than a static per-category mean. (3) the lambda "
-            "each arm cross-validates to is not treated as a settled value: _shrinkage_axes shrinks toward "
-            "an isotropic target, and shrinking any symmetric matrix toward a scalar multiple of the "
-            "identity leaves its eigenvectors exactly unchanged for every lambda short of 1.0 -- "
-            "SHRINKAGE_GRID never reaches 1.0, so the selected axes are provably identical at every grid "
-            "point for arm_a/arm_b, verified on real data to floating-point precision (relative range of "
-            "order 1e-16); see shrinkage_axes_isotropic_invariance_note for the exact argument. The lambda "
-            "a cross-validated selection lands on for arm_a/arm_b is therefore not a selection at all, at "
-            "any cell; the same fact applies to the untouched per-session arms, which use the identical "
-            "_shrinkage_axes function. lambda_sweep (every SHRINKAGE_GRID point's category-by-time variance "
-            "captured, mean distance to attractor, and held-out reconstruction error) is "
-            "therefore the primary reporting mode for this block, not arm_a/b_lambda alone; "
-            "lambda_sweep_flatness reports the measured relative range and distinguishes floating-point-"
-            "level flatness from a genuinely data-driven small range rather than assuming either. (4) "
-            "dpca_ridge_arm_a/b are fit against the time-resolved category-by-time marginal (category "
-            "means as a function of time, reusing _category_time_marginal), the faithful reproduction of "
-            "the published study's own sliding-window binning, and their lambda-dependence is measured "
-            "directly rather than assumed -- dpca_ridge_axes_lambda_dependence_check reports the measured "
-            "subspace overlap across DPCA_RIDGE_LAMBDA_GRID at every cell, and a startup check on a small "
-            "synthetic construction (dpca_ridge_axes_synthetic_verification) confirms the ridge fit is not "
-            "trivially lambda-invariant everywhere; neither halts the run, since near-invariance on real "
-            "data is a property of that data to report, not an error to block on -- see "
-            "dpca_ridge_time_resolved_near_invariance_note per cell.",
+        "da_construction": (
+            "Demixed axes follow the standard demixed principal component analysis method "
+            "(doi 10.7554/eLife.10989) with picture category as the marginalised variable: a ridge "
+            "regression of anscombe-transformed encoding-window counts of every unit "
+            f"({AXIS_FIT_WINDOW_OFFSET_S*1000:.0f}-"
+            f"{(AXIS_FIT_WINDOW_OFFSET_S+AXIS_FIT_WINDOW_DURATION_S)*1000:.0f}ms after the first picture's "
+            "onset, load-1 correct trials of the usable categories) on the category marginal (category mean "
+            "minus the mean over categories), with the top "
+            f"{CATEGORY_SUBSPACE_DIMENSIONALITY} eigenvectors of B' Sxx B as axes (capped at the unit count) "
+            "and the ridge penalty chosen from DPCA_RIDGE_LAMBDA_GRID by held-out reconstruction inside the "
+            "training trials. Maintenance activity (anscombe-transformed 200 ms sliding-window counts) is "
+            "projected onto the axes, and the attractor rule is the same for every geometry: attractor per "
+            "category = leave-one-out mean maintenance position (own-category attractor excludes the trial "
+            "itself; other-category attractors use every trial in that category); DA = own-attractor "
+            "distance / mean distance to every other attractor. The per-session cell fits the axes on one "
+            "cross-validation fold's training trials and projects that fold's held-out trials (a trial "
+            "outside the usable-category correct set is projected with the average of the per-fold axes); "
+            "da_pca_only is an unsupervised baseline in the standardised principal-component space of the "
+            "same encoding-window rates. part4_pseudopopulation_geometry pools trial-resampled pseudo-trials "
+            "of all units across the sessions of a (corpus, region) cell: axes and penalty come from "
+            "pseudo-trials resampled from one random half of each unit's real trials, distance-to-attractor "
+            "and variance captured are measured on pseudo-trials resampled from the other half, and a "
+            "logistic-regression category decoding check runs on the same pooled population. "
+            "variance_captured_category_marginal is the share of the squared norm of the maintenance "
+            "category marginal reconstructed through the decoder and encoder; axes_overlap_across_penalties "
+            "reports how far the penalty moves the decoder subspace and, separately, the encoder subspace; "
+            "the encoder overlap is 1.0 whenever the axis count reaches the rank of the category marginal "
+            "(number of categories minus one) because the encoder then spans that fixed subspace at every "
+            "penalty, while the decoder subspace moves with the penalty. Every pseudo-population quantity is produced under several arms "
+            "(selective_arm, selective_arm_holdout, all_unit_arm), described in "
+            "part4_selective_versus_all_unit_arms."),
         "part4_selective_versus_all_unit_arms": "every population-level quantity in "
             "part4_pseudopopulation_geometry (distance-to-attractor, pseudo-population decoding accuracy, "
             "variance-captured against the category-by-time marginal, and the rest of "
@@ -2100,7 +1613,6 @@ def build_artifact() -> dict:
         },
         "declared_before_fitting": True,
     }
-    dpca_ridge_axes_synthetic_verification = _verify_dpca_ridge_lambda_changes_axes()
     artifact = {
         "description": "Reproduction, on three human microwire single-unit epilepsy corpora, of a "
             "published bioRxiv preprint's (doi 10.1101/2025.08.20.671301) category-neuron, selective-"
@@ -2109,8 +1621,6 @@ def build_artifact() -> dict:
         "code_commit": git_commit(ROOT),
         "predeclared_rules": predeclared_rules,
         "existing_maintenance_behaviour_null": _read_existing_maintenance_behaviour_null(),
-        "marginalization_arm_not_published_method_note": MARGINALIZATION_ARM_NOT_PUBLISHED_METHOD_NOTE,
-        "dpca_ridge_axes_synthetic_verification": dpca_ridge_axes_synthetic_verification,
         "corpora": {},
         "status": "in_progress",
     }
@@ -2265,11 +1775,16 @@ def build_artifact() -> dict:
 
 
 def _write(artifact: dict) -> None:
-    with open(RESULTS / "selective_persistence_and_attractor_geometry.json", "w") as f:
+    OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(OUTPUT_PATH, "w") as f:
         json.dump(_json_safe(artifact), f, indent=2, allow_nan=False)
 
 
 def main():
+    global OUTPUT_PATH
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--output", type=Path, default=OUTPUT_PATH)
+    OUTPUT_PATH = parser.parse_args().output
     build_artifact()
 
 

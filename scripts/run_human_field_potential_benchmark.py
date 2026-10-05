@@ -51,9 +51,9 @@ from run_boran_modality_consistency import registry_sessions  # noqa: E402
 from run_human_drift_spine_001187_000673 import (  # noqa: E402
     LFP_LINE_FREQ_HZ, _hippocampal_channel_mask, canonical_sessions,
 )
-from run_selective_persistence_and_attractor_geometry import _fit_axes_arm_a, _dpca_ridge_axes  # noqa: E402
+from memorandum_decoding import fit_demixed_axes  # noqa: E402
 from info_decoding import (  # noqa: E402
-    CTG_STEP, DECODERS, DPCA_RIDGE_LAMBDA_GRID, FIELD_MAINTENANCE_WINDOW_S,
+    CTG_STEP, DECODERS, FIELD_MAINTENANCE_WINDOW_S,
     OPERATING_RANK, _decoder_api, _seeded_folds, atomic_write, score_null_draw, score_observed, summarize_scores,
 )
 from preprocessing import (  # noqa: E402
@@ -264,13 +264,11 @@ def fit_demixed_principal_components_field(train_activity, train_labels, test_ac
     try:
         if len(np.unique(train_labels)) < 2:
             return {"status": "failed_to_train", "reason": "fewer than two classes in training fold"}
-        fit = _fit_axes_arm_a(
-            train_activity, train_labels, rng, rank, grid=DPCA_RIDGE_LAMBDA_GRID, fit_fn=_dpca_ridge_axes
-        )
-        axes = fit["V"]
+        fit = fit_demixed_axes(train_activity, train_labels, rng, rank)
+        axes = fit["decoder"]
         k_used = int(axes.shape[1])
         if k_used < 1:
-            return {"status": "failed_to_train", "reason": "no ridge dpca axes recovered"}
+            return {"status": "failed_to_train", "reason": "no demixed axes recovered"}
         mu = train_activity.reshape(-1, train_activity.shape[-1]).mean(axis=0)
         latent_train = (train_activity - mu) @ axes
         latent_test = (test_activity - mu) @ axes
@@ -279,7 +277,8 @@ def fit_demixed_principal_components_field(train_activity, train_labels, test_ac
     if not (np.isfinite(latent_train).all() and np.isfinite(latent_test).all()):
         return {"status": "failed_to_train", "reason": "non-finite latent values"}
     return {"status": "fitted", "candidate": DEMIXED_CANDIDATE, "k_used": k_used,
-            "latent_train": latent_train, "latent_test": latent_test}
+            "latent_train": latent_train, "latent_test": latent_test,
+            "decoder_axes": axes, "encoder_axes": fit["encoder"]}
 
 
 def fit_representation(candidate, z_train, train_labels, z_test, seed) -> dict:
@@ -1269,6 +1268,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--calibration-only", action="store_true",
                         help="run only the cross-session calibration of dandi_000574 and write only its records and summary")
+    parser.add_argument("--skip-calibration", action="store_true",
+                        help="score the entries only; the cross-session calibration is left to --calibration-only")
     parser.add_argument("--summaries-only", type=Path, metavar="EXISTING",
                         help="with --calibration-only: recompute the calibration summary from the records of an "
                              "existing output file and write it to --output, without refitting")
@@ -1370,7 +1371,7 @@ def main() -> None:
         for row in rows:
             by_patient.setdefault(row["patient"], []).append(row)
         for patient, patient_rows in by_patient.items():
-            if len(patient_rows) > 1:
+            if len(patient_rows) > 1 and not args.skip_calibration:
                 tasks.append((f"calibration {patient}", process_000574_calibration,
                               (patient, patient_rows, candidates, "linear", args.time_step, args.seed,
                                args.checkpoint_dir)))

@@ -9,8 +9,9 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from run_selective_persistence_and_attractor_geometry import CATEGORY_SUBSPACE_DIMENSIONALITY, CORPUS_SPECS, _category_neuron_test, _da_session, _build_pseudopopulation, _category_time_marginal, _fit_axes_arm_a, _fit_axes_arm_b_nested, _fit_axes_arm_b_nested_pseudopop, _fit_pca_2d, _fit_selective_persistence_glm, _lambda_sweep, _lambda_sweep_flatness, _part1_region_summary, _project_pca_2d, _project_pca_3d, _pseudopopulation_decoding, _pseudopopulation_region_report, _pseudopopulation_region_report_all_arms, _selective_neuron_keys, _region_association, _select_lambda_cv_pseudopop, _split_trial_pool, _session_correlation, _part1_reaction_time_cells, _session_latency, MIN_UNITS_PER_REGION
-from info_decoding import DPCA_RIDGE_LAMBDA_GRID, _category_469, _category_divided
+from run_selective_persistence_and_attractor_geometry import CATEGORY_SUBSPACE_DIMENSIONALITY, CORPUS_SPECS, _category_neuron_test, _da_session, _build_pseudopopulation, _fit_pca_2d, _fit_selective_persistence_glm, _part1_region_summary, _project_pca_2d, _project_pca_3d, _pseudopopulation_decoding, _pseudopopulation_geometry, _pseudopopulation_region_report, _pseudopopulation_region_report_all_arms, _selective_neuron_keys, _region_association, _select_ridge_penalty_pseudopop, _split_trial_pool, _session_correlation, _part1_reaction_time_cells, _session_latency, MIN_UNITS_PER_REGION
+from info_decoding import _category_469, _category_divided
+from memorandum_decoding import fit_demixed_axes
 import run_selective_persistence_and_attractor_geometry as target_module  # noqa: E402
 
 
@@ -235,10 +236,10 @@ def test_da_session_end_to_end_on_synthetic_session_above_floor():
     assert out["status"] == "computed"
     assert out["n_units"] == 20
     assert out["category_subspace_dimensionality"] == min(CATEGORY_SUBSPACE_DIMENSIONALITY, out["n_pc"])
-    assert -1e-6 <= out["arm_a_variance_captured"] <= 1.0 + 1e-6
-    assert -1e-6 <= out["arm_b_variance_captured"] <= 1.0 + 1e-6
+    assert -1e-6 <= out["demixed_variance_captured"] <= 1.0 + 1e-6
+    assert out["ridge_penalty"] in target_module.DPCA_RIDGE_LAMBDA_GRID
     assert len(out["da"]) == out["n_trials_with_defined_da"]
-    assert len(out["da"]) == len(out["da_dpca_arm_b"]) == len(out["da_pca_only"])
+    assert len(out["da"]) == len(out["da_pca_only"])
     assert len(out["da"]) == len(out["accuracy"]) == len(out["population_spike_count"]) == len(
         out["rate_free_deviation"])
     assert all(np.isfinite(v) for v in out["da"])
@@ -295,7 +296,7 @@ def test_corpus_specs_regions_match_region_resolved_rate_stability_behaviour():
         assert CORPUS_SPECS[corpus]["regions"] == REGION_CORPUS_SPECS[corpus]["regions"]
 
 
-def test_fit_axes_arm_a_axis_tracks_whichever_category_labels_it_is_given():
+def test_fit_demixed_axes_axis_tracks_whichever_category_labels_it_is_given():
     # two orthogonal signals live in the same data: dim 0 separates category_a,
     # dim 1 separates an unrelated category_b -- a supervised fit must pick the
     # axis matching whichever label vector it is handed, an unsupervised PCA
@@ -310,23 +311,11 @@ def test_fit_axes_arm_a_axis_tracks_whichever_category_labels_it_is_given():
     Z[category_b == 1, 1] += 5.0
     Z[category_b == 2, 1] -= 5.0
 
-    arm_a_fit = _fit_axes_arm_a(Z, category_a, np.random.default_rng(0), d=1)
-    arm_b_fit = _fit_axes_arm_a(Z, category_b, np.random.default_rng(0), d=1)
-    v_a, v_b = np.abs(arm_a_fit["V"][:, 0]), np.abs(arm_b_fit["V"][:, 0])
+    fit_a = fit_demixed_axes(Z, category_a, np.random.default_rng(0), d=1)
+    fit_b = fit_demixed_axes(Z, category_b, np.random.default_rng(0), d=1)
+    v_a, v_b = np.abs(fit_a["decoder"][:, 0]), np.abs(fit_b["decoder"][:, 0])
     assert v_a[0] > 0.9 and v_a[1] < 0.2
     assert v_b[1] > 0.9 and v_b[0] < 0.2
-
-
-def test_fit_axes_arm_b_nested_lambda_is_median_of_outer_folds():
-    rng = np.random.default_rng(12)
-    n_per_cat = 20
-    Z = rng.standard_normal((3 * n_per_cat, 4))
-    Z[:n_per_cat, 0] += 4.0
-    Z[n_per_cat:2 * n_per_cat, 1] += 4.0
-    category = np.array([1] * n_per_cat + [2] * n_per_cat + [3] * n_per_cat)
-    out = _fit_axes_arm_b_nested(Z, category, np.random.default_rng(1), d=2)
-    assert out["lambda"] == pytest.approx(float(np.median(out["per_outer_fold_lambda"])))
-    assert out["n_outer_folds_used"] == len(out["per_outer_fold_lambda"])
 
 
 def test_build_pseudopopulation_pools_across_neurons_and_categories():
@@ -349,11 +338,10 @@ def test_build_pseudopopulation_pools_across_neurons_and_categories():
 def test_pseudopopulation_region_report_strips_raw_arrays(monkeypatch):
     fake_geometry = {
         "status": "computed", "n_sessions_used": 2, "n_patients": 2, "n_units_pooled": 4,
-        "arm_a_lambda": 0.5, "arm_a_variance_captured_static_category_marginal": 0.8,
+        "ridge_penalty": 0.5, "variance_captured_category_marginal": 0.8,
         "pseudopopulation": {"maint": np.zeros((4, 4, 3)), "category": np.array([1, 1, 2, 2]),
                               "enc": np.zeros((4, 4)), "n_units": 4},
-        "mu_pca": np.zeros(4), "V_pca": np.zeros((4, 2)), "mu_std": np.zeros(4), "sd_std": np.ones(4),
-        "arm_a": {"V": np.zeros((4, 2))},
+        "axes": np.zeros((4, 2)), "encoder_axes": np.zeros((4, 2)),
         "collected_enc": {"s1__u0": {1: np.zeros(5)}}, "collected_maint": {"s1__u0": {1: np.zeros((5, 3))}},
     }
     monkeypatch.setattr(target_module, "_pseudopopulation_geometry",
@@ -364,10 +352,9 @@ def test_pseudopopulation_region_report_strips_raw_arrays(monkeypatch):
     out = _pseudopopulation_region_report("dandi_000469", "hippocampus")
     assert out["status"] == "computed"
     assert out["decoding"]["observed_accuracy"] == 0.9
-    for leaked_key in ("pseudopopulation", "mu_pca", "V_pca", "mu_std", "sd_std", "arm_a",
-                       "collected_enc", "collected_maint"):
+    for leaked_key in ("pseudopopulation", "axes", "encoder_axes", "collected_enc", "collected_maint"):
         assert leaked_key not in out
-    assert out["arm_a_variance_captured_static_category_marginal"] == 0.8
+    assert out["variance_captured_category_marginal"] == 0.8
 
 
 def test_selective_neuron_keys_reads_part1_checkpoint_criterion(monkeypatch):
@@ -500,26 +487,16 @@ def test_pseudopopulation_decoding_no_real_trial_crosses_split(monkeypatch):
             assert not (set(train_pool[key][c].tolist()) & set(test_pool[key][c].tolist()))
 
 
-def test_category_time_marginal_zero_for_category_blind_signal():
-    rng = np.random.default_rng(17)
-    n_trials, n_t, k = 30, 5, 2
-    Z_time = rng.standard_normal((n_trials, n_t, k)) * 1e-9
-    category = np.array([1, 2, 3] * 10)
-    marginal = _category_time_marginal(Z_time, category)
-    assert marginal.shape == (3 * n_t, k)
-    assert np.allclose(marginal, 0.0, atol=1e-6)
-
-
 def _synthetic_pooled_neurons(rng, n_units=6, n_per_cat=10):
     neurons_enc, neurons_maint = {}, {}
     for u in range(n_units):
         key = f"s1__u{u}"
-        neurons_enc[key] = {c: rng.standard_normal(n_per_cat) + (3.0 if c == 1 else 0.0) for c in (1, 2, 3)}
-        neurons_maint[key] = {c: rng.standard_normal((n_per_cat, 4)) for c in (1, 2, 3)}
+        neurons_enc[key] = {c: rng.poisson(8.0 if c == 1 else 4.0, n_per_cat).astype(float) for c in (1, 2, 3)}
+        neurons_maint[key] = {c: rng.poisson(3.0, (n_per_cat, 4)).astype(float) for c in (1, 2, 3)}
     return neurons_enc, neurons_maint
 
 
-def test_select_lambda_cv_pseudopop_no_real_trial_crosses_split(monkeypatch):
+def test_select_ridge_penalty_pseudopop_no_real_trial_crosses_split(monkeypatch):
     rng = np.random.default_rng(18)
     neurons_enc, neurons_maint = _synthetic_pooled_neurons(rng)
     common_cats = [1, 2, 3]
@@ -533,8 +510,8 @@ def test_select_lambda_cv_pseudopop_no_real_trial_crosses_split(monkeypatch):
         return real_build(enc, maint, n_pseudo, rng_arg, trial_pool)
 
     monkeypatch.setattr(target_module, "_build_pseudopopulation", _spy_build)
-    best, score_table = _select_lambda_cv_pseudopop(neurons_enc, neurons_maint, common_cats, 2,
-                                                      n_pseudo=5, n_folds=3, grid=(0.0, 0.5, 0.9), rng=rng, d=2)
+    best, score_table = _select_ridge_penalty_pseudopop(neurons_enc, neurons_maint, common_cats,
+                                                          n_pseudo=5, n_folds=3, grid=(0.0, 0.5, 0.9), rng=rng, d=2)
     assert best in (0.0, 0.5, 0.9)
     assert set(score_table) == {0.0, 0.5, 0.9}
     assert len(seen_pools) >= 2
@@ -545,152 +522,35 @@ def test_select_lambda_cv_pseudopop_no_real_trial_crosses_split(monkeypatch):
                 assert not (set(train_pool[key][c].tolist()) & set(test_pool[key][c].tolist()))
 
 
-def test_fit_axes_arm_b_nested_pseudopop_outer_folds_are_disjoint(monkeypatch):
-    rng = np.random.default_rng(19)
-    neurons_enc, neurons_maint = _synthetic_pooled_neurons(rng)
-    common_cats = [1, 2, 3]
+def test_pseudopopulation_demixed_arm_fits_on_encoding_training_pseudo_trials_only(monkeypatch):
+    n_units, n_per_cat, n_pseudo = 6, 12, 8
+    neurons_enc = {f"s1__u{u}": {c: 1.0 + u * 1000 + c * 100 + np.arange(n_per_cat) for c in (1, 2, 3)}
+                   for u in range(n_units)}
+    rng = np.random.default_rng(40)
+    neurons_maint = {key: {c: rng.poisson(3.0, (n_per_cat, 4)).astype(float) for c in (1, 2, 3)}
+                     for key in neurons_enc}
+    collected = {"enc": neurons_enc, "maint": neurons_maint, "n_sessions_used": 1, "n_patients": 1}
+    monkeypatch.setattr(target_module, "_collect_region_neurons", lambda *args, **kwargs: collected)
+    pools, fits = [], []
+    real_split, real_axes = target_module._split_trial_pool, target_module.memorandum_ridge_axes
+    monkeypatch.setattr(target_module, "N_PSEUDO_TRIALS_PER_CATEGORY", n_pseudo)
 
-    seen_outer_train_pools = []
-    real_select = target_module._select_lambda_cv_pseudopop
+    def spy_split(*args):
+        pools.append(real_split(*args))
+        return pools[-1]
 
-    def _spy_select(*args, **kwargs):
-        if kwargs.get("parent_pool") is not None:
-            seen_outer_train_pools.append(kwargs["parent_pool"])
-        return real_select(*args, **kwargs)
+    def spy_axes(Z, category, lam, d):
+        fits.append(Z)
+        return real_axes(Z, category, lam, d)
 
-    monkeypatch.setattr(target_module, "_select_lambda_cv_pseudopop", _spy_select)
-    lam_final, outer_lambdas, n_outer = _fit_axes_arm_b_nested_pseudopop(
-        neurons_enc, neurons_maint, common_cats, 2, n_pseudo=5, rng=rng, d=2)
-    assert n_outer == len(outer_lambdas) == len(seen_outer_train_pools)
-    assert lam_final == pytest.approx(float(np.median(outer_lambdas)))
-    for key in neurons_enc:
-        for c in common_cats:
-            total_trials = len(neurons_enc[key][c])
-            pool_sizes = [len(pool[key][c]) for pool in seen_outer_train_pools]
-            assert all(0 < size < total_trials for size in pool_sizes)
-
-
-def test_lambda_sweep_marks_cv_selected_points():
-    rng = np.random.default_rng(20)
-    n = 30
-    Z_enc = rng.standard_normal((n, 3))
-    category = np.array([1, 2, 3] * 10)
-    Z_maint = rng.standard_normal((n, 5, 3))
-    grid = (0.0, 0.5, 0.9)
-    score_table = {0.0: 1.0, 0.5: 0.9, 0.9: 1.1}
-    sweep = _lambda_sweep(Z_enc, category, Z_maint, score_table, grid, d=2, arm_a_lambda=0.5, arm_b_lambda=0.9)
-    assert len(sweep) == 3
-    flagged_a = [pt["lambda"] for pt in sweep if pt["is_arm_a_cv_selected_point"]]
-    flagged_b = [pt["lambda"] for pt in sweep if pt["is_arm_b_cv_selected_point"]]
-    assert flagged_a == [0.5]
-    assert flagged_b == [0.9]
-    for pt in sweep:
-        assert pt["held_out_reconstruction_error"] == score_table[pt["lambda"]]
-
-
-def test_lambda_sweep_flatness_flat_surface():
-    out = _lambda_sweep_flatness({0.0: 1.0, 0.25: 1.01, 0.5: 0.99, 0.75: 1.0, 0.9: 1.02})
-    assert out["status"] == "computed"
-    assert out["relative_range"] < 0.15
-    assert "weakly determined" in out["note"]
-
-
-def test_lambda_sweep_flatness_peaked_surface():
-    out = _lambda_sweep_flatness({0.0: 0.2, 0.25: 0.8, 0.5: 1.0, 0.75: 1.2, 0.9: 1.5})
-    assert out["status"] == "computed"
-    assert out["relative_range"] > 0.15
-    assert "more clearly peaked" in out["note"]
-
-
-def test_shrinkage_axes_eigenvectors_invariant_to_lambda_below_one():
-    # documents the mechanism behind the flat lambda sweep: shrinking a symmetric matrix toward a
-    # scalar multiple of the identity never changes its eigenvectors for any lambda short of 1.0.
-    rng = np.random.default_rng(21)
-    marginal = rng.standard_normal((5, 8))
-    d = 4
-    V0, _ = target_module._shrinkage_axes(marginal, 0.0, d)
-    for lam in (0.25, 0.5, 0.75, 0.9):
-        V_lam, _ = target_module._shrinkage_axes(marginal, lam, d)
-        cos = np.abs(np.sum(V_lam * V0, axis=0))
-        assert np.allclose(cos, 1.0, atol=1e-9)
-
-
-def test_lambda_sweep_flatness_machine_epsilon_surface():
-    out = _lambda_sweep_flatness({0.0: 1.0, 0.25: 1.0 + 1e-14, 0.5: 1.0 - 1e-14, 0.75: 1.0, 0.9: 1.0})
-    assert out["status"] == "computed"
-    assert out["relative_range"] < 1e-6
-    assert "floating-point precision" in out["note"]
-
-
-def _synthetic_category_structured_trials(rng, n_per_cat, n_cat, k, rank, effect=3.0, noise=0.5):
-    n = n_per_cat * n_cat
-    category = np.repeat(np.arange(1, n_cat + 1), n_per_cat)
-    basis = np.linalg.qr(rng.standard_normal((k, rank)))[0]
-    cat_signal = rng.standard_normal((n_cat, rank)) * effect
-    Z = rng.standard_normal((n, k)) * noise
-    for i, c in enumerate(category):
-        Z[i] += cat_signal[c - 1] @ basis.T
-    return Z, category
-
-
-def test_dpca_ridge_axes_changes_with_lambda_when_components_below_marginal_rank():
-    # regression test: when the requested component count d is strictly below the achievable rank of
-    # the category marginal (n_categories - 1), the ridge-regularised reduced-rank-regression axes
-    # genuinely rotate with lambda -- unlike the isotropic-shrinkage marginalization arm, whose axes are
-    # invariant to its regularisation parameter at every d.
-    rng = np.random.default_rng(30)
-    Z, category = _synthetic_category_structured_trials(rng, n_per_cat=40, n_cat=10, k=8, rank=8)
-    d = 4
-    V0, _ = target_module._dpca_ridge_axes(Z, category, DPCA_RIDGE_LAMBDA_GRID[0], d)
-    V1, _ = target_module._dpca_ridge_axes(Z, category, DPCA_RIDGE_LAMBDA_GRID[-1], d)
-    overlap = target_module._subspace_overlap(V0, V1)
-    assert overlap < 1.0 - 1e-4
-
-
-def test_dpca_ridge_axes_are_orthonormal():
-    rng = np.random.default_rng(31)
-    Z, category = _synthetic_category_structured_trials(rng, n_per_cat=30, n_cat=6, k=6, rank=5)
-    V, M = target_module._dpca_ridge_axes(Z, category, 1.0, d=3)
-    assert V.shape == (6, 3)
-    assert np.allclose(V.T @ V, np.eye(3), atol=1e-8)
-    assert M.shape == (6, 6)
-
-
-def test_dpca_ridge_axes_subspace_invariant_when_components_equal_marginal_rank():
-    # documents a mathematical ceiling distinct from the isotropic-shrinkage bug: Sxy = X.T @ Y always
-    # has row space contained in the category marginal's own (n_categories - 1)-dimensional subspace,
-    # for any lambda (left-multiplying by a ridge-regularised inverse cannot enlarge a row space), so
-    # whenever d equals that subspace's dimension exactly, the top-d eigenspace of B.T @ Sxx @ B is
-    # forced to equal that entire fixed subspace for every lambda -- this repository's category schemes
-    # (CATEGORIES_469, CATEGORIES_100_DIVIDED) are fixed at 5 values and CATEGORY_SUBSPACE_DIMENSIONALITY
-    # is 4, i.e. exactly this ceiling, for every pooled pseudo-population cell that retains all 5
-    # categories.
-    rng = np.random.default_rng(32)
-    Z, category = _synthetic_category_structured_trials(rng, n_per_cat=20, n_cat=5, k=8, rank=4)
-    d = 4
-    V0, _ = target_module._dpca_ridge_axes(Z, category, DPCA_RIDGE_LAMBDA_GRID[0], d)
-    V1, _ = target_module._dpca_ridge_axes(Z, category, DPCA_RIDGE_LAMBDA_GRID[-1], d)
-    overlap = target_module._subspace_overlap(V0, V1)
-    assert overlap == pytest.approx(1.0, abs=1e-9)
-
-
-def test_verify_dpca_ridge_lambda_changes_axes_reports_ceiling_and_does_not_raise():
-    # CATEGORY_SUBSPACE_DIMENSIONALITY (4) equals the maximum achievable category-marginal rank for every
-    # corpus here (5 fixed categories) -- the axes are provably invariant there for any correct fitting
-    # method, so this is measured and reported, never asserted: a run must not halt on it.
-    out = target_module._verify_dpca_ridge_lambda_changes_axes()
-    at_ceiling = out["at_component_count_equal_to_marginal_rank"]["check"]["min_lambda_vs_max_lambda_overlap"]
-    below_ceiling = out["at_component_count_below_marginal_rank"]["check"]["min_lambda_vs_max_lambda_overlap"]
-    assert at_ceiling == pytest.approx(1.0, abs=1e-6)
-    assert below_ceiling < 1.0 - target_module.DPCA_RIDGE_AXES_OVERLAP_FLOOR_MARGIN
-
-
-def test_subspace_overlap_identity_and_orthogonal():
-    rng = np.random.default_rng(33)
-    V, _ = np.linalg.qr(rng.standard_normal((6, 3)))
-    assert target_module._subspace_overlap(V, V) == pytest.approx(1.0, abs=1e-9)
-    V2 = np.zeros((6, 3))
-    V2[3:6, :3] = np.eye(3)
-    V1 = np.zeros((6, 3))
-    V1[0:3, :3] = np.eye(3)
-    assert target_module._subspace_overlap(V1, V2) == pytest.approx(0.0, abs=1e-9)
+    monkeypatch.setattr(target_module, "_split_trial_pool", spy_split)
+    monkeypatch.setattr(target_module, "memorandum_ridge_axes", spy_axes)
+    out = _pseudopopulation_geometry("dandi_000469", "hippocampus")
+    assert out["status"] == "computed" and out["category_subspace_dimensionality"] == 4
+    fit = fits[0]
+    assert fit.shape == (3 * n_pseudo, 1, n_units)
+    train_pool = pools[0][0]
+    rates = (fit[:, 0, :] / 2.0) ** 2 - 3.0 / 8.0
+    for u, key in enumerate(sorted(neurons_enc)):
+        allowed = {neurons_enc[key][c][i] for c in (1, 2, 3) for i in train_pool[key][c]}
+        assert set(np.round(rates[:, u], 6)) <= {round(v, 6) for v in allowed}

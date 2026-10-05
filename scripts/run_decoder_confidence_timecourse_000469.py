@@ -35,6 +35,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 import h5py
 from spike_pipeline import load_spike_times, build_psth, low_rate_unit_mask, FrozenPSTHTransform
+from corpus_sessions import EPOCH_WINDOWS_S
 from geometry import out_of_fold_class_confidence
 from statistics import gated_outcome_cluster_test, smallest_cluster_p_value
 from io_utils import locked_json_update
@@ -74,7 +75,7 @@ def process_load1(subj: str, rng) -> dict | None:
         t_maint = trials["timestamps_Maintenance"][:]
 
     # Same firing-rate QC floor as run_000469_pipeline.py (published).
-    rate_mask = low_rate_unit_mask(spike_lists, t_maint, single_item.MAINT_WIN)
+    rate_mask = low_rate_unit_mask(spike_lists, t_maint, EPOCH_WINDOWS_S["delay"])
     if rate_mask.sum() < 15:
         return None
     spike_lists = [spk for spk, keep in zip(spike_lists, rate_mask) if keep]

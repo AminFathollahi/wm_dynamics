@@ -41,6 +41,30 @@ def test_demixed_candidate_recovers_separable_categories():
     assert fit["latent_test"].shape == (len(test_idx), bins, fit["k_used"])
 
 
+def test_demixed_candidate_recovers_planted_category_subspace_under_a_large_shared_time_course():
+    from info_decoding import anscombe_counts
+    from memorandum_decoding import subspace_overlap
+
+    rng = np.random.default_rng(3)
+    per_class, units, bins, rank = 40, 14, 8, 3
+    ramp = np.abs(rng.normal(size=units))
+    ramp /= np.linalg.norm(ramp)
+    free = rng.normal(size=(units, rank))
+    free -= np.outer(ramp, ramp @ free)
+    subspace = np.linalg.qr(free)[0]
+    labels = np.repeat(np.arange(1, 6), per_class)
+    effects = rng.normal(size=(5, rank))
+    effects -= effects.mean(axis=0)
+    rate = np.maximum(4.0 + np.linspace(0, 1, bins)[None, :, None] * 15 * ramp[None, None, :]
+                      + 3.0 * (effects @ subspace.T)[labels - 1][:, None, :], 0.3)
+    counts = rng.poisson(rate).astype(float)
+    fit = mod.fit_demixed_principal_components(counts, labels, counts, rank=rank, rng=np.random.default_rng(1))
+    transformed = anscombe_counts(counts)
+    centred = (transformed - transformed.reshape(-1, units).mean(axis=0)).reshape(-1, units)
+    axes = np.linalg.lstsq(centred, fit["latent_train"].reshape(-1, rank), rcond=None)[0]
+    assert subspace_overlap(axes, subspace) > 0.9
+
+
 def test_demixed_candidate_rejects_single_class_fold():
     activity = np.zeros((4, 2, 3))
     labels = np.array([1, 1, 1, 1])

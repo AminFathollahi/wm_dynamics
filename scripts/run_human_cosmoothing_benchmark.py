@@ -339,6 +339,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--summary", type=Path, default=SUMMARY_PATH)
     parser.add_argument("--checkpoint-dir", type=Path, default=CHECKPOINT_DIR)
     parser.add_argument("--workers", type=int, default=8)
+    parser.add_argument("--sessions-limit", type=int, help="score only the first N sessions of the manifest")
     parser.add_argument("--smoke", action="store_true")
     return parser
 
@@ -360,6 +361,8 @@ def main() -> None:
     regions = REGIONS[:1] if args.smoke else REGIONS
     if args.smoke:
         manifest = manifest[:1]
+    if args.sessions_limit is not None:
+        manifest = manifest[: args.sessions_limit]
 
     level_lookup = dict(LEVELS)
     runtime = implementation_identity()
@@ -374,7 +377,8 @@ def main() -> None:
             "code_commit": git_commit(ROOT),
             "implementation": runtime,
             "status": "complete" if complete else "running",
-            "scope": {"levels": args.levels, "candidates": args.candidates, "smoke": args.smoke},
+            "scope": {"levels": args.levels, "candidates": args.candidates, "smoke": args.smoke,
+                      "sessions_limit": args.sessions_limit},
             "sessions": session_manifest,
             "records": records,
             "paired_summary": paired_summary(records, patient_by_session, np.random.default_rng(1)) if complete else [],

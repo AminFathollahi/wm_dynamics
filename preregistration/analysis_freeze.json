@@ -14764,7 +14764,7 @@
   "inputs": {
     "analysis_specification_sha256": "771d04375e8db45e4e210d3d899382aa6866c56d8557a744ddb5cf1b36026d54",
     "capability_matrix_sha256": "d04fa08c26129f51ea805dbccc7cbae92865bcd2ae3ac728c2b3ac83f6afa45e",
-    "co_primary_artifact_sha256": "67cf9c78afa37cbd732d96b84faf90a3397dcc9deb42d8e709d1ce22d30d2663",
+    "co_primary_artifact_sha256": "df87ad519076725f288913f043e79c96a8eaac648db13a69bbf58b1031175f08",
     "data_lock_sha256": "60e7170ea04499afd8374811f614f25e3f47aa3680297834b3f533c3f52e7509"
   },
   "multiplicity": {

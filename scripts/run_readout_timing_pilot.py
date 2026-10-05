@@ -468,7 +468,8 @@ def _init_worker(lock) -> None:
     _GPU_LOCK = lock
 
 
-def process_entry(entry: dict, manifest_lookup: dict, checkpoint_dir: Path, n_perm: int, runtime: dict) -> dict:
+def process_entry(entry: dict, manifest_lookup: dict, checkpoint_dir: Path, n_perm: int, runtime: dict,
+                  candidate_keys: tuple[str, ...] = CANDIDATE_KEYS) -> dict:
     entry_key = f"{entry['region']}::{entry['patient']}::{entry['session']}"
     cell = load_entry(entry, manifest_lookup)
     if cell is None:
@@ -487,7 +488,7 @@ def process_entry(entry: dict, manifest_lookup: dict, checkpoint_dir: Path, n_pe
             continue
         identity = block_identity(activity, labels, folds, runtime)
         split_out = {"status": "computed", "n_folds": len(folds), "candidates": {}, **split_info}
-        for candidate_key in CANDIDATE_KEYS:
+        for candidate_key in candidate_keys:
             record = evaluate_cell(
                 entry["region"], f"{entry['patient']}_{entry['session']}", LEVEL, activity, labels,
                 folds, split_name, candidate_key, n_perm, checkpoint_dir, identity, _GPU_LOCK,
@@ -507,6 +508,8 @@ def _parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Read-out timing pilot for future-context representation candidates.")
     p.add_argument("--seed0-path", type=Path, default=SEED0_DEFAULT)
     p.add_argument("--n-perm", type=int, default=N_PERM_DEFAULT)
+    p.add_argument("--candidates", nargs="+", choices=CANDIDATE_KEYS, default=list(CANDIDATE_KEYS),
+                   help="candidate cells to score; the contrasts that need an unscored cell are not estimable")
     p.add_argument("--entries-limit", type=int, help="restrict to the first N drawn entries (smoke runs)")
     p.add_argument("--output", type=Path, default=OUTPUT_PATH)
     p.add_argument("--checkpoint-dir", type=Path, default=CHECKPOINT_DIR)
@@ -558,6 +561,7 @@ def main() -> None:
             "status": "complete" if complete else "running",
             "drawn_entries": entries,
             "decoder": DECODER,
+            "candidates": list(args.candidates),
             "n_permutations": args.n_perm,
             "time_step": CTG_STEP,
             "operating_rank": OPERATING_RANK,
@@ -576,7 +580,8 @@ def main() -> None:
         max_workers=max_workers, mp_context=mp_context, initializer=_init_worker, initargs=(gpu_lock,),
     ) as executor:
         futures = [
-            executor.submit(process_entry, entry, manifest_lookup, args.checkpoint_dir, args.n_perm, runtime)
+            executor.submit(process_entry, entry, manifest_lookup, args.checkpoint_dir, args.n_perm, runtime,
+                            tuple(args.candidates))
             for entry in entries
         ]
         for future in as_completed(futures):

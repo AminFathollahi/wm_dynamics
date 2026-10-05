@@ -1,0 +1,18 @@
+{
+  "code_commit": "53ae6734ea447e00044decbd8e298680cd9b7956",
+  "imported_module_hashes": {
+    "src/geometry.py": "0b2d29ee7dc632bdf3e882e06ed35fde4362b18741ce437ba1576da52b07707d",
+    "src/project_config.py": "257e9976551c27ca22ca6cd3667c6eea51dd1f9dc0d2d84ccb18b4e18d35589d",
+    "src/provenance.py": "829085ad5dc7cf070827ff22b7504672287cabc9b290b87b28ef9d496b2b25e1",
+    "src/spike_pipeline.py": "b7daefee238706aabf9c618b429e9733505047f7c72d802014ab5c2727c52a2e",
+    "src/statistics.py": "90393ef68b8a42659bd1735f6f297a226e5e81087764626d4ea27a9be96e19d4"
+  },
+  "outputs": [
+    "results/all_statistics.json",
+    "results/dandi001187_ctg_*.npz",
+    "results/dandi001187_geometry_*.npz",
+    "results/dandi001187_summary.json"
+  ],
+  "producer": "scripts/run_001187_pipeline.py",
+  "source_hash": "00f2d43412124470281712dfd21e8eaf9dddb2ea53056725fa70dbaa23e06737"
+}

@@ -226,7 +226,7 @@ def evaluate_entry(entry: dict, activity: np.ndarray, labels: np.ndarray, config
     for split, (folds, info) in splits.items():
         out["splits"][split] = {"status": "estimable" if folds is not None else "not_estimable", **info}
         identity = block_identity(activity, labels, folds, config["runtime"]) if folds is not None else None
-        plan = [(r, WHOLE) for r in REFERENCES] + [(m, f) for m in config["models"] for f in INFERENCE_FORMS]
+        plan = [(r, WHOLE) for r in config["references"]] + [(m, f) for m in config["models"] for f in INFERENCE_FORMS]
         for representation, inference in plan:
             for score in config["scores"]:
                 cid = cell_id(representation, inference, split)
@@ -316,13 +316,13 @@ def cell_label(representation: str, inference: str, split: str) -> dict:
     return {"representation": representation, "inference": inference, "split": split}
 
 
-def contrast_specs(models, splits) -> list[dict]:
+def contrast_specs(models, splits, references=REFERENCES) -> list[dict]:
     chronological = [s for s in splits if s != STRATIFIED]
     specs = []
     for model in models:
         for split in splits:
             for inference in INFERENCE_FORMS:
-                for reference in REFERENCES:
+                for reference in references:
                     specs.append({"kind": "candidate_minus_reference",
                                   "minuend": cell_label(model, inference, split),
                                   "subtrahend": cell_label(reference, WHOLE, split)})
@@ -333,7 +333,7 @@ def contrast_specs(models, splits) -> list[dict]:
                 specs.append({"kind": "chronological_minus_stratified",
                               "minuend": cell_label(model, inference, split),
                               "subtrahend": cell_label(model, inference, STRATIFIED)})
-    for reference in REFERENCES:
+    for reference in references:
         for split in chronological:
             specs.append({"kind": "chronological_minus_stratified",
                           "minuend": cell_label(reference, WHOLE, split),
@@ -341,9 +341,9 @@ def contrast_specs(models, splits) -> list[dict]:
     return specs
 
 
-def summarise(entries: list[dict], models, splits) -> tuple[list, list]:
+def summarise(entries: list[dict], models, splits, references=REFERENCES) -> tuple[list, list]:
     absolute, contrasts = [], []
-    specs = contrast_specs(models, splits)
+    specs = contrast_specs(models, splits, references)
     for (score, level), cells in sorted(collect_values(entries).items()):
         for region_cell in REGION_CELLS:
             for cid in sorted(cells):
@@ -483,7 +483,7 @@ def recompute_summaries(existing: Path, output: Path) -> None:
     scope = artifact["scope"]
     split_names = [STRATIFIED] + [chronological_name(f) for f in scope["train_fractions"]]
     artifact["absolute"], artifact["contrasts"] = summarise(
-        artifact["entries"], tuple(scope["candidates"]), split_names)
+        artifact["entries"], tuple(scope["candidates"]), split_names, tuple(scope.get("references", REFERENCES)))
     artifact["summaries_recomputed"] = {"source_file": existing.name, "source_sha256": sha256_file(existing),
                                         "code_commit": git_commit(ROOT)}
     atomic_write(output, canonical_json(artifact))
@@ -493,7 +493,9 @@ def recompute_summaries(existing: Path, output: Path) -> None:
 def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Causal-inference and chronological-split follow-up of the "
                                             "single-unit representation benchmark.")
-    p.add_argument("--candidates", nargs="+", choices=CANDIDATE_CHOICES, default=["gaussian_process_factor_analysis"])
+    p.add_argument("--candidates", nargs="*", choices=CANDIDATE_CHOICES, default=["gaussian_process_factor_analysis"])
+    p.add_argument("--references", nargs="+", choices=REFERENCES, default=list(REFERENCES),
+                   help="reference representations to score; the comparisons that need an unscored cell are not estimable")
     p.add_argument("--levels", nargs="+", choices=LEVELS, default=list(LEVELS))
     p.add_argument("--scores", nargs="+", choices=SCORES, default=list(SCORES))
     p.add_argument("--train-fractions", nargs="+", type=float, default=list(DEFAULT_TRAIN_FRACTIONS))
@@ -525,7 +527,8 @@ def main() -> None:
     levels = dict(benchmark.LEVELS)
     models = tuple(args.candidates)
     split_names = [STRATIFIED] + [chronological_name(f) for f in args.train_fractions]
-    config = {"models": models, "scores": tuple(args.scores), "fractions": tuple(args.train_fractions),
+    references = tuple(args.references)
+    config = {"models": models, "references": references, "scores": tuple(args.scores), "fractions": tuple(args.train_fractions),
               "n_perm": args.n_perm, "seed": args.seed, "checkpoint_dir": args.checkpoint_dir,
               "runtime": implementation_identity()}
     started = time.time()
@@ -539,7 +542,7 @@ def main() -> None:
             "scope": {
                 "corpus": "human single-unit recordings, hippocampus and amygdala region-session entries "
                           "of the representation benchmark",
-                "levels": args.levels, "candidates": list(models), "references": list(REFERENCES),
+                "levels": args.levels, "candidates": list(models), "references": list(references),
                 "scores": args.scores, "decoder": DECODER, "operating_rank": OPERATING_RANK, "time_step": CTG_STEP,
                 "n_stratified_folds": N_SPLITS, "train_fractions": args.train_fractions,
                 "n_permutations": args.n_perm, "seed": args.seed, "entries_limit": args.entries_limit,
@@ -555,7 +558,7 @@ def main() -> None:
         }
         if complete:
             artifact["reproduction"] = reproduction(ordered, args.delivered_root, args.scores, args.seed)
-            artifact["absolute"], artifact["contrasts"] = summarise(ordered, models, split_names)
+            artifact["absolute"], artifact["contrasts"] = summarise(ordered, models, split_names, references)
         atomic_write(args.output, canonical_json(artifact))
         if complete:
             atomic_write(args.output.with_suffix(".md"), render_markdown(artifact))

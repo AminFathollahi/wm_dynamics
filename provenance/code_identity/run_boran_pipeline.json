@@ -1,0 +1,30 @@
+{
+  "code_commit": "53ae6734ea447e00044decbd8e298680cd9b7956",
+  "imported_module_hashes": {
+    "scripts/run_macaque_pfc_microstimulation_pipeline.py": "75f67cb0af9d042bb3c8f19bf78fb59c88c568ac9a44c6b6155257f45a6650b3",
+    "src/causal.py": "038ded70fe57888e56fcf319e411462e24fcabe440d1cfce9bf85d0c015502da",
+    "src/control.py": "fbedd0d0ffec06d6e05bf147dc0f60055ad7e19573603384b32b1a06dd67a2e9",
+    "src/drift_dynamics.py": "f1585ad470f7f579a265de3141e62ca6dbbcc51bc590d1ff517e21d6e9750399",
+    "src/dynamics.py": "5f4a721e977d136bc8a5dc59b2566f456e8eb23d47c6c6e75f0788be6c8e9743",
+    "src/geometry.py": "0b2d29ee7dc632bdf3e882e06ed35fde4362b18741ce437ba1576da52b07707d",
+    "src/info_decoding.py": "9adc65283b2d895fd1a8ddbd1dc6f5a0f495516681b75180d9d467edec7afb9e",
+    "src/io_utils.py": "1473c9dd16942fe3d0d0bb61a6aad90a9899597886e4c7fe7f94610f51152a8d",
+    "src/observability.py": "140ed9f0be8be2373152937d801bbb450ba179a6fa07e613b0be58e26f891f17",
+    "src/preprocessing.py": "d9d7c11aa0fe3c453468de0f6871ede9c0711d6d8974760b99f61a67f4f42875",
+    "src/project_config.py": "257e9976551c27ca22ca6cd3667c6eea51dd1f9dc0d2d84ccb18b4e18d35589d",
+    "src/provenance.py": "829085ad5dc7cf070827ff22b7504672287cabc9b290b87b28ef9d496b2b25e1",
+    "src/spike_pipeline.py": "b7daefee238706aabf9c618b429e9733505047f7c72d802014ab5c2727c52a2e",
+    "src/state_persistence.py": "23a7b00e646740199edb81302c2446dca7bb48fc5f71b9bc066eb9cde9f1812e",
+    "src/statistics.py": "90393ef68b8a42659bd1735f6f297a226e5e81087764626d4ea27a9be96e19d4",
+    "src/stimulation_response_estimator.py": "2c870821782dbf021f51190a89b433a703bee1423acd1600bf2e7942fcf5927a",
+    "src/subspace_identity.py": "eecc22ffe07b25a1406cad3ff465bbf7ed6d802a127def1416a7aab96a286214"
+  },
+  "outputs": [
+    "results/all_statistics.json",
+    "results/boran_ctg_*.npz",
+    "results/boran_geometry_*.npz",
+    "results/boran_summary.json"
+  ],
+  "producer": "scripts/run_boran_pipeline.py",
+  "source_hash": "ddd4cf701b278b2f943676c5effdeb2a0d44644a71137e52427d7ada430e0c54"
+}
