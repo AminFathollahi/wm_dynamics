@@ -13,13 +13,12 @@ its recording method, task, region and time window. Results are reproducible
 end to end: each result file records the code, parameters, data identity and
 random seeds that produced it, and figures are rebuilt from those files.
 
-## Progress (October 2026)
+## Status (5 October 2026)
 
 The data, preprocessing and analysis code are in place for all datasets
 listed below, and the analysis plan has been fixed in advance: for each
 hypothesis and dataset it names one primary test, the neurons used, the
-state space and the smallest effect the data could detect
-(`preregistration/`). Of 294 hypothesis-by-dataset combinations, 99 can be
+state space and the smallest effect the data could detect. Of 294 hypothesis-by-dataset combinations, 99 can be
 tested with the available data; the rest are recorded with the reason they
 cannot. We are now running those tests, starting with the human recordings.
 
@@ -219,9 +218,7 @@ wm_dynamics/
 ├── scripts/           one runner per analysis (run_*.py), model workers (fit_*_worker.py),
 │                      cross-dataset aggregators and figure builders
 ├── tests/             tests of scientific and software contracts
-├── preregistration/   decision rules fixed before the corresponding analyses were run
 ├── notebooks/         exploratory notebooks
-├── provenance/        data lock and dataset-identity records
 └── config/            dataset registry and machine-local configuration
 ```
 

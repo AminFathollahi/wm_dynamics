@@ -143,3 +143,11 @@ tests/test_validate_evidence_ledger.py
 tests/test_narrative_map_covers_every_result.py
 provenance/evidence_ledger.json
 provenance/legacy_manifest.json
+
+# Documents, records and results stay local; only code, configuration and the README are versioned
+*.md
+!README.md
+*.tex
+*.pdf
+preregistration/
+provenance/
