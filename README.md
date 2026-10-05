@@ -13,94 +13,101 @@ its recording method, task, region and time window. Results are reproducible
 end to end: each result file records the code, parameters, data identity and
 random seeds that produced it, and figures are rebuilt from those files.
 
-## Status (5 October 2026)
+## Progress (October 2026)
 
-**Where the project stands.** The work runs in fixed stages: data lock,
-code, representation benchmark, analysis freeze, re-running stale results,
-the causal chain of analyses (stimulation → firing → population state →
-behaviour), synthesis, independent audit, and the written report. The first
-four stages are complete. The analysis plan is frozen in
-`preregistration/analysis_freeze.md`: every hypothesis × dataset cell is
-either frozen with one primary test, unit set, state space and power bound
-(99 cells) or marked not askable with the reason (195 cells). Stale results
-are being regenerated in dependency order (12 of 24 steps remain), after
-which the chain analyses start, human data first.
+The data, preprocessing and analysis code are in place for all datasets
+listed below, and the analysis plan has been fixed in advance: for each
+hypothesis and dataset it names one primary test, the neurons used, the
+state space and the smallest effect the data could detect
+(`preregistration/`). Of 294 hypothesis-by-dataset combinations, 99 can be
+tested with the available data; the rest are recorded with the reason they
+cannot. We are now running those tests, starting with the human recordings.
 
-**Reproducing a published stimulation study and extending it.** A 2025
-preprint on hippocampal stimulation during working memory (bioRxiv
-doi:10.1101/2025.08.20.671301) used category-selective neurons, population
-decoding of the remembered picture category, demixed principal component
-analysis (dPCA) and a distance-to-attractor measure. Its stimulation data are
-not public, so we reproduce every method on the public, stimulation-free human
-recordings and extend it with nested cross-validation, explicit unit sets
-(all neurons versus selected neurons) and patient-level inference.
+### Reproducing and extending a hippocampal-stimulation study
 
-- **Decoding the remembered category (load 1, delay period).** The decoder was
-  chosen by nested cross-validation over 36 read-outs: a linear support vector
-  machine on spike counts averaged over the delay, applied to a
-  pseudo-population of category-selective neurons pooled across patients
-  (neurons selected on training trials only). Chance balanced accuracy is
-  0.20 (5 categories); chance AUC is 0.50.
+A 2025 preprint on hippocampal stimulation during working memory
+(bioRxiv, doi:10.1101/2025.08.20.671301) decoded the remembered picture
+category from category-selective neurons, described the population with
+demixed principal component analysis (dPCA), and measured how far each
+trial's activity sat from its category's resting point. Its stimulation
+recordings are not public, so we applied the same methods to the public
+human recordings without stimulation, and added nested cross-validation,
+patient-level statistics and a side-by-side comparison of all neurons
+versus selected neurons.
 
-  | Dataset | Neurons | Balanced accuracy | AUC (label-shuffle null) |
-  |---|---|---|---|
-  | DANDI 000469 | ~48 selective | 0.908 | 0.976 (0.505) |
-  | DANDI 001187 + 000673 | ~88 selective | 0.389 | 0.708 (0.501) |
-  | DANDI 000004 (recognition task, 0.5 s post-picture blank) | selective | +0.110 above null [0.068, 0.142] | +0.089 above null |
+The best read-out, chosen by nested cross-validation among 36 options, is a
+linear classifier on each neuron's spike count averaged over the delay, with
+category-selective neurons pooled across patients. Neurons are selected on
+training trials only. With five categories, chance accuracy is 0.20 and
+chance AUC is 0.50.
 
-  These pseudo-population numbers are an upper bound: within a single
-  recording session the same decoder is at most 0.03 above chance.
-- **Time course.** Content peaks during encoding (000469: 0.74 above chance),
-  stays readable in the early delay (0.32), and fades by the end (0.10). A
-  decoder trained on encoding still reads the delay (0.28 above chance), so
-  the delay reuses the encoding code. In 000469 the amygdala carries it (0.23
-  above chance on average) more than the hippocampus (0.04). In
-  001187 + 000673 the delay content is weak (about 0.06). With three items in
-  memory, the first item is near chance.
-- **Scalp EEG** (impulse-perturbation corpus, 30 + 18 participants): the
-  remembered orientation is decodable but small, about 1 percentage point
-  above chance in each phase (for example +0.012 [0.008, 0.016], p = 0.0001
-  before the impulse in experiment 1).
-- **Do latent models keep the content?** Each latent model was fitted per
-  session, its dimensions pooled across sessions, and compared draw by draw
-  with the raw spike counts of the same sessions and trials (patient
-  bootstrap). Linear models (principal components, factor analysis,
-  Gaussian-process factor analysis, dPCA) keep about what the raw counts
-  carry with a third of the dimensions or fewer (differences within ±0.15, all
-  intervals include 0). Non-linear and dynamical models keep less, most
-  clearly in the larger dataset group (38 patients): diffusion embedding
-  −0.195 [−0.27, −0.04], p = 0.03; switching linear dynamical system −0.148
-  [−0.26, −0.02], p = 0.02. No latent space reaches the selected neurons
-  themselves.
-- **dPCA corrected to the published method.** Our earlier dPCA fitted its
-  axes to the category averages without first removing the time course shared
-  by all categories, and read components out with the encoder rather than the
-  decoder. Both differ from the standard method the preprint used. All dPCA
-  results in the project have been deleted and refitted with the standard
-  method (category marginalisation, decoder read-out, regularisation chosen by
-  held-out reconstruction of the category marginal). Each refitted file was
-  checked to leave every non-dPCA number byte-identical. With dPCA as the
-  reference, 9 more benchmark comparisons now pass the pre-declared rule (26
-  instead of 17); no comparison against principal components changed.
+| Dataset | Neurons | Balanced accuracy | AUC |
+|---|---|---|---|
+| DANDI 000469 | about 48 | 0.91 | 0.98 |
+| DANDI 001187 and 000673 | about 88 | 0.39 | 0.71 |
+| DANDI 000004 (recognition task, 0.5 s blank after the picture) | selective | 0.11 above chance | 0.09 above chance |
 
-**Representation benchmark outcome (human single units).** Gaussian-process
-factor analysis passes the co-primary rule against both references in the
-amygdala and with regions pooled (against principal components also in the
-hippocampus), and factor analysis now passes against dPCA in the amygdala; passers get causal
-and chronological read-out follow-ups.
+Pooling neurons from many patients removes the noise that neurons recorded
+together share, so these figures are a best case. Within a single recording
+session the same classifier is at most 0.03 above chance.
 
-**Cross-temporal stability in ECoG (0- versus 2-back).** A decoder trained at
-one time in the delay generalises to other times in all four participants:
-mean off-diagonal AUC above chance 0.079–0.164, label-permutation p from
-0.0034 to 0.0001 (10,000 permutations, the whole nested analysis rebuilt for
-every permutation), all four below a 0.05 false-discovery threshold.
+Decoding over time tells a consistent story. In DANDI 000469 the category is
+clearest while the picture is on screen (0.74 above chance), still readable
+early in the delay (0.32) and weak by its end (0.10). A classifier trained on
+the picture period keeps working in the delay (0.28 above chance), so the
+delay activity reuses the code formed at encoding. Amygdala neurons carry
+more of it than hippocampal neurons (0.23 versus 0.04 above chance). In the
+second dataset group the delay signal is weak (about 0.06), and with three
+pictures in memory the first one is close to chance. In scalp EEG (two
+experiments, 30 and 18 participants) the remembered orientation can also be
+decoded, but only about one percentage point above chance, for example
++0.012 (95% interval 0.008 to 0.016, p = 0.0001) before the visual impulse.
 
-**Running and next.** The remaining stale-result reruns; the
-memorandum-axis analysis (does a demixed category subspace found during
-encoding persist through the delay); latent and axis analyses on DANDI
-000004; the factor-analysis read-out follow-up; the reproduction of the
-preprint's distance-to-attractor analysis with the corrected dPCA; then the
-stimulation chain analyses and their audit.
+We also asked whether common latent-variable models keep this information.
+Each model was fitted to one session at a time and compared, trial draw by
+trial draw, with the raw spike counts it was built from. Linear models
+(principal components, factor analysis, Gaussian-process factor analysis,
+dPCA) keep about as much as the raw counts while using a third of the
+dimensions or fewer; every difference is within 0.15 and every interval
+includes zero. Non-linear and dynamical models keep less. The clearest case
+is the larger dataset group (38 patients): diffusion embedding loses 0.20
+(interval 0.04 to 0.27, p = 0.03) and a switching linear dynamical system
+0.15 (0.02 to 0.26, p = 0.02). None of the latent spaces matches the
+selected neurons themselves.
+
+While checking our dPCA against the method the preprint used, we found two
+differences: our version did not remove the time course shared by all
+categories before fitting, and it read components out with the wrong set of
+weights. We deleted every dPCA result in the project and refitted them with
+the standard method, verifying that no other number changed.
+
+### Comparing latent representations
+
+A benchmark compares ten ways of summarising population activity (see
+below) on held-out neurons and held-out trials. In human single units,
+Gaussian-process factor analysis does better than both principal components
+and dPCA in the amygdala and with both regions combined, and factor analysis
+does better than dPCA in the amygdala. These models are now being tested in
+the setting a real-time decoder would face, where only past data are
+available at each moment.
+
+### Stability of the working-memory code in ECoG
+
+In an ECoG n-back task (0-back versus 2-back), a decoder trained at one
+moment of the delay still works at other moments in all four participants.
+The gain in AUC away from the training time ranges from 0.08 to 0.16, with
+permutation p-values from 0.003 to 0.0001 (10,000 permutations, each
+repeating the full cross-validated analysis).
+
+### Next
+
+- Whether the category axes found during encoding stay in place through the
+  delay, in all human single-unit datasets.
+- The preprint's distance-to-attractor analysis, reproduced with the
+  corrected dPCA.
+- The stimulation analyses: how stimulation changes firing, population state
+  and behaviour, and how those changes depend on site, timing, dose and the
+  brain state before stimulation.
 
 ## Questions the code addresses
 
